@@ -1,13 +1,11 @@
-import nextPWA from 'next-pwa';
+import nextPWA from 'next-pwa'
 
-/** @type {import('next').NextConfig} */
 const withPWA = nextPWA({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
 
-  // ---- Runtime-caching rules ----
   runtimeCaching: [
     // 1) Static assets – cache-first
     {
@@ -15,9 +13,10 @@ const withPWA = nextPWA({
       handler: 'CacheFirst',
       options: {
         cacheName: 'static-assets',
-        expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 }, // 30 days
+        expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
       },
     },
+
     // 2) API / HTML – network-first
     {
       urlPattern: /^https?.*/,
@@ -25,21 +24,22 @@ const withPWA = nextPWA({
       options: {
         cacheName: 'http-calls',
         networkTimeoutSeconds: 10,
-        expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 },      // 1 day
+        expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 },
       },
     },
-    // 3) Offline fallback for navigation
+
+    // 3) Offline fallback for navigation  🔥 fixed
     {
       urlPattern: ({ request }) => request.mode === 'navigate',
       handler: 'NetworkOnly',
-      options: { fallbackURL: '/offline.html' },
+      options: {
+        precacheFallback: { fallbackURL: '/offline.html' },
+      },
     },
   ],
-});
+})
 
 export default withPWA({
   reactStrictMode: true,
-  images: {
-    domains: ['your-image-cdn.com'],
-  },
-});
+  images: { domains: ['your-image-cdn.com'] },
+})

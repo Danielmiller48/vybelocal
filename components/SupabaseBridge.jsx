@@ -3,11 +3,11 @@
 
 import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useSupabase } from '@/app/ClientProviders';
 
 export default function SupabaseBridge() {
   const { status, data: session } = useSession();
-  const supabase = useSupabaseClient();
+  const supabase = useSupabase();
 
   useEffect(() => {
     console.log('Bridge status:', status);                 // ← add

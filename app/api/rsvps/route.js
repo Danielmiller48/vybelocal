@@ -1,6 +1,6 @@
 // app/api/rsvps/route.js
 import { NextResponse } from 'next/server';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase as createSupabase } from '@/utils/supabase/server'
 import { cookies } from 'next/headers';
 
 export async function GET(request) {
@@ -16,7 +16,7 @@ export async function GET(request) {
   }
 
   // 2) Count how many RSVPs for that event
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = createSupabase();
   const { count, error } = await supabase
     .from('rsvps')
     .select('id', { count: 'exact', head: true })

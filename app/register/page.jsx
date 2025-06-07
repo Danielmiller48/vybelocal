@@ -1,25 +1,25 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { supabaseClient } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import { useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';   // ← correct import
+import { useRouter } from 'next/navigation';
 
 export default function RegisterPage() {
   const router = useRouter();
 
   /* ---------- local state ---------- */
-  const [name,     setName]     = useState("");
-  const [email,    setEmail]    = useState("");
-  const [phone,    setPhone]    = useState("");
-  const [password, setPassword] = useState("");
+  const [name,     setName]     = useState('');
+  const [email,    setEmail]    = useState('');
+  const [phone,    setPhone]    = useState('');
+  const [password, setPassword] = useState('');
 
   const [errors,   setErrors]   = useState({});
   const [loading,  setLoading]  = useState(false);
-  const [done,     setDone]     = useState(false);   // show “check your inbox” banner
+  const [done,     setDone]     = useState(false);
 
-  /* ---------- tiny helpers ---------- */
+  /* ---------- helpers ---------- */
   const formatPhone = (v) => {
-    const d = v.replace(/\D/g, "").slice(0, 10);
+    const d = v.replace(/\D/g, '').slice(0, 10);
     if (d.length < 4) return d;
     if (d.length < 7) return `${d.slice(0, 3)}-${d.slice(3)}`;
     return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
@@ -27,10 +27,10 @@ export default function RegisterPage() {
 
   const validate = () => {
     const err = {};
-    if (!name.trim())                       err.name     = "Name is required";
-    if (!/^\S+@\S+\.\S+$/.test(email))       err.email    = "Valid email required";
-    if (!/^\d{3}-\d{3}-\d{4}$/.test(phone))  err.phone    = "Use XXX-XXX-XXXX";
-    if (password.length < 8)                err.password = "Min 8 characters";
+    if (!name.trim())                       err.name     = 'Name is required';
+    if (!/^\S+@\S+\.\S+$/.test(email))       err.email    = 'Valid email required';
+    if (!/^\d{3}-\d{3}-\d{4}$/.test(phone))  err.phone    = 'Use XXX-XXX-XXXX';
+    if (password.length < 8)                err.password = 'Min 8 characters';
     setErrors(err);
     return Object.keys(err).length === 0;
   };
@@ -43,12 +43,10 @@ export default function RegisterPage() {
     setLoading(true);
     setErrors({});
 
-    /* 1-step sign-up (v2 SDK) */
-    const { error } = await supabaseClient.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // 👉 after e-mail click, send user to /login?verified=1
         emailRedirectTo: `${window.location.origin}/login?verified=1`,
         data: { name, phone },
       },
@@ -59,7 +57,7 @@ export default function RegisterPage() {
     if (error) {
       setErrors({ submit: error.message });
     } else {
-      setDone(true);         // swap form for inbox instructions
+      setDone(true);                 // show “check inbox” banner
     }
   }
 
@@ -71,7 +69,7 @@ export default function RegisterPage() {
           <h1 className="text-2xl font-bold">Almost there!</h1>
           <p>Check your inbox and tap the confirmation link.</p>
           <button
-            onClick={() => router.push("/login")}
+            onClick={() => router.push('/login')}
             className="mt-4 text-blue-600 underline"
           >
             Go to login
@@ -99,7 +97,7 @@ export default function RegisterPage() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           className={`w-full border rounded px-3 py-2 ${
-            errors.name ? "border-red-500" : "border-gray-300"
+            errors.name ? 'border-red-500' : 'border-gray-300'
           }`}
         />
 
@@ -110,7 +108,7 @@ export default function RegisterPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className={`w-full border rounded px-3 py-2 ${
-            errors.email ? "border-red-500" : "border-gray-300"
+            errors.email ? 'border-red-500' : 'border-gray-300'
           }`}
         />
 
@@ -120,7 +118,7 @@ export default function RegisterPage() {
           value={phone}
           onChange={(e) => setPhone(formatPhone(e.target.value))}
           className={`w-full border rounded px-3 py-2 ${
-            errors.phone ? "border-red-500" : "border-gray-300"
+            errors.phone ? 'border-red-500' : 'border-gray-300'
           }`}
         />
 
@@ -131,7 +129,7 @@ export default function RegisterPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className={`w-full border rounded px-3 py-2 ${
-            errors.password ? "border-red-500" : "border-gray-300"
+            errors.password ? 'border-red-500' : 'border-gray-300'
           }`}
         />
 
@@ -140,15 +138,15 @@ export default function RegisterPage() {
           disabled={loading}
           className={`w-full py-2 text-white rounded ${
             loading
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700"
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700'
           }`}
         >
-          {loading ? "Creating…" : "Create Account"}
+          {loading ? 'Creating…' : 'Create Account'}
         </button>
 
         <p className="text-center text-sm text-gray-500">
-          Already verified?{" "}
+          Already verified?{' '}
           <a href="/login" className="text-blue-600 underline">
             Log in
           </a>

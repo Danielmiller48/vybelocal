@@ -1,34 +1,46 @@
 // app/ClientProviders.jsx
-'use client';
+'use client'
 
-import { useMemo } from 'react';
-import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { SessionProvider as NextAuthSessionProvider, useSession } from 'next-auth/react'
 
-import { createBrowserSupabaseClient } from '@supabase/auth-helpers-nextjs';
-import { SessionContextProvider as SupabaseSessionProvider } from '@supabase/auth-helpers-react';
+import { supabase as supabaseBrowser } from '@/lib/supabaseClient'   // ← the helper we made
+import Providers                 from './providers'
 
-import Providers from './providers';
-import SupabaseBridge from '../components/SupabaseBridge';   // ← correct path
-import { useSession } from 'next-auth/react';
+/* ---------- Supabase React context ---------- */
+const SupabaseCtx = createContext({ supabase: supabaseBrowser, session: null })
+export const useSupabase = () => useContext(SupabaseCtx)
 
+/* ---------- Debug helper (keep / drop as you like) ---------- */
 function DebugTap({ label }) {
-  const { data, status } = useSession();
-  console.log(label, data, status);
-  return null;
+  const { data, status } = useSession()
+  console.log(label, data, status)
+  return null
 }
 
-export default function ClientProviders({ children, session }) {
-  // one Supabase client per tab
-  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+/* ---------- Main wrapper ---------- */
+export default function ClientProviders({ children, session: nextAuthSession }) {
+  // One Supabase client per tab — memoised
+  const supabase = useMemo(() => supabaseBrowser, [])
+
+  const [sbSession, setSbSession] = useState(null)
+
+  /* 🔄 keep Supabase session in sync */
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSbSession(data.session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, sess) => setSbSession(sess)
+    )
+    return () => subscription.unsubscribe()
+  }, [supabase])
 
   return (
-    <NextAuthSessionProvider session={session}>
-      <SupabaseSessionProvider supabaseClient={supabase}>
-        <SupabaseBridge />                 {/* now shares same client */}
-        {/* remove if you don’t need console output */}
-        <DebugTap label="inside provider" />
-        <Providers session={session}>{children}</Providers>
-      </SupabaseSessionProvider>
+    <NextAuthSessionProvider session={nextAuthSession}>
+      <SupabaseCtx.Provider value={{ supabase, session: sbSession }}>
+                  {/* now uses useSupabase() inside */}
+        <DebugTap label="inside provider" /> {/* remove if noisy */}
+        <Providers session={nextAuthSession}>{children}</Providers>
+      </SupabaseCtx.Provider>
     </NextAuthSessionProvider>
-  );
+  )
 }

@@ -1,10 +1,9 @@
 // app/api/events/[id]/route.js
 import { NextResponse } from 'next/server';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { supabase as createSupabase } from '@/utils/supabase/server';
 
 export async function GET(request, { params }) {
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = createSupabase();
   const eventId = params.id;
 
   // 1) Fetch the event row (if it exists)
@@ -43,7 +42,7 @@ export async function GET(request, { params }) {
 }
 
 export async function PATCH(request, { params }) {
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = createSupabase();
   const eventId = params.id;
 
   // 1) Ensure user is authenticated

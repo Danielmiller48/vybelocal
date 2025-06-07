@@ -1,54 +1,54 @@
-// ── app/login/page.jsx ──
-"use client";
+'use client'
 
-import { useState, useEffect } from "react";
-import { signIn }              from "next-auth/react";
-import { useRouter }           from "next/navigation";
+import { useState, useEffect } from 'react'
+import { signIn }              from 'next-auth/react'
+import { useRouter }           from 'next/navigation'
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter()
 
-  // ---------- local state ----------
-  const [email,        setEmail]        = useState("");
-  const [password,     setPassword]     = useState("");
-  const [error,        setError]        = useState("");
-  const [submitting,   setSubmitting]   = useState(false);
-  const [justVerified, setJustVerified] = useState(false);  // banner flag
+  /* ─ state ─ */
+  const [email,        setEmail]        = useState('')
+  const [password,     setPassword]     = useState('')
+  const [error,        setError]        = useState('')
+  const [submitting,   setSubmitting]   = useState(false)
+  const [justVerified, setJustVerified] = useState(false)
 
-  // ---------- detect ?verified=1 ----------
+  /* ─ banner if ?verified=1 ─ */
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("verified") === "1") {
-      setJustVerified(true);                 // show banner once
-      params.delete("verified");             // tidy URL (optional)
-      window.history.replaceState({}, "", window.location.pathname);
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('verified') === '1') {
+      setJustVerified(true)
+      params.delete('verified')
+      window.history.replaceState({}, '', window.location.pathname)
     }
-  }, []);
+  }, [])
 
-  // ---------- handler ----------
+  /* ─ submit ─ */
   async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
+    e.preventDefault()
+    if (submitting) return
+    setSubmitting(true)
+    setError('')
 
-    if (submitting) return;      // ignore rapid clicks
-    setSubmitting(true);
-
-    const res = await signIn("credentials", {
-      redirect: false,
+    const res = await signIn('credentials', {
+      redirect : false,
       email,
       password,
-    });
+    })
 
-    setSubmitting(false);
+    setSubmitting(false)
 
     if (res?.error) {
-      setError(res.error);
+      setError(res.error)
     } else {
-      router.push("/");          // 🎉 logged in
+      /* 🔄 soft-refresh so header picks up the new session immediately */
+      router.replace('/')   // change URL
+      router.refresh()      // re-render RSC & client tree
     }
   }
 
-  // ---------- UI ----------
+  /* ─ UI ─ */
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <form
@@ -97,20 +97,20 @@ export default function LoginPage() {
           disabled={submitting}
           className={`w-full py-2 text-white rounded ${
             submitting
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700"
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700'
           }`}
         >
-          {submitting ? "Logging in…" : "Log In"}
+          {submitting ? 'Logging in…' : 'Log In'}
         </button>
 
         <p className="mt-6 text-center text-sm text-gray-500">
-          Don’t have an account?{" "}
+          Don’t have an account?{' '}
           <a href="/register" className="text-blue-600 hover:underline">
             Register
           </a>
         </p>
       </form>
     </div>
-  );
+  )
 }

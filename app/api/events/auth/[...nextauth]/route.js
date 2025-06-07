@@ -1,10 +1,10 @@
 // app/api/events/route.js
 import { NextResponse } from 'next/server';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase as createSupabase } from '@/utils/supabase/server';
 import { cookies } from 'next/headers';
 
 export async function GET(request) {
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = createSupabase();
   const { data: events, error } = await supabase
     .from('events')
     .select('*')

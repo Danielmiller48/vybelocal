@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { supabase } from '@/lib/supabaseClient';      // ← shared browser client
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { v4 as uuid } from 'uuid';
@@ -21,9 +21,10 @@ const schema = z.object({
     .custom(
       (val) =>
         val === undefined ||
-        (val instanceof FileList &&
-         val.length === 0 ||
-         val.length > 0 && val [0] instanceof File),
+        (val instanceof FileList && (
+          val.length === 0 ||                    // ← allow empty list
+          (val.length > 0 && val[0] instanceof File)
+        )),
       { message: 'Must select an image file.' }
     )
     .optional(),
@@ -32,7 +33,6 @@ const schema = z.object({
 
 export default function HostNew() {
   const { status }  = useSession();
-  const supabase    = useSupabaseClient();
   const router      = useRouter();
   const alertedOnce = useRef(false);
 
@@ -63,7 +63,7 @@ export default function HostNew() {
     let image_url = null;
     const BUCKET = process.env.NEXT_PUBLIC_EVENT_BUCKET || 'event-images';
 
-    if (data.image?.length) {                       // ← only when a file was chosen
+    if (data.image?.length) {
       const filePath = `${user.id}/${uuid()}`;
       const { error: upErr } = await supabase
         .storage
@@ -90,7 +90,7 @@ export default function HostNew() {
       address:     data.address,
       starts_at:   data.starts_at,
       ends_at:     data.ends_at || null,
-      image_url,                              // null if no image
+      image_url,
     });
 
     if (error) {
