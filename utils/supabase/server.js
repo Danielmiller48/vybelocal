@@ -1,41 +1,25 @@
-// utils/supabase/middleware.js
+// utils/supabase/server.js
+import { cookies }            from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import { NextResponse } from 'next/server'
 
 /**
- * Refresh the user’s session on every request and sync cookies
- * @param {import('next/server').NextRequest} request
+ * Create a Supabase client for the current request.
+ * Must be awaited wherever you call it.
  */
-export async function updateSession(request) {
-  // 1️⃣ set up a response we can mutate
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  })
+export async function supabase() {
+  // wait here – satisfies Next 15 “dynamic” rule
+  const jar = await cookies()
 
-  // 2️⃣ build a Supabase client wired to read + write cookies
-  const supabase = createServerClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
-        // read cookies coming *in* from the browser
-        getAll() {
-          return request.cookies.getAll()
-        },
-        // write refreshed cookies to both the incoming request
-        // (for server components) and the outgoing response
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value, options)    // for the server
-            response.cookies.set(name, value, options)   // for the browser
-          })
-        },
+        get   : (key)               => jar.get(key)?.value,
+        getAll: ()                  => jar.getAll(),
+        set   : (key, val, opts)    => jar.set({ name: key, value: val, ...opts }),
+        remove: (key, opts)         => jar.set({ name: key, value: '', ...opts }),
       },
-    },
+    }
   )
-
-  // 3️⃣ this call refreshes the JWT if it’s stale and triggers setAll()
-  await supabase.auth.getUser()
-
-  return response
 }

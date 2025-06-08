@@ -11,6 +11,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.0.1",
     "@next-auth/supabase-adapter": "^0.2.1",
+    "@sendgrid/mail": "^8.1.5",
     "@supabase/ssr": "^0.6.1",
     "@supabase/storage-js": "^2.7.3",
     "@supabase/supabase-js": "^2.50.0",
