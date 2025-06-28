@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { supabase as createSupabase } from "@/utils/supabase/server";
+import { createSupabaseServer} from "@/utils/supabase/server";
 import AdminSidebar from "@/components/AdminSidebar";   // ★ default import
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export default async function AdminLayout({ children }) {
   if (!session) redirect("/login");
 
   /* admin-flag check */
-  const sb = await createSupabase();
+  const sb = await createSupabaseServer();
   const { data: profile } = await sb
     .from("profiles")
     .select("is_admin")

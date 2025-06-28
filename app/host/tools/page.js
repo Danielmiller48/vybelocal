@@ -2,7 +2,7 @@
 import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { supabase as createSupabase } from '@/utils/supabase/server';
+import { createSupabaseServer} from '@/utils/supabase/server';
 import EventCard from '@/components/EventCard';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export default async function HostTools() {
   if (!session) redirect('/login?next=/host/tools');
 
   /* ---------- data ---------- */
-  const sb = await createSupabase();
+  const sb = await createSupabaseServer();
   const { data, error } = await sb
     .from('v_host_my_events')
     .select('*')

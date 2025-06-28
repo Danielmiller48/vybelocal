@@ -1,15 +1,9 @@
-import Image from "next/image";
+// app/page.js  – Home / Landing (Server Component, no client JS needed)
 
-export default function HomePage() {
+export default function Home() {
   return (
-    <div className="flex items-center justify-center h-screen bg-black">
-      <Image
-        src="/vybelogo.jpg"              // Make sure your file is at public/vybelogo.png
-        alt="VybeLocal Neon Logo"
-        width={400}                       // Adjust these to match your logo’s real size
-        height={200}
-        className="animate-pulse-beat drop-shadow-white-glow"
-      />
-    </div>
+    <section className="flex h-screen items-center justify-center">
+      <h1 className="text-3xl font-bold">VybeLocal</h1>
+    </section>
   );
 }

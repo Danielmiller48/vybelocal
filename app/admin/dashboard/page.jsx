@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useSearchParams }  from "next/navigation";
-import supabase             from "@/utils/supabase/browser";
+import { createSupabaseBrowser }             from "@/utils/supabase/client";
 import EventCard            from "@/components/EventCard";
 import AdminStatusTabs      from "@/components/AdminStatusTabs";
 import { decideEvent, deleteEvent, setEventStatus } from "./actions";
@@ -13,7 +13,7 @@ export default function EventQueue() {
   const statusFilter        = search.get("status") ?? "pending";
   const [events, setEvents] = useState(null);  // null = loading
   const [isMutating, start] = useTransition();
-
+  const supabase = createSupabaseBrowser()
   /* ─── fetch list whenever the filter changes ─── */
   useEffect(() => {
     setEvents(null);                         // loading indicator

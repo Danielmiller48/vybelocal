@@ -1,25 +1,35 @@
-// utils/supabase/server.js
-import { cookies }            from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
+/* utils/supabase/server.js
+   Server-side Supabase client (Next 15.3 async cookies)
+   -- ALWAYS uses Service-Role key when you set it
+*/
 
-/**
- * Create a Supabase client for the current request.
- * Must be awaited wherever you call it.
- */
-export async function supabase() {
-  // wait here – satisfies Next 15 “dynamic” rule
-  const jar = await cookies()
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+
+const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SR   = process.env.SUPABASE_SERVICE_ROLE_KEY;          // ← MUST exist in .env
+
+export async function createSupabaseServer() {
+  const jar = await cookies();                                // async in Next 15
+
+  if (!SR) {
+    console.warn(
+      '[Supabase] SUPABASE_SERVICE_ROLE_KEY is missing – falling back to anon key!'
+    );
+  }
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    URL,
+    SR || ANON,                                               // SR when present
     {
       cookies: {
-        get   : (key)               => jar.get(key)?.value,
-        getAll: ()                  => jar.getAll(),
-        set   : (key, val, opts)    => jar.set({ name: key, value: val, ...opts }),
-        remove: (key, opts)         => jar.set({ name: key, value: '', ...opts }),
+        get:    (n)       => jar.get(n)?.value,
+        getAll: async ()  => jar.getAll().map(c => ({ name: c.name, value: c.value })),
+        set:    (n, v, o) => jar.set({ name: n, value: v, ...o }),
+        setAll: async a   => a.forEach(c => jar.set(c)),
+        remove: (n, o)    => jar.delete({ name: n, ...o }),
       },
     }
-  )
+  );
 }

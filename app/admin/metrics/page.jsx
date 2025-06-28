@@ -1,7 +1,7 @@
 // app/admin/metrics/page.jsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { supabase as createSupabase } from "@/utils/supabase/server";
+import { createSupabaseServer} from "@/utils/supabase/server";
 import VibeTabs from "@/components/VibeTabs";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function MetricsPage(props) {
   const isAll = vibe === "all";
   /* --------------------------------------------------------- */
 
-  const sb = await createSupabase();
+  const sb = await createSupabaseServer();
 
   /* 1️⃣ 14-day daily actions */
   const dailyTable = isAll

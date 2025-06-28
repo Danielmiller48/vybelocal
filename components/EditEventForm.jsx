@@ -1,80 +1,80 @@
-// components/EditEventForm.jsx
-'use client';
+"use client";
 
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
-import { zodResolver } from '@hookform/resolvers/zod';
+/****************************************************************
+ * WHAT THIS SCRIPT DOES                                        *
+ * DayDrawer.jsx                                                *
+ * ------------------------------------------------------------ *
+ * Slide‑over drawer that appears when the user taps a day in   *
+ * VibeCalendar / MobileAgenda. Lists the day’s events using    *
+ * EventCard + inline RSVPButton. Closes on backdrop click or   *
+ * Escape key.                                                  *
+ ****************************************************************/
 
-const schema = z.object({
-  title:       z.string().min(3).max(60),
-  description: z.string().max(280).optional(),
-  starts_at:   z.string(),           // <input type="datetime-local">
-  vibe:        z.enum(['chill', 'creative', 'active', 'hype'])
-});
+import React, { useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import EventCard from "./EventCard";
+import { X } from "lucide-react";
 
-export default function EditEventForm({ event }) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting }
-  } = useForm({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      title:       event.title,
-      description: event.description ?? '',
-      starts_at:   event.starts_at.slice(0, 16), // ISO → yyyy-MM-ddTHH:mm
-      vibe:        event.vibe
+export default function DayDrawer({ open, date, events, onClose }) {
+  // Esc‑key handler
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.key === "Escape") onClose();
     }
-  });
+    if (open) window.addEventListener("keydown", handle);
+    return () => window.removeEventListener("keydown", handle);
+  }, [open, onClose]);
 
-  async function onSubmit(data) {
-    const fd = new FormData();
-    Object.entries(data).forEach(([k, v]) => fd.append(k, v));
-    await fetch(`/host/events/${event.id}/actions`, {
-      method: 'POST',
-      body: fd
-    });
-    // simple UX: reload path so RSC revalidates
-    location.reload();
-  }
-
+  // Render
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div>
-        <label className="block text-sm mb-1">Title</label>
-        <input {...register('title')} className="input" />
-        {errors.title && <p className="text-red-500 text-xs">{errors.title.message}</p>}
-      </div>
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            className="fixed inset-0 bg-black/50 z-40"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
 
-      <div>
-        <label className="block text-sm mb-1">Description</label>
-        <textarea {...register('description')} rows={3} className="input" />
-      </div>
+          {/* Drawer */}
+          <motion.aside
+            className="fixed right-0 top-0 h-full w-[90vw] max-w-sm bg-slate-900 z-50 shadow-xl overflow-y-auto"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 260, damping: 30 }}
+          >
+            {/* Header */}
+            <header className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-slate-100">
+                {date?.toLocaleDateString("en-US", {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </h2>
+              <button
+                onClick={onClose}
+                className="p-2 rounded hover:bg-slate-800 focus:outline-none"
+              >
+                <X className="h-5 w-5 text-slate-300" />
+              </button>
+            </header>
 
-      <div className="flex gap-4">
-        <div className="flex-1">
-          <label className="block text-sm mb-1">Starts</label>
-          <input type="datetime-local" {...register('starts_at')} className="input" />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Vibe</label>
-          <select {...register('vibe')} className="input">
-            <option value="chill">Chill</option>
-            <option value="creative">Creative</option>
-            <option value="active">Active</option>
-            <option value="hype">Hype</option>
-          </select>
-        </div>
-      </div>
-
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="btn-primary"
-      >
-        {isSubmitting ? 'Saving…' : 'Save changes'}
-      </button>
-    </form>
+            {/* Event list */}
+            <div className="p-4 space-y-4">
+              {events.length === 0 ? (
+                <p className="text-slate-400 text-sm">No Vybes on this day.</p>
+              ) : (
+                events.map((ev) => <EventCard key={ev.id} event={ev} inline />)
+              )}
+            </div>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

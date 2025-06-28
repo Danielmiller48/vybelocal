@@ -1,152 +1,278 @@
-'use client';
+"use client";
 
-import { useEffect, useRef }   from 'react';
-import { useForm }             from 'react-hook-form';
-import { zodResolver }         from '@hookform/resolvers/zod';
-import { z }                   from 'zod';
-import supabase                from '@/utils/supabase/browser';   // ✅ correct import
-import { useSession }          from 'next-auth/react';
-import { useRouter }           from 'next/navigation';
-import { v4 as uuid }          from 'uuid';
-import AddressInput            from '@/components/AddressInput';
+// ↑ add these 2 lines right at the top of the file
+export const runtime     = "nodejs";   // switch off the 1 MB Edge limit
+export const maxBodySize = 10 * 1024 * 1024; // 10 MB (adjust as you like)
 
-/* ───────── schema ───────── */
+import { createSupabaseBrowser } from "@/utils/supabase/client";
+import { useState, useTransition, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { v4 as uuid } from "uuid";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+
 const schema = z.object({
-  title:       z.string().min(3).max(60),
-  vibe:        z.enum(['chill','hype','creative','active']),
+  title: z.string().min(3, "Title too short").max(60),
+  vibe: z.enum(["chill", "hype", "creative", "active"]),
   description: z.string().max(280).optional(),
-  starts_at:   z.string(),
-  ends_at:     z.string().optional(),
-  address:     z.string().min(3),
-  image: z.custom(
-    (val) =>
-      val === undefined ||
-      (val instanceof FileList &&
-        (val.length === 0 || (val.length > 0 && val[0] instanceof File))),
-    { message: 'Must select an image file.' }
-  ).optional(),
+  starts_at: z.string(),
+  ends_at: z.string().optional(),
+  address: z.string().max(120).optional(),
+  image: z
+    .custom(
+      (val) => val === undefined || (val instanceof FileList && val.length === 1),
+      "Select exactly one image"
+    )
+    .optional(),
 });
-/* ────────────────────────── */
-
-/* helper uploads to private bucket & returns key */
-async function uploadImage(file) {
-  const ext      = file.name.split('.').pop();
-  const filePath = `${uuid()}/${uuid()}.${ext}`;
-
-  const { error } = await supabase
-    .storage
-    .from('event-images')
-    .upload(filePath, file);
-
-  if (error) throw error;
-  return filePath;
-}
 
 export default function HostNewForm() {
-  const { data: session, status } = useSession(); // NextAuth
-  const router  = useRouter();
-  const alerted = useRef(false);
+  const { data: session } = useSession();
+  const router = useRouter();
 
-  /* -------- bridge NextAuth → Supabase -------- */
-  useEffect(() => {
-    if (
-      status === 'authenticated' &&
-      session?.supabaseAccessToken &&
-      // avoid resetting if SB already has a user
-      !supabase.auth.getUser().data.user
-    ) {
-      supabase.auth.setSession({
-        access_token : session.supabaseAccessToken,
-        refresh_token: session.supabaseRefreshToken ?? null
-      }).catch(() => {}); // silent fail
-    }
-  }, [status, session]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [serverErr, setErr] = useState("");
+  const [submitting, startSubmit] = useTransition();
+  const [thumb, setThumb] = useState("");
 
-  /* -------- auth guard -------- */
-  useEffect(() => {
-    if (status === 'unauthenticated' && !alerted.current) {
-      alerted.current = true;
-      window.alert('Almost there — please sign in to host an event.');
-      router.replace('/login?next=/host/new');
-    }
-  }, [status, router]);
+  const prevStartRef = useRef(""); // for copy-over logic
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-  if (status !== 'authenticated') return null;
-
-  /* -------- form hooks -------- */
   const {
     register,
     handleSubmit,
+    watch,
     setValue,
-    formState: { errors, isSubmitting },
-  } = useForm({ resolver: zodResolver(schema) });
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: { vibe: "chill" },
+  });
 
-  /* -------- optional GPS autofill -------- */
-  async function autofillLocation() { /* unchanged, omitted for brevity */ }
+  /* ───────── live field watches ───────── */
+  const addr   = watch("address");
+  const fileLs = watch("image");
+  const start  = watch("starts_at");
+  const end    = watch("ends_at");
 
-  /* -------- submit handler -------- */
-  const onSubmit = async (form) => {
-    const { data: { user }, error: userErr } = await supabase.auth.getUser();
-    if (userErr || !user) { alert(userErr?.message || 'User not found'); return; }
-
-    let img_path = null;
-    if (form.image?.length) {
-      try { img_path = await uploadImage(form.image[0]); }
-      catch (err) { alert(`Upload failed: ${err.message}`); return; }
+  /* ─── thumbnail preview ─── */
+  useEffect(() => {
+    if (!fileLs?.length) {
+      setThumb("");
+      return;
     }
+    const url = URL.createObjectURL(fileLs[0]);
+    setThumb(url);
+    return () => URL.revokeObjectURL(url);
+  }, [fileLs]);
 
-    const { error } = await supabase.from('events').insert({
-      host_id   : user.id,
-      title     : form.title,
-      description: form.description,
-      vibe      : form.vibe,
-      address   : form.address,
-      starts_at : form.starts_at,
-      ends_at   : form.ends_at || null,
-      img_path,
-      status    : 'pending',
+  /* ─── copy start → end if end is blank OR followed prior start ─── */
+  useEffect(() => {
+    if (!start) return;
+    // copy only if end is empty OR matched the previous start
+    if (!end || end === prevStartRef.current) {
+      setValue("ends_at", start, { shouldValidate: false, shouldDirty: true });
+    }
+    prevStartRef.current = start;
+  }, [start]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ───────── Mapbox autocomplete ───────── */
+  useEffect(() => {
+    if (!addr?.trim() || !mapboxToken) return;
+    const ctl = new AbortController();
+
+    fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+        addr
+      )}.json?access_token=${mapboxToken}&autocomplete=true&limit=5`,
+      { signal: ctl.signal }
+    )
+      .then((r) => r.json())
+      .then((d) => setSuggestions(d.features ?? []))
+      .catch(() => {});
+
+    return () => ctl.abort();
+  }, [addr, mapboxToken]);
+
+  function useMyLocation() {
+    if (!navigator.geolocation || !mapboxToken) return;
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const r = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords.longitude},${coords.latitude}.json?access_token=${mapboxToken}&limit=1`
+        );
+        const d = await r.json();
+        const place = d.features?.[0]?.place_name;
+        if (place) setValue("address", place);
+      } catch {
+        /* ignore */
+      }
     });
+  }
 
-    if (error) { alert(`Insert failed: ${error.message}`); return; }
-    router.push('/host/tools?submitted=1');
-  };
+  /* ───────── image upload helper ───────── */
+  async function uploadImage(file) {
+  if (!file) return null;
+  const sb       = createSupabaseBrowser();       // ← direct client
+  const filename = `${uuid()}-${file.name}`;
 
-  /* -------- UI -------- */
+  const { error } = await sb.storage
+    .from("event-images")
+    .upload(filename, file, { upsert: false });
+
+  if (error) throw new Error(error.message);
+  return filename;                                // store in img_path
+}
+
+  /* ───────── submit ───────── */
+  function onSubmit(vals) {
+    setErr("");
+    startSubmit(async () => {
+      try {
+        const img_path = vals.image ? await uploadImage(vals.image[0]) : null;
+
+        const payload = {
+          host_id: session?.user?.id ?? null,
+          title: vals.title,
+          vibe: vals.vibe,
+          description: vals.description ?? null,
+          address: vals.address ?? null,
+          starts_at: vals.starts_at,
+          ends_at: vals.ends_at || null,
+          img_path,
+          status: "pending",
+        };
+
+        const res = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j?.message || "Submission failed");
+        }
+        router.replace("/host?created=1");
+      } catch (e) {
+        setErr(e.message);
+      }
+    });
+  }
+
+  /* ───────── UI ───────── */
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="mx-auto max-w-lg space-y-4 p-6">
-      <input {...register('title')} placeholder="Event title" className="input w-full" />
-
-      <select {...register('vibe')} className="select w-full">
-        <option value="">Pick a vibe</option>
-        <option value="chill">Chill</option>
-        <option value="hype">Hype</option>
-        <option value="creative">Creative</option>
-        <option value="active">Active</option>
-      </select>
-
-      <input type="datetime-local" {...register('starts_at')} className="input w-full" />
-
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      {/* Title */}
       <div>
-        <label className="text-sm font-medium block mb-1">Location</label>
-        <AddressInput
-          onChange={(val) => setValue('address', val, { shouldValidate: true })}
+        <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+          Event Title
+        </label>
+        <input id="title" {...register("title")} className="input w-full" />
+        {errors.title && <p className="err">{errors.title.message}</p>}
+      </div>
+
+      {/* Vibe */}
+      <div>
+        <label htmlFor="vibe" className="block text-sm font-medium text-gray-700">
+          Vibe
+        </label>
+        <select id="vibe" {...register("vibe")} className="select w-full">
+          <option value="chill">Chill</option>
+          <option value="hype">Hype</option>
+          <option value="creative">Creative</option>
+          <option value="active">Active</option>
+        </select>
+      </div>
+
+      {/* Description */}
+      <div>
+        <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+          Description
+        </label>
+        <textarea
+          id="description"
+          {...register("description")}
+          className="textarea w-full"
+          rows={3}
         />
-        <button type="button" onClick={autofillLocation} className="mt-2 text-sm text-blue-600 hover:underline">
-          Use my current location
+        {errors.description && <p className="err">{errors.description.message}</p>}
+      </div>
+
+      {/* Address */}
+      <div>
+        <label htmlFor="address" className="block text-sm font-medium text-gray-700">
+          Address
+        </label>
+        <input
+          id="address"
+          list="addr-suggestions"
+          {...register("address")}
+          className="input w-full"
+          autoComplete="off"
+        />
+        <datalist id="addr-suggestions">
+          {suggestions.map((f) => (
+            <option key={f.id} value={f.place_name} />
+          ))}
+        </datalist>
+        <button
+          type="button"
+          onClick={useMyLocation}
+          className="mt-1 text-indigo-600 text-sm hover:underline"
+        >
+          Use My Location
         </button>
       </div>
 
-      <textarea {...register('description')} placeholder="Description" className="textarea w-full" />
+      {/* Dates */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="starts_at" className="block text-sm font-medium text-gray-700">
+            Event Start
+          </label>
+          <input
+            id="starts_at"
+            type="datetime-local"
+            {...register("starts_at")}
+            className="input w-full"
+          />
+        </div>
+        <div>
+          <label htmlFor="ends_at" className="block text-sm font-medium text-gray-700">
+            Event End
+          </label>
+          <input
+            id="ends_at"
+            type="datetime-local"
+            {...register("ends_at")}
+            className="input w-full"
+          />
+        </div>
+      </div>
 
-      <input type="file" accept="image/*" {...register('image')} />
+      {/* Image */}
+      <div>
+        <label
+          htmlFor="image"
+          className="flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 transition"
+        >
+          <span>Click to select an image</span>
+          <input id="image" type="file" accept="image/*" {...register("image")} className="hidden" />
+          {thumb && (
+            <img src={thumb} alt="preview" className="h-24 w-auto rounded-md object-cover" />
+          )}
+        </label>
+        {errors.image && <p className="err">{errors.image.message}</p>}
+      </div>
 
-      <button disabled={isSubmitting} className="btn-primary w-full" type="submit">
-        {isSubmitting ? 'Submitting…' : 'Submit for Review'}
+      {serverErr && <p className="err">{serverErr}</p>}
+
+      <button type="submit" disabled={submitting} className="btn primary w-full">
+        {submitting ? "Submitting…" : "Create Event"}
       </button>
-
-      {Object.values(errors).map((e) => (
-        <p key={e.message} className="text-red-500 text-sm">{e.message}</p>
-      ))}
     </form>
   );
 }

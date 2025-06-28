@@ -1,10 +1,12 @@
-// app/api/debug/route.js   (delete later)
-import { supabase as createSupabase } from '@/utils/supabase/server'
+// app/api/debug/route.js  – delete after testing
+import { NextResponse } from 'next/server';
+import { createSupabaseServer } from '@/utils/supabase/server';
 
 export async function GET() {
-  const supabase = createSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
-  return new Response(JSON.stringify(user, null, 2), {
-    headers: { 'Content-Type': 'application/json' },
-  })
+  const sb = await createSupabaseServer();          // ← await!
+
+  // Make a trivial call that only succeeds with a valid key + cookies
+  const { data: user, error } = await sb.auth.getUser();
+
+  return NextResponse.json({ ok: !error, user });
 }

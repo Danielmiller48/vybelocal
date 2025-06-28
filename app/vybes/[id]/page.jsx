@@ -1,5 +1,5 @@
 /* ─── Public event detail ─── */
-import { supabase as createSupabase } from '@/utils/supabase/server';
+import { createSupabaseServer } from '@/utils/supabase/server';
 import { signedUrl }                  from '@/utils/signedUrl';
 import RSVPButton                     from '@/components/RSVPButton';
 
@@ -10,7 +10,7 @@ export default async function VybeDetail({ params }) {
   const { id } = await params;                // ← fix
 
   /* 1 ─ fetch the approved-only view */
-  const sb = await createSupabase();
+  const sb = await createSupabaseServer();
   const { data: ev, error } = await sb
     .from('public_events')                    // same view the grid uses
     .select('*')

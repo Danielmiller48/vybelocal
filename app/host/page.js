@@ -1,39 +1,68 @@
-// app/host/page.jsx
-import Link from 'next/link';
+import { redirect } from "next/navigation";
+import { createSupabaseServer } from "@/utils/supabase/server";
+import HostMetricsCards from "@/components/HostMetricsCards";
+import HostEventTable   from "@/components/HostEventTable";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-export default function HostLanding() {
-  return (
-    <main className="max-w-3xl mx-auto px-4 py-10 space-y-8">
-      <h1 className="text-3xl font-bold">Community Guidelines</h1>
+export default async function HostDashboard() {
+  const sb = await createSupabaseServer();
 
-      <Guidelines />
+  /* ── who’s logged in? ─────────────────────── */
+  const {
+    data: auth,
+    error: authErr,
+  } = await sb.auth.getUser();
 
-      <div className="flex gap-4">
-        <Link href="/host/tools" className="btn-primary">
-          Host Dashboard
-        </Link>
-        <Link href="/host/new" className="btn-secondary">
-          Host a Vybe
-        </Link>
-      </div>
-    </main>
+  // if the cookie’s missing or the token is bad → bounce to login
+  if (authErr || !auth?.user) redirect("/login?next=/host");
+
+  const user = auth.user;
+
+  /* ── pull events + RSVP counts ────────────── */
+  const { data: events, error } = await sb
+    .from("events")
+    .select("id, title, status, starts_at, ends_at, rsvps(count)")
+    .eq("host_id", user.id)
+    .order("starts_at", { ascending: false });
+
+  if (error) throw error;
+
+  /* ── flatten RSVP counts ──────────────────── */
+  const eventsWithCount = events.map((e) => ({
+    ...e,
+    rsvp_count: e.rsvps?.[0]?.count ?? 0,
+  }));
+
+  /* ── compute metrics ──────────────────────── */
+  const totalRsvps = eventsWithCount.reduce(
+    (sum, e) => sum + e.rsvp_count,
+    0
   );
-}
 
-/* --- stub; swap for real DNA text later --- */
-function Guidelines() {
+   /* gather today’s RSVPs (UTC) */
+  let rsvpsToday = 0;
+  const eventIds = eventsWithCount.map((e) => e.id).filter(Boolean);
+
+  if (eventIds.length) {
+    const { count: todayCount, error: todayErr } = await sb
+      .from("rsvps")
+      .select("*", { count: "exact", head: true })
+      .in("event_id", eventIds)
+      .gte("created_at", new Date().toISOString().slice(0, 10)); // midnight UTC
+
+    if (todayErr) throw todayErr;
+    rsvpsToday = todayCount ?? 0;
+  }
+
+  /* ── pass down to components ──────────────── */
   return (
-    <section className="prose prose-sm sm:prose">
-      <p>Welcome to VybeLocal! Before hosting an event, agree to these pillars:</p>
-      <ol>
-        <li>No ranking or popularity contests—every Vybe is equal.</li>
-        <li>Ensure accessibility for all guests.</li>
-        <li>Zero tolerance for harassment or hate speech.</li>
-        <li>Follow local laws & permits.</li>
-        <li>Respect privacy—share attendee data only for event ops.</li>
-      </ol>
-    </section>
+    <div className="space-y-8">
+      <h1 className="text-2xl font-bold">Host Dashboard</h1>
+
+      <HostMetricsCards totals={{ total: totalRsvps, today: rsvpsToday }} />
+
+      <HostEventTable events={eventsWithCount} />
+    </div>
   );
 }

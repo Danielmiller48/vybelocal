@@ -1,37 +1,44 @@
-// app/host/events/[id]/page.jsx
-import { redirect } from 'next/navigation';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { supabase as createSupabase } from '@/utils/supabase/server';
+import HostEditForm from "@/components/HostEditForm";
+import Link from "next/link";
+import { createSupabaseServer } from "@/utils/supabase/server";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-export default async function HostEventPage({ params: { id } }) {
-  /* ---------- auth gate ---------- */
-  const session = await getServerSession(authOptions);
-  if (!session) redirect(`/login?next=/host/events/${id}`);
+export default async function HostEventEditPage({ params }) {
+  const sb = await createSupabaseServer();
 
-  /* ---------- fetch event ---------- */
-  const sb = await createSupabase();
-  const { data: evt, error } = await sb
-    .from('events')
-    .select('*')
-    .eq('id', id)
-    .eq('host_id', session.user.id)   // safety: must own the event
-    .maybeSingle();
+  /* 0 ─ session */
+  const {
+    data: { session },
+  } = await sb.auth.getSession();
+  if (!session) {
+    return <div className="p-8 text-red-600">Not authenticated</div>;
+  }
 
-  if (error) throw error;
-  if (!evt) redirect('/host/tools');   // not yours or not found
+  /* 1 ─ fetch event */
+  const { data: event, error } = await sb
+    .from("events")
+    .select("*")
+    .eq("id", params.id)
+    .single();
+
+  if (error || !event) {
+    return <div className="p-8 text-red-600">Event not found</div>;
+  }
+
+  if (event.host_id !== session.user.id) {
+    return <div className="p-8 text-red-600">Not your event</div>;
+  }
 
   return (
-    <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <h1 className="text-2xl font-bold">{evt.title}</h1>
-      <p>Status: {evt.status}</p>
+    <div className="space-y-6">
+      <Link href="/host" className="text-indigo-600 hover:underline">
+        ← Back to dashboard
+      </Link>
 
-      {/* placeholder — drop EditEventForm & roster later */}
-      <p className="text-muted">
-        Edit form and RSVP roster coming in the next step.
-      </p>
-    </main>
+      <h1 className="text-2xl font-bold">Edit Event</h1>
+
+      <HostEditForm event={event} />
+    </div>
   );
 }
