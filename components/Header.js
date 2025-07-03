@@ -1,79 +1,119 @@
 // ── components/Header.js ──
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import Link                     from 'next/link'
-import { useSession, signOut }  from 'next-auth/react'
-import { useSupabase }          from '@/app/ClientProviders'   // ⬅️ new
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
+import { useSupabase } from '@/app/ClientProviders';
+import AvatarFallback from '@/components/AvatarFallback';
+
+const Placeholder = () => (
+  <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-semibold text-white select-none">
+    ?
+  </div>
+);
 
 export default function Header() {
-  const { data: session, status } = useSession()
-  const { supabase } = useSupabase()           // shared browser client
-  const [isAdmin, setIsAdmin] = useState(false)
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  const { supabase } = useSupabase();
 
-  /* ─ fetch once per mount if logged in ─ */
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
+
+  /* ───────── fetch profile & signed URL ───────── */
   useEffect(() => {
-    let ignore = false
-    async function fetchRole() {
-      if (!session?.user) return
+    let ignore = false;
+
+    async function load() {
+      if (!session?.user) return;
+
       const { data: profile } = await supabase
         .from('profiles')
-        .select('is_admin')
+        .select('is_admin, avatar_url')
         .eq('id', session.user.id)
-        .single()
-      if (!ignore) setIsAdmin(!!profile?.is_admin)
-    }
-    fetchRole()
-    return () => { ignore = true }
-  }, [session, supabase])
+        .single();
 
-  const isLoading   = status === 'loading'
-  const isLoggedIn  = !!session
-  const displayName = session?.user?.name || session?.user?.email
+      if (!profile || ignore) return;
+      setIsAdmin(!!profile.is_admin);
+
+      if (profile.avatar_url) {
+        // If avatar_url already contains https, it's a signed/public URL
+        if (profile.avatar_url.startsWith('http')) {
+          setAvatarUrl(profile.avatar_url);
+        } else {
+          // Otherwise treat as storage path and sign on the fly
+          const { data: signed } = await supabase.storage
+            .from('profile-images')
+            .createSignedUrl(profile.avatar_url, 60 * 60);
+          if (!ignore) setAvatarUrl(signed?.signedUrl || null);
+        }
+      } else {
+        setAvatarUrl(null);
+      }
+    }
+
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [session, supabase]);
+
+  const doSignOut = () => signOut({ callbackUrl: '/' });
 
   return (
-    <header className="bg-white shadow-md">
-      <nav className="max-w-4xl mx-auto flex items-center px-4 py-3">
-        {/* Logo */}
-        <Link href="/" className="text-2xl font-bold text-indigo-600">
+    <header className="bg-white shadow-sm sticky top-0 z-20">
+      <nav className="max-w-5xl mx-auto flex items-center px-4 h-12">
+        <Link href="/" className="text-xl sm:text-2xl font-bold text-violet-700">
           VybeLocal
         </Link>
 
-        {/* Right-side nav */}
-        <div className="ml-auto flex items-center space-x-6">
-          <Link href="/vybes" className="text-gray-700 hover:text-indigo-600">
-            Find a Vybe
+        <div className="ml-auto flex items-center gap-5 text-sm">
+          <Link href="/user" className="hover:text-violet-600">
+            Dashboard
           </Link>
-          <Link href="/host" className="text-gray-700 hover:text-indigo-600">
+          <Link href="/host" className="hover:text-violet-600">
             Host a Vybe
           </Link>
-
-          {/* Admin link — only for mods */}
           {isAdmin && (
-            <Link href="/admin/dashboard" className="text-gray-700 hover:text-indigo-600">
+            <Link href="/admin/dashboard" className="hover:text-violet-600">
               Admin
             </Link>
           )}
 
-          {/* Auth area */}
-          {isLoading ? null : isLoggedIn ? (
+          {/* avatar */}
+          {status === 'loading' ? (
+     <Placeholder />          /* renders on the server too */
+   ) : session?.user ? (
             <>
-              <span className="text-gray-700">
-                Welcome back{displayName ? `, ${displayName}!` : '!'}
-              </span>
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
-                className="text-gray-700 hover:text-indigo-600"
+                onClick={() => router.push('/user/profile')}
+                title="Edit profile"
+              >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="avatar"
+                    className="w-8 h-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <Placeholder />
+                )}
+              </button>
+              <button
+                onClick={doSignOut}
+                className="hover:underline hidden sm:inline"
               >
                 Sign Out
               </button>
             </>
           ) : (
             <>
-              <Link href="/login" className="text-gray-700 hover:text-indigo-600">
+              <Link href="/login" className="hover:text-violet-600">
                 Log In
               </Link>
-              <Link href="/register" className="text-gray-700 hover:text-indigo-600">
+              <Link href="/register" className="hover:text-violet-600">
                 Register
               </Link>
             </>
@@ -81,5 +121,5 @@ export default function Header() {
         </div>
       </nav>
     </header>
-  )
+  );
 }
