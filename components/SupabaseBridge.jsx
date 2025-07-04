@@ -1,25 +1,40 @@
-// components/SupabaseBridge.jsx
 'use client';
 
+/**
+ * Supabase ↔ Next-Auth bridge
+ * • Runs once after the user logs in
+ * • Copies Next-Auth JWT tokens into supabase.auth cookies
+ */
+
 import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useSupabase } from '@/app/ClientProviders';
+import { createSupabaseBrowser } from '@/utils/supabase/client';
 
 export default function SupabaseBridge() {
-  const { status, data: session } = useSession();
-  const supabase = useSupabase();
+  const { data: session, status } = useSession();
+  const router   = useRouter();
+  const supabase = createSupabaseBrowser();        // ✅ browser helper, no await
 
   useEffect(() => {
-    console.log('Bridge status:', status);                 // ← add
-    if (status !== 'authenticated') return;
+    if (status !== 'authenticated') return;        // user not logged in yet
 
-    console.log('Bridge got session:', session);           // ← add
-    const { access_token, refresh_token } = session.supabase || {};
-    if (access_token && refresh_token) {
-      supabase.auth.setSession({ access_token, refresh_token })
-        .then(() => console.log('Supabase session set ✔︎')); // ← add
-    }
-  }, [status, session, supabase]);
+    const { access_token, refresh_token } = session?.supabase ?? {};
+    if (!access_token || !refresh_token) return;   // nothing to copy
 
-  return null;
+    (async () => {
+      // Skip if already bridged
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) return;
+
+      const { error } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
+      });
+      if (error) console.error('SupabaseBridge error', error);
+      else router.refresh();                       // forces middleware re-run
+    })();
+  }, [status, session, supabase, router]);
+
+  return null;                                     // no UI
 }

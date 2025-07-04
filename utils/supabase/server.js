@@ -1,41 +1,35 @@
-// utils/supabase/middleware.js
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse } from 'next/server'
+/* utils/supabase/server.js
+   Server-side Supabase client (Next 15.3 async cookies)
+   -- ALWAYS uses Service-Role key when you set it
+*/
 
-/**
- * Refresh the user’s session on every request and sync cookies
- * @param {import('next/server').NextRequest} request
- */
-export async function updateSession(request) {
-  // 1️⃣ set up a response we can mutate
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  })
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
 
-  // 2️⃣ build a Supabase client wired to read + write cookies
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+const URL  = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SR   = process.env.SUPABASE_SERVICE_ROLE_KEY;          // ← MUST exist in .env
+
+export async function createSupabaseServer() {
+  const jar = await cookies();                                // async in Next 15
+
+  if (!SR) {
+    console.warn(
+      '[Supabase] SUPABASE_SERVICE_ROLE_KEY is missing – falling back to anon key!'
+    );
+  }
+
+  return createServerClient(
+    URL,
+    SR || ANON,                                               // SR when present
     {
       cookies: {
-        // read cookies coming *in* from the browser
-        getAll() {
-          return request.cookies.getAll()
-        },
-        // write refreshed cookies to both the incoming request
-        // (for server components) and the outgoing response
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value, options)    // for the server
-            response.cookies.set(name, value, options)   // for the browser
-          })
-        },
+        get:    (n)       => jar.get(n)?.value,
+        getAll: async ()  => jar.getAll().map(c => ({ name: c.name, value: c.value })),
+        set:    (n, v, o) => jar.set({ name: n, value: v, ...o }),
+        setAll: async a   => a.forEach(c => jar.set(c)),
+        remove: (n, o)    => jar.delete({ name: n, ...o }),
       },
-    },
-  )
-
-  // 3️⃣ this call refreshes the JWT if it’s stale and triggers setAll()
-  await supabase.auth.getUser()
-
-  return response
+    }
+  );
 }

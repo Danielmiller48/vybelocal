@@ -2,34 +2,25 @@
 'use client'
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { SessionProvider as NextAuthSessionProvider, useSession } from 'next-auth/react'
+import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react'
+import { createSupabaseBrowser } from '@/utils/supabase/client'
 
-import { supabase as supabaseBrowser } from '@/lib/supabaseClient'   // ← the helper we made
-import Providers                 from './providers'
-
-/* ---------- Supabase React context ---------- */
-const SupabaseCtx = createContext({ supabase: supabaseBrowser, session: null })
+/* ── Supabase React context ── */
+const SupabaseCtx = createContext({ supabase: null, session: null })
 export const useSupabase = () => useContext(SupabaseCtx)
 
-/* ---------- Debug helper (keep / drop as you like) ---------- */
-function DebugTap({ label }) {
-  const { data, status } = useSession()
-  console.log(label, data, status)
-  return null
-}
-
-/* ---------- Main wrapper ---------- */
+/* ── Main wrapper ── */
 export default function ClientProviders({ children, session: nextAuthSession }) {
-  // One Supabase client per tab — memoised
-  const supabase = useMemo(() => supabaseBrowser, [])
+  /* one browser client per tab */
+  const supabase = useMemo(() => createSupabaseBrowser(), [])
 
   const [sbSession, setSbSession] = useState(null)
 
-  /* 🔄 keep Supabase session in sync */
+  /* keep Supabase session in sync */
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSbSession(data.session))
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, sess) => setSbSession(sess)
+      (_evt, sess) => setSbSession(sess)
     )
     return () => subscription.unsubscribe()
   }, [supabase])
@@ -37,9 +28,7 @@ export default function ClientProviders({ children, session: nextAuthSession }) 
   return (
     <NextAuthSessionProvider session={nextAuthSession}>
       <SupabaseCtx.Provider value={{ supabase, session: sbSession }}>
-                  {/* now uses useSupabase() inside */}
-        <DebugTap label="inside provider" /> {/* remove if noisy */}
-        <Providers session={nextAuthSession}>{children}</Providers>
+        {children}
       </SupabaseCtx.Provider>
     </NextAuthSessionProvider>
   )
