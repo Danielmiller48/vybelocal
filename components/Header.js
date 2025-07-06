@@ -70,16 +70,20 @@ export default function Header() {
         </Link>
 
         <div className="ml-auto flex items-center gap-5 text-sm">
-          <Link href="/user" className="hover:text-violet-600">
-            Dashboard
-          </Link>
-          <Link href="/host" className="hover:text-violet-600">
-            Host a Vybe
-          </Link>
-          {isAdmin && (
-            <Link href="/admin/dashboard" className="hover:text-violet-600">
-              Admin
-            </Link>
+          {session?.user && (
+            <>
+              <Link href="/user" className="hover:text-violet-600">
+                Dashboard
+              </Link>
+              <Link href="/host" className="hover:text-violet-600">
+                Host a Vybe
+              </Link>
+              {isAdmin && (
+                <Link href="/admin/dashboard" className="hover:text-violet-600">
+                  Admin
+                </Link>
+              )}
+            </>
           )}
 
           {/* avatar */}

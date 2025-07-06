@@ -1,3 +1,5 @@
+//register/page.jsx//
+// Updated RegisterPage with phone-duplicate error handling + banner-reset
 'use client';
 
 import { useState } from 'react';
@@ -13,15 +15,16 @@ const formatPhone = (v) => {
 };
 
 export default function RegisterPage() {
-  const router  = useRouter();
-  const [step, setStep] = useState('form')
+  const router = useRouter();
+  const [step, setStep] = useState('form');
 
   /*  form fields  */
-  const [Name,     setName] = useState('');
-  const [email,    setEmail]    = useState('');
-  const [phone,    setPhone]    = useState('');
-  const [password, setPassword] = useState('');
-  const [code,     setCode]     = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
+  const [email,     setEmail]     = useState('');
+  const [phone,     setPhone]     = useState('');
+  const [password,  setPassword]  = useState('');
+  const [code,      setCode]      = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
@@ -30,55 +33,63 @@ export default function RegisterPage() {
   const validEmail  = /^\S+@\S+\.\S+$/.test(email);
   const validPhone  = /^\d{3}-\d{3}-\d{4}$/.test(phone);
   const validPwd    = password.length >= 8;
+  const namesFilled = firstName.trim() && lastName.trim();
+
+  /* Helper to get combined full name */
+  const fullName = `${firstName.trim()} ${lastName.trim()}`.replace(/\s+/g, ' ');
 
   /* ---------- 1 · send SMS ---------- */
   async function handleStart(e) {
     e.preventDefault();
-    if (!validEmail || !validPhone || !validPwd || !Name.trim()) {
+    if (!validEmail || !validPhone || !validPwd || !namesFilled) {
       setError('Please fix the highlighted fields.');
       return;
     }
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try {
       await axios.post('/api/register/signup', {
-        name: Name,
+        name: fullName,
         email,
         phone: `+1${phone.replace(/\D/g, '')}`,   // E.164 for Twilio
         password,
       });
-      setStep('code');
+      setError('');            // ✱ CLEAR ANY OLD BANNER
+      setLoading(false);       // re-enable button / spinner
+      setStep('code');         // advance UI
     } catch (err) {
-      setError(err.response?.data ?? 'Signup error, try again.');
+      // show EXACTLY what the API returned when it’s a string
+      const apiMsg = err.response?.data;
+      setError(typeof apiMsg === 'string'
+        ? apiMsg                     // “email/phone already in use”
+        : 'Signup error, try again.'); // fallback
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   /* ---------- 2 · submit code ---------- */
   async function handleVerify(e) {
     e.preventDefault();
     if (code.length !== 6) { setError('Enter the 6-digit code.'); return; }
-    setLoading(true); setError('');
+    setLoading(true);
+    setError('');
     try {
       await axios.post('/api/register/verify', {
-        name: Name,
+        name: fullName,
         email,
         phone: `+1${phone.replace(/\D/g, '')}`,
         password,
         code,
       });
+      setError('');            // ✱ CLEAR BANNER
+      setLoading(false);
       // success → straight to login page
       router.push('/login?new=1');
     } catch (err) {
-      const data = err.response?.data;
-  const msg =
-    typeof data === 'string'
-      ? data
-      : data?.error?.message      // Supabase style
-        || data?.error            // our own { error: '...' }
-        || 'Something went wrong';
-  setError(msg);
+      const apiMsg = err.response?.data;
+      setError(typeof apiMsg === 'string' ? apiMsg : 'Signup error, try again.');
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   /* ---------- UI ---------- */
@@ -89,14 +100,25 @@ export default function RegisterPage() {
           <form onSubmit={handleStart} className="space-y-4">
             <h1 className="text-2xl font-bold text-center">Create account</h1>
 
-            <input
-              placeholder="Full name"
-              value={Name}
-              onChange={(e)=>setName(e.target.value)}
-              className={`w-full border rounded px-3 py-2 ${
-                !Name.trim() && error ? 'border-red-500' : 'border-gray-300'
-              }`}
-            />
+            {/* First & Last name fields */}
+            <div className="flex gap-2">
+              <input
+                placeholder="First name"
+                value={firstName}
+                onChange={(e)=>setFirstName(e.target.value)}
+                className={`w-1/2 border rounded px-3 py-2 ${
+                  !firstName.trim() && error ? 'border-red-500' : 'border-gray-300'
+                }`}
+              />
+              <input
+                placeholder="Last name"
+                value={lastName}
+                onChange={(e)=>setLastName(e.target.value)}
+                className={`w-1/2 border rounded px-3 py-2 ${
+                  !lastName.trim() && error ? 'border-red-500' : 'border-gray-300'
+                }`}
+              />
+            </div>
 
             <input
               type="email"
