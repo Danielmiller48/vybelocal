@@ -54,9 +54,25 @@ export async function setEventStatus(id, status = "pending") {
   revalidatePath("/admin/dashboard");
   revalidatePath("/vybes");
 }
+export async function listEvents(status = "pending") {
+  const table = status === "history" ? "v_past_events" : "events";
 
+  let query = sbAdmin.from(table).select("*");
+  if (status !== "history") query = query.eq("status", status);
+
+  query = query.order(
+    status === "history" ? "fallback_end" : "created_at",
+    { ascending: false }
+  );
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
 /* ───────── hard-delete row + image ───────── */
 export async function deleteEvent(id) {
+ /* ───────── list events for dashboard ───────── */
+
   /* grab image key before row disappears */
   const { data: ev } = await sbAdmin
     .from("events")
