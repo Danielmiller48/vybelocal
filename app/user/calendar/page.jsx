@@ -19,34 +19,33 @@ export default async function UserCalendarPage() {
 
   if (!user) redirect("/login");
 
+  // Fetch all approved events
+  const { data: allEvents } = await sb
+    .from("events")
+    .select("*")
+    .gte("starts_at", new Date().toISOString())
+    .eq("status", "approved")
+    .order("starts_at", { ascending: true });
+
+  // Fetch user's RSVPs to mark which events they've RSVP'd to
   const { data: rsvpRows } = await sb
     .from("rsvps")
     .select("event_id")
     .eq("user_id", user.id);
 
-  const eventIds = (rsvpRows ?? []).map((r) => r.event_id);
+  const rsvpEventIds = new Set((rsvpRows ?? []).map((r) => r.event_id));
 
-  let events = [];
-  if (eventIds.length) {
-    const { data } = await sb
-      .from("events")
-      .select("*")
-      .in("id", eventIds)
-      .gte("starts_at", new Date().toISOString())
-      .eq("status", "approved")
-      .order("starts_at", { ascending: true });
-
-    events = (data ?? []).map((ev) => ({
-      ...ev,
-      start: toZonedTime(new Date(ev.starts_at), TZ),
-      end: toZonedTime(new Date(ev.ends_at), TZ),
-      rsvpd: true,
-    }));
-  }
+  // Combine the data, marking which events the user has RSVP'd to
+  const events = (allEvents ?? []).map((ev) => ({
+    ...ev,
+    start: toZonedTime(new Date(ev.starts_at), TZ),
+    end: toZonedTime(new Date(ev.ends_at), TZ),
+    rsvpd: rsvpEventIds.has(ev.id),
+  }));
 
   return (
     <div className="p-4">
-      <VibeCalendar role="user" events={events} initialFilter="mine" />
+      <VibeCalendar role="user" events={events} initialFilter="all" />
     </div>
   );
 }

@@ -44,6 +44,19 @@ function useIsMobile() {
   return mobile;
 }
 
+/* ---------- Helper: group events by day ------------------- */
+function groupEventsByDay(events) {
+  const grouped = {};
+  events.forEach(event => {
+    const dayKey = format(event.start, 'yyyy-MM-dd');
+    if (!grouped[dayKey]) {
+      grouped[dayKey] = [];
+    }
+    grouped[dayKey].push(event);
+  });
+  return grouped;
+}
+
 /* ---------- Component -------------------------------------- */
 export default function VibeCalendar({ events, role = "user" }) {
   /* ----- Normalise event dates once ------------------------ */
@@ -59,7 +72,7 @@ export default function VibeCalendar({ events, role = "user" }) {
 
   /* ----- Filtering state ----------------------------------- */
   const [vibe, setVibe] = useState("all");
-  const [status, setStatus] = useState(role === "host" ? "approved" : "mine");
+  const [status, setStatus] = useState(role === "host" ? "approved" : "all");
   const isMobile = useIsMobile();
 
   const filteredEvents = useMemo(() => {
@@ -67,7 +80,7 @@ export default function VibeCalendar({ events, role = "user" }) {
       /* status/vibe logic */
       if (vibe !== "all" && ev.vibe !== vibe) return false;
       if (role === "user") {
-        // already RSVP-filtered upstream
+        // Show all events for users, filtering by vibe only
         return true;
       }
       if (role === "host") {
@@ -78,6 +91,53 @@ export default function VibeCalendar({ events, role = "user" }) {
       return true;
     });
   }, [localEvents, vibe, status, role]);
+
+  /* ----- Group events by day for display logic ------------- */
+  const eventsByDay = useMemo(() => groupEventsByDay(filteredEvents), [filteredEvents]);
+
+  /* ----- Filter events for calendar display ---------------- */
+  const calendarEvents = useMemo(() => {
+    const processedEvents = [];
+    const processedDays = new Set();
+
+    filteredEvents.forEach(event => {
+      const dayKey = format(event.start, 'yyyy-MM-dd');
+      const dayEvents = eventsByDay[dayKey] || [];
+      
+      if (dayEvents.length > 3) {
+        // If this day has more than 3 events and we haven't processed it yet
+        if (!processedDays.has(dayKey)) {
+          processedDays.add(dayKey);
+          // Create a placeholder event for the "4+ events" display
+          processedEvents.push({
+            ...event,
+            title: `${dayEvents.length}+ events`,
+            isPlaceholder: true,
+          });
+        }
+      } else {
+        // Show individual events for days with 3 or fewer events
+        processedEvents.push(event);
+      }
+    });
+
+    return processedEvents;
+  }, [filteredEvents, eventsByDay]);
+
+  /* ----- Custom event component for calendar ---------------- */
+  const CustomEvent = ({ event }) => {
+    if (event.isPlaceholder) {
+      // Show "4+ events" message
+      return (
+        <div className="flex items-center justify-center rounded-md px-1.5 py-0.5 text-xs font-medium truncate bg-slate-700 text-slate-300 ring-2 ring-slate-600">
+          {event.title}
+        </div>
+      );
+    } else {
+      // Show individual event
+      return <VibeEvent event={event} />;
+    }
+  };
 
   /* ----- Drawer state -------------------------------------- */
   const [drawer, setDrawer] = useState({ open: false, date: null, dayEvents: [] });
@@ -119,8 +179,8 @@ export default function VibeCalendar({ events, role = "user" }) {
         <div className="mt-4 h-[70vh] md:h-[80vh] w-full">
           <Calendar
             localizer={localizer}
-            events={filteredEvents}
-            components={{ event: VibeEvent }}
+            events={calendarEvents}
+            components={{ event: CustomEvent }}
             eventPropGetter={() => ({ className: "text-xs font-medium" })}
             selectable
             onSelectSlot={(slot) => openDrawer(slot.start)}
