@@ -16,7 +16,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import EventCard from "./EventCard";
+import EventCard from "@/components/event/EventCard";
 
 const TZ = "America/Denver";
 

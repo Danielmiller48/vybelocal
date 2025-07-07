@@ -1,11 +1,7 @@
-// app/api/rsvps/route.js — fully patched
+// app/api/rsvps/route.js (amended with block guards)
 import { NextResponse } from 'next/server';
 import { createSupabaseServer } from '@/utils/supabase/server';
 
-/**
- * GET /api/rsvps?eventId=…
- * Returns the RSVP count for a single event.
- */
 export async function GET(request) {
   const url      = new URL(request.url);
   const eventId  = url.searchParams.get('eventId');
@@ -33,11 +29,6 @@ export async function GET(request) {
   return NextResponse.json({ count });
 }
 
-/**
- * POST /api/rsvps
- * Body: { event_id }
- * Creates an RSVP row for the authenticated user.
- */
 export async function POST(request) {
   const supabase = await createSupabaseServer();
   const {
@@ -53,7 +44,27 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Missing event_id' }, { status: 400 });
   }
 
-  // 1) Prevent duplicate RSVP
+  // Check if the event host or the user has blocked each other
+  // 1. Get the event host
+  const { data: event, error: eventError } = await supabase
+    .from('events')
+    .select('host_id')
+    .eq('id', event_id)
+    .maybeSingle();
+  if (eventError || !event) {
+    return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+  }
+  const hostId = event.host_id;
+  // 2. Check for blocks in either direction
+  const { data: blocks } = await supabase
+    .from('blocks')
+    .select('id')
+    .or(`(blocker_id.eq.${hostId},target_id.eq.${session.user.id}), (blocker_id.eq.${session.user.id},target_id.eq.${hostId})`);
+  if (blocks && blocks.length > 0) {
+    return NextResponse.json({ error: 'You cannot RSVP to this event due to a block.' }, { status: 403 });
+  }
+
+  // 1️⃣ Prevent duplicate RSVP
   const { data: existing, error: existingError } = await supabase
     .from('rsvps')
     .select('id')
@@ -62,13 +73,19 @@ export async function POST(request) {
     .maybeSingle();
 
   if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: existingError.message },
+      { status: 500 }
+    );
   }
   if (existing) {
-    return NextResponse.json({ error: 'Already RSVPed' }, { status: 409 });
+    return NextResponse.json(
+      { error: 'Already RSVPed' },
+      { status: 409 }
+    );
   }
 
-  // 2) Insert
+  // 5️⃣ Insert RSVP
   const { data: inserted, error } = await supabase
     .from('rsvps')
     .insert({ event_id, user_id: session.user.id })
@@ -76,10 +93,14 @@ export async function POST(request) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('RSVP insert error:', error);
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
   }
 
-  // 3) Metric
+  // 6️⃣ Metric
   supabase
     .from('metrics')
     .insert({ action: 'rsvp_added', user_id: session.user.id, event_id })

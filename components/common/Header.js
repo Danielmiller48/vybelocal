@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useSupabase } from '@/app/ClientProviders';
-import AvatarFallback from '@/components/AvatarFallback';
+import AvatarFallback from '@/components/common/AvatarFallback';
 
 const Placeholder = () => (
   <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-semibold text-white select-none">

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import HostNewForm from "@/components/HostNewForm";
+import HostNewForm from "@/components/host/HostNewForm";
 
-// NOTE: `dynamic` is a **string directive** for Next 15—not a function.
-// You don’t need `async` here unless this component is doing server work.
+// NOTE: `dynamic` is a **string directive** for Next 15—not a function.
+// You don't need `async` here unless this component is doing server work.
 export const dynamic = "force-dynamic";
 
 export default function HostNewPage() {

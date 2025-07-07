@@ -8,6 +8,7 @@ import { useRouter }           from "next/navigation";
 import { useSession }          from "next-auth/react";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
 import toast from 'react-hot-toast';
+import ProfileModal from '@/components/event/ProfileModal';
 
 const supabase = createSupabaseBrowser();
 
@@ -31,6 +32,28 @@ function useImage({ img, img_path }) {
   return url || "/placeholder.jpg";
 }
 
+function useAvatarUrl(avatarPath) {
+  const [url, setUrl] = useState('/avatar-placeholder.png');
+  useEffect(() => {
+    if (!avatarPath || typeof avatarPath !== 'string' || avatarPath.trim() === '' || avatarPath === '/avatar-placeholder.png') {
+      setUrl('/avatar-placeholder.png');
+      return;
+    }
+    if (avatarPath.startsWith('http')) {
+      setUrl(avatarPath);
+      return;
+    }
+    supabase.storage
+      .from('profile-images')
+      .createSignedUrl(avatarPath, 3600)
+      .then(({ data }) => {
+        if (data?.signedUrl) setUrl(data.signedUrl);
+        else setUrl('/avatar-placeholder.png');
+      });
+  }, [avatarPath]);
+  return url;
+}
+
 /* ───────── component ───────── */
 export default function EventCard({
   event,
@@ -48,6 +71,8 @@ export default function EventCard({
   const [bridged, setBridged] = useState(false);
   const [joined,  setJoined]  = useState(false);
   const [busy,    setBusy]    = useState(false);
+  const [hostProfile, setHostProfile] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const isAdmin  = !!(onApprove || onDeny || onPending || onDelete);
   const imageSrc = useImage({ img, img_path: event.img_path });
@@ -131,12 +156,36 @@ export default function EventCard({
   }
 }
 
+  /* Fetch host profile */
+  useEffect(() => {
+    async function fetchHostProfile() {
+      if (!event.host_id) return;
+      const { data } = await supabase
+        .from('public_user_cards')
+        .select('*')
+        .eq('uuid', event.host_id)
+        .single();
+      setHostProfile(data);
+    }
+    fetchHostProfile();
+  }, [event.host_id]);
+
+  const hostAvatarUrl = useAvatarUrl(hostProfile?.avatar_url);
+
   /* ───────── render ───────── */
   const Wrapper = noLink ? "div" : Link;
+
+  const handleCardClick = (e) => {
+    if (modalOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
 
   return (
     <Wrapper
       {...(!noLink && { href })}
+      onClick={handleCardClick}
       className={
         "rounded-xl overflow-hidden shadow-md flex flex-col bg-white " +
         (noLink ? "" : "hover:shadow-lg transition-shadow")
@@ -158,6 +207,27 @@ export default function EventCard({
         <p className="text-sm text-gray-600 line-clamp-2 grow">
           {event.description}
         </p>
+
+        {/* Hosted by section */}
+        {hostProfile && (
+          <div
+            className="flex items-center gap-3 mt-3 cursor-pointer hover:bg-gray-100 rounded p-2"
+            onClick={e => { e.stopPropagation(); e.preventDefault(); setModalOpen(true); }}
+          >
+            <img
+              src={hostAvatarUrl}
+              alt={hostProfile.name}
+              className="w-8 h-8 rounded-full object-cover"
+            />
+            <div>
+              <div className="font-medium text-sm">{hostProfile.name}</div>
+              {hostProfile.pronouns && (
+                <div className="text-xs text-gray-500">{hostProfile.pronouns}</div>
+              )}
+            </div>
+            <span className="ml-auto text-xs text-gray-400">Host</span>
+          </div>
+        )}
 
         {/* Public RSVP toggle */}
         {!isAdmin && (
@@ -219,6 +289,17 @@ export default function EventCard({
           </button>
         )}
       </div>
+
+      {/* Profile Modal for host */}
+      {hostProfile && (
+        <ProfileModal
+          profile={hostProfile}
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          // Placeholder for report action
+          onReport={() => alert('Report feature coming soon!')}
+        />
+      )}
     </Wrapper>
   );
 }

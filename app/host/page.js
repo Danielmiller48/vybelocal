@@ -1,20 +1,20 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServer } from "@/utils/supabase/server";
-import HostMetricsCards from "@/components/HostMetricsCards";
-import HostEventTable   from "@/components/HostEventTable";
+import HostMetricsCards from "@/components/host/HostMetricsCards";
+import HostEventTable from "@/components/host/HostEventTable";
 
 export const dynamic = "force-dynamic";
 
 export default async function HostDashboard() {
   const sb = await createSupabaseServer();
 
-  /* ── who’s logged in? ─────────────────────── */
+  /* ── who's logged in? ─────────────────────── */
   const {
     data: auth,
     error: authErr,
   } = await sb.auth.getUser();
 
-  // if the cookie’s missing or the token is bad → bounce to login
+  // if the cookie's missing or the token is bad → bounce to login
   if (authErr || !auth?.user) redirect("/login?next=/host");
 
   const user = auth.user;
@@ -40,7 +40,7 @@ export default async function HostDashboard() {
     0
   );
 
-   /* gather today’s RSVPs (UTC) */
+   /* gather today's RSVPs (UTC) */
   let rsvpsToday = 0;
   const eventIds = eventsWithCount.map((e) => e.id).filter(Boolean);
 

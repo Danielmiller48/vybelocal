@@ -4,8 +4,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useSearchParams }  from "next/navigation";
 import { createSupabaseBrowser }             from "@/utils/supabase/client";
-import EventCard            from "@/components/EventCard";
-import AdminStatusTabs      from "@/components/AdminStatusTabs";
+import EventCard            from "@/components/event/EventCard";
+import AdminStatusTabs      from "@/components/admin/AdminStatusTabs";
 import {
   decideEvent,
   deleteEvent,

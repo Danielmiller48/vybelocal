@@ -1,6 +1,5 @@
 // /app/api/moderate/route.js
 import sbAdmin from '@/utils/supabase/admin';
-import fetch from 'node-fetch';
 
 // POST only
 export async function POST(request) {

@@ -3,13 +3,13 @@ import './globals.css'
 
 import { Geist, Geist_Mono } from 'next/font/google'
 import { getServerSession }  from 'next-auth/next'
-import { authOptions }       from '../lib/authOptions'
+import { authOptions }       from '../utils/auth'
 import { Toaster } from 'react-hot-toast'
 
 import ClientProviders from './ClientProviders'
-import SupabaseBridge  from '../components/SupabaseBridge'
-import Layout          from '../components/Layout'   // your site chrome
-import AuthListener    from '@/components/AuthListener'  // <— already imported
+import SupabaseBridge  from '../components/auth/SupabaseBridge'
+import Layout          from '../components/common/Layout'   // your site chrome
+import AuthListener    from '@/components/auth/AuthListener'  // <— already imported
 
 /* fonts */
 const geistSans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' })

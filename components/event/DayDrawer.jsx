@@ -19,7 +19,7 @@
 
 import React, { useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import EventCard from "./EventCard";
+import EventCard from "@/components/event/EventCard";
 import { X } from "lucide-react";
 import clsx from "clsx";
 

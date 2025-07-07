@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { createSupabaseServer} from '@/utils/supabase/server';
-import EventCard from '@/components/EventCard';
+import EventCard from '@/components/event/EventCard';
 
 export const dynamic = 'force-dynamic';
 

@@ -14,9 +14,9 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import clsx from "clsx";
 
-import VibeEvent from "@/components/VibeEvent";
-import DayDrawer from "@/components/DayDrawer";
-import MobileAgenda from "@/components/MobileAgenda";
+import VibeEvent from "@/components/event/VibeEvent";
+import DayDrawer from "@/components/event/DayDrawer";
+import MobileAgenda from "@/components/event/MobileAgenda";
 
 import "react-big-calendar/lib/css/react-big-calendar.css";
 

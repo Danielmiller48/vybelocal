@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createSupabaseServer} from "@/utils/supabase/server";
-import VibeTabs from "@/components/VibeTabs";
+import VibeTabs from "@/components/event/VibeTabs";
 
 export const dynamic = "force-dynamic";
 

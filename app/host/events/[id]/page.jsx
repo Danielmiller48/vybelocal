@@ -1,4 +1,4 @@
-import HostEditForm from "@/components/HostEditForm";
+import HostEditForm from "@/components/host/HostEditForm";
 import Link from "next/link";
 import { createSupabaseServer } from "@/utils/supabase/server";
 

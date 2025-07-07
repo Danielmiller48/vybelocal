@@ -3,7 +3,7 @@
 
 import { redirect } from 'next/navigation';
 import { createSupabaseServer } from '@/utils/supabase/server';
-import ProfileClient from '@/components/ProfileClient';
+import ProfileClient from '@/components/user/ProfileClient';
 
 export const dynamic = 'force-dynamic'; // always SSR so fresh profile
 

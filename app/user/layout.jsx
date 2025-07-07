@@ -2,7 +2,7 @@
 // Server component that injects the mobile‑first UserSidebar and streams
 // any nested /user routes (Discover, Calendar, Profile).
 
-import UserSidebar from "@/components/UserSidebar";
+import UserSidebarClient from "@/components/user/UserSidebarClient";
 import { createSupabaseServer } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic"; // always SSR so auth stays fresh
@@ -26,7 +26,7 @@ export default async function UserLayout({ children }) {
   return (
     <div className="sm:flex min-h-screen">
       {/* sidebar (client component) */}
-      <UserSidebar avatarUrl={avatarUrl} />
+      <UserSidebarClient />
 
       {/* main content */}
       <main className="flex-1 overflow-y-auto bg-gray-50">{children}</main>

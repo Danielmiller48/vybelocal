@@ -1,7 +1,7 @@
 /* ─── Public event detail ─── */
 import { createSupabaseServer } from '@/utils/supabase/server';
 import { signedUrl }                  from '@/utils/signedUrl';
-import RSVPButton                     from '@/components/RSVPButton';
+import RSVPButton                     from '@/components/event/RSVPButton';
 
 export const dynamic = 'force-dynamic';
 

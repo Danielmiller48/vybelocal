@@ -2,7 +2,7 @@
 import { redirect } from 'next/navigation';
 import { createSupabaseServer } from '@/utils/supabase/server';
 import { signedUrl } from '@/utils/signedUrl';
-import EventCard from '@/components/EventCard';
+import EventCard from '@/components/event/EventCard';
 
 const BUCKET        = 'event-images';
 const TTL_SECONDS   = 60 * 60;

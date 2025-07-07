@@ -1,10 +1,11 @@
 // ── components/UserSidebar.jsx ──
 'use client'
 
-import { useState }   from 'react'
+import { useState, useEffect }   from 'react'
 import Link           from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X }    from 'lucide-react'
+import { createSupabaseBrowser } from '@/utils/supabase/client';
 
 /**
  * Mobile‑first sidebar for /user routes.
@@ -16,14 +17,31 @@ import { Menu, X }    from 'lucide-react'
  *
  * Pass `avatarUrl` as prop or swap the placeholder logic.
  */
-export default function UserSidebar({ avatarUrl }) {
+export default function UserSidebar() {
   const pathname        = usePathname()
   const [open, setOpen] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(null);
+
+  useEffect(() => {
+    async function fetchAvatar() {
+      const supabase = createSupabaseBrowser();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', user.id)
+        .single();
+      setAvatarUrl(profile?.avatar_url ?? null);
+    }
+    fetchAvatar();
+  }, []);
 
   const nav = [
     { href: '/user',           label: 'Discover' },
     { href: '/user/calendar',  label: 'Calendar' },
     { href: '/user/profile',   label: 'Profile'  },
+    { href: '/user/blocked',   label: 'Blocked Profiles' },
   ]
 
   /* utility */

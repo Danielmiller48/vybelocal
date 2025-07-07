@@ -2,31 +2,49 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { createSupabaseBrowser } from '@/utils/supabase/client';
-import EventCard from '@/components/EventCard';
+import EventCard from '@/components/event/EventCard';
+import { useSession } from 'next-auth/react';
 
 const vibes = ['all', 'chill', 'hype', 'creative', 'active'];
 
 export default function DiscoverClient() {
   const supabase = createSupabaseBrowser();
+  const { data: session } = useSession();
+  const userId = session?.user?.id;
   const [active, setActive] = useState('all');
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
     async function load() {
+      // Fetch blocks for the current user
+      let blockedUserIds = new Set();
+      if (userId) {
+        const { data: blocks } = await supabase
+          .from('blocks')
+          .select('blocker_id, target_id')
+          .or(`blocker_id.eq.${userId},target_id.eq.${userId}`);
+        if (blocks) {
+          blocks.forEach(b => {
+            if (b.blocker_id === userId) blockedUserIds.add(b.target_id);
+            if (b.target_id === userId) blockedUserIds.add(b.blocker_id);
+          });
+        }
+      }
+      // Fetch events
       let q = supabase
         .from('events')
         .select('*')
         .eq('status', 'approved')
         .gte('starts_at', new Date().toISOString())
         .order('starts_at');
-
       if (active !== 'all') q = q.eq('vibe', active);
-
       const { data } = await q;
-      setEvents(data || []);
+      // Filter out events hosted by blocked users
+      const filtered = (data || []).filter(ev => !blockedUserIds.has(ev.host_id));
+      setEvents(filtered);
     }
     load();
-  }, [active, supabase]);
+  }, [active, supabase, userId]);
 
   return (
     <section className="p-4 space-y-6">

@@ -1,12 +1,12 @@
 // ── app/user/calendar/page.jsx ──
 // Moved from the old /app/user/page.jsx so the calendar now lives under
-// /user/calendar. Logic is unchanged: fetch the current user’s RSVP’d events
+// /user/calendar. Logic is unchanged: fetch the current user's RSVP'd events
 // and render <VibeCalendar />
 
 import { createSupabaseServer } from "@/utils/supabase/server";
 import { toZonedTime } from "date-fns-tz";
 import { redirect } from "next/navigation";
-import VibeCalendar from "@/components/VibeCalendar";
+import VibeCalendar from "@/components/user/VibeCalendar";
 
 export const dynamic = "force-dynamic";
 const TZ = "America/Denver";

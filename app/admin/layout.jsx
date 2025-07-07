@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { createSupabaseServer} from "@/utils/supabase/server";
-import AdminSidebar from "@/components/AdminSidebar";   // ★ default import
+import AdminSidebar from "@/components/admin/AdminSidebar";   // ★ default import
 
 export const dynamic = "force-dynamic";
 

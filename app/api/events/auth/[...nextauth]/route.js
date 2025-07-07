@@ -1,6 +1,6 @@
 // app/api/events/auth/[...nextauth]/route.js — rebuilt clean
 import NextAuth from 'next-auth';
-import authOptions from '@/utils/authOptions';
+import { authOptions } from '@/utils/auth';
 
 /**
  * Next‑Auth endpoint (GET & POST).

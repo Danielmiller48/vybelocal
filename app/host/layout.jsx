@@ -1,5 +1,5 @@
 // app/host/layout.jsx
-import HostSidebar from '@/components/HostSidebar';
+import HostSidebar from '@/components/host/HostSidebar';
 
 export const dynamic = 'force-dynamic'; // keeps ISR happy
 

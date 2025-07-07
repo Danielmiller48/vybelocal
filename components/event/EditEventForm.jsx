@@ -5,14 +5,14 @@
  * DayDrawer.jsx                                                *
  * ------------------------------------------------------------ *
  * Slide‑over drawer that appears when the user taps a day in   *
- * VibeCalendar / MobileAgenda. Lists the day’s events using    *
+ * VibeCalendar / MobileAgenda. Lists the day's events using    *
  * EventCard + inline RSVPButton. Closes on backdrop click or   *
  * Escape key.                                                  *
  ****************************************************************/
 
 import React, { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import EventCard from "./EventCard";
+import EventCard from "@/components/event/EventCard";
 import { X } from "lucide-react";
 
 export default function DayDrawer({ open, date, events, onClose }) {
