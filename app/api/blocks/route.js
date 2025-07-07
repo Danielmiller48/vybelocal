@@ -31,7 +31,8 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const { target_type, target_id } = await request.json();
+  // Accept reason_code and details from the request
+  const { target_type, target_id, reason_code, details } = await request.json();
   if (!target_type || !target_id) {
     return NextResponse.json({ error: 'Missing target_type or target_id' }, { status: 400 });
   }
@@ -68,6 +69,16 @@ export async function POST(request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Insert flag for this block
+  await supabase.from('flags').insert({
+    target_type,
+    target_id,
+    reporter_id: session.user.id,
+    reason_code: reason_code || null,
+    details: details || null,
+    severity: 1,
+  });
 
   // Step 1: Remove RSVPs where the blocked user has RSVPed to events hosted by the blocker
   if (target_type === 'user') {

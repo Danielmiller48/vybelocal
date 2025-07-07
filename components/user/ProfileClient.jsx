@@ -5,9 +5,11 @@ import { useForm } from 'react-hook-form'
 import { useState, useEffect } from 'react'
 import { createSupabaseBrowser } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
+import { saveProfile } from '@/app/user/actions'
+import toast from 'react-hot-toast'
 
 /*
- * Shows a signed avatar if one exists, otherwise a gray “?” placeholder.
+ * Shows a signed avatar if one exists, otherwise a gray "?" placeholder.
  * Schema: id (uuid, pk) | name (req) | bio (55) | phone | avatar_url | email (dup)
  */
 export default function ProfileClient({ profile }) {
@@ -64,7 +66,7 @@ export default function ProfileClient({ profile }) {
   /* ------------------------ submit ------------------------ */
   async function onSubmit(values) {
     if (!profile?.id) {
-      alert('Missing user id – cannot update profile')
+      toast.error('Missing user id – cannot update profile')
       return
     }
 
@@ -82,7 +84,7 @@ export default function ProfileClient({ profile }) {
 
       if (uploadError) {
         console.error('[SB-DEBUG] avatar upload error', uploadError)
-        alert(`Avatar upload failed: ${uploadError.message}`)
+        toast.error(`Avatar upload failed: ${uploadError.message}`)
         return
       }
 
@@ -91,28 +93,29 @@ export default function ProfileClient({ profile }) {
 
     // 2⃣ build payload ---------------------------------------------------------
     const payload = {
-      id: profile.id,         // must equal auth.uid()
       name: values.name || '',
       bio:  values.bio  || '',
       phone: values.phone || '',
       avatar_url,
-      email: values.email || profile.email || '',
     }
 
-    console.log('[SB-DEBUG] upsert payload', payload)
+    console.log('[SB-DEBUG] save profile payload', payload)
 
-    // 3⃣ upsert profile row ----------------------------------------------------
-    const { error: upsertError } = await supabase
-      .from('profiles')
-      .upsert(payload, { returning: 'minimal' })
-
-    if (upsertError) {
-      console.error('[SB-DEBUG] upsert error', upsertError)
-      alert(`Profile save failed: ${upsertError.message}`)
-      return
+    // 3⃣ use server action with moderation ------------------------------------
+    try {
+      await saveProfile(payload)
+      toast.success('Profile updated successfully!')
+      router.refresh()
+    } catch (error) {
+      console.error('[SB-DEBUG] profile save error', error)
+      
+      // Check if it's a moderation error
+      if (error.message && error.message.includes('moderation')) {
+        toast.error(`Profile update failed: ${error.message}`)
+      } else {
+        toast.error(`Profile save failed: ${error.message}`)
+      }
     }
-
-    router.refresh()
   }
 
   /* ------------------------ UI ------------------------ */

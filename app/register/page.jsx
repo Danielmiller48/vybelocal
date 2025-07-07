@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 
 /*  Helper: format 10-digit US number as XXX-XXX-XXXX while typing   */
 const formatPhone = (v) => {
@@ -58,11 +59,16 @@ export default function RegisterPage() {
       setLoading(false);       // re-enable button / spinner
       setStep('code');         // advance UI
     } catch (err) {
-      // show EXACTLY what the API returned when it’s a string
+      // show EXACTLY what the API returned when it's a string
       const apiMsg = err.response?.data;
-      setError(typeof apiMsg === 'string'
-        ? apiMsg                     // “email/phone already in use”
-        : 'Signup error, try again.'); // fallback
+      const errorMessage = typeof apiMsg === 'string' ? apiMsg : 'Signup error, try again.';
+      
+      // Show toast for moderation errors
+      if (apiMsg && typeof apiMsg === 'string' && apiMsg.includes('moderation')) {
+        toast.error(`Registration failed: ${apiMsg}`);
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   }

@@ -12,6 +12,7 @@ import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import toast from "react-hot-toast";
 
 const schema = z.object({
   title: z.string().min(3, "Title too short").max(60),
@@ -153,11 +154,22 @@ export default function HostNewForm() {
 
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
-          throw new Error(j?.message || "Submission failed");
+          
+          // Check if it's a moderation error
+          if (j.moderationError) {
+            toast.error(`Content moderation failed: ${j.error}`);
+            setErr(j.error);
+          } else {
+            throw new Error(j?.error || "Submission failed");
+          }
+          return;
         }
+        
+        toast.success("Event created successfully! 🎉");
         router.replace("/host?created=1");
       } catch (e) {
         setErr(e.message);
+        toast.error(e.message);
       }
     });
   }

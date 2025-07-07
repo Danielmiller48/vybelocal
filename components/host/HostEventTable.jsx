@@ -79,12 +79,15 @@ function BlockedUserAvatar({ profile }) {
  *
  * Tailwind + lucide-react icons keep things lightweight; no extra CSS.
  */
-export default function HostEventTable({ events = [] }) {
+export default function HostEventTable({ events = [], handleDelete }) {
   const [modalProfile, setModalProfile] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [attendees, setAttendees] = useState({}); // eventId -> array of profiles
   const [openEventId, setOpenEventId] = useState(null); // Track which event's Disclosure is open
+  const [eventList, setEventList] = useState(events); // Local state for events
   const supabase = createSupabaseBrowser();
+
+  useEffect(() => { setEventList(events); }, [events]);
 
   async function fetchAttendees(eventId, force = false) {
     if (attendees[eventId] && !force) return; // already fetched unless force
@@ -111,14 +114,29 @@ export default function HostEventTable({ events = [] }) {
     if (openEventId) fetchAttendees(openEventId, true);
   }, [openEventId]);
 
-  if (!events.length)
+  async function handleDelete(eventId) {
+    if (!window.confirm('Are you sure you want to delete this event? This cannot be undone.')) return;
+    try {
+      const res = await fetch(`/api/events/${eventId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Failed to delete event: ' + (err.error || 'Unknown error'));
+        return;
+      }
+      setEventList((prev) => prev.filter((e) => e.id !== eventId));
+    } catch (err) {
+      alert('Failed to delete event: ' + err.message);
+    }
+  }
+
+  if (!eventList.length)
     return <p className="italic text-gray-500">No events yet.</p>;
 
   return (
     <section className="space-y-2">
       <h2 className="font-semibold text-lg">Your Events</h2>
 
-      {events.map((e) => (
+      {eventList.map((e) => (
         <Disclosure key={e.id} as="div" className="bg-white rounded shadow">
           {({ open }) => {
             return (
@@ -219,7 +237,7 @@ export default function HostEventTable({ events = [] }) {
                         <CopyIcon className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => console.log("delete", e.id)}
+                        onClick={() => handleDelete(e.id)}
                         className="btn-icon text-red-600 hover:bg-red-50"
                         title="Delete event"
                       >

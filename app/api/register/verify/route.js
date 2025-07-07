@@ -41,5 +41,42 @@ export async function POST(request) {
    return NextResponse.json({ error: 'phone_insert_failed' }, { status: 400 });
  }
 
+  // 4 • create profile
+  const { error: profileErr } = await sb
+    .from('profiles')
+    .insert({
+      id: userId,
+      name: name,
+      email: email,
+      phone: phone.replace(/\D/g, ''), // Store as digits only
+    });
+
+  if (profileErr) {
+    console.error('profile insert:', profileErr);
+    return NextResponse.json({ error: 'profile_insert_failed' }, { status: 400 });
+  }
+
+  // 5 • trigger moderation for new user profile
+  try {
+    console.log('Triggering moderation for new user profile:', userId);
+    const modResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3003'}/api/moderate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'user', id: userId }),
+    });
+    
+    if (!modResponse.ok) {
+      const modError = await modResponse.json();
+      console.error('Profile moderation failed:', modError);
+      // Don't fail registration, just log the error
+      console.log('User registered but moderation failed:', modError.reason);
+    } else {
+      console.log('Profile moderation triggered successfully');
+    }
+  } catch (modError) {
+    console.error('Profile moderation error:', modError);
+    // Don't fail registration, just log the error
+  }
+
   return NextResponse.json({ ok: true });
 }

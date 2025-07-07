@@ -58,5 +58,43 @@ export async function POST(req) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
+
+  /* 5 — trigger moderation */
+  try {
+    console.log('Triggering moderation for new event:', data.id);
+    const modResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/moderate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'event', id: data.id }),
+    });
+    
+    if (!modResponse.ok) {
+      const modError = await modResponse.json();
+      console.error('Moderation failed:', modError);
+      
+      // Delete the event since moderation failed
+      await sb.from("events").delete().eq('id', data.id);
+      
+      // Return the moderation error to the frontend
+      return NextResponse.json({ 
+        error: modError.reason || 'Content moderation failed',
+        moderationError: true 
+      }, { status: 400 });
+    } else {
+      console.log('Moderation triggered successfully');
+    }
+  } catch (modError) {
+    console.error('Moderation error:', modError);
+    
+    // Delete the event since moderation failed
+    await sb.from("events").delete().eq('id', data.id);
+    
+    // Return the moderation error to the frontend
+    return NextResponse.json({ 
+      error: 'Content moderation failed - please try again',
+      moderationError: true 
+    }, { status: 400 });
+  }
+
   return NextResponse.json(data, { status: 201 });
 }

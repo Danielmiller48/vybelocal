@@ -29,11 +29,23 @@ function useAvatarUrl(avatarPath) {
 
 export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutualVybes = [], pastEvents = [] }) {
   const [isBlocking, setIsBlocking] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [blockDetails, setBlockDetails] = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmMsg, setConfirmMsg] = useState('');
 
   // Always call the hook, even if profile is null
   const avatarUrl = useAvatarUrl(profile?.avatar_url);
 
   if (!isOpen || !profile) return null;
+
+  const reasonOptions = [
+    { value: '', label: 'No reason' },
+    { value: 'spam', label: 'Spam or scam' },
+    { value: 'harassment', label: 'Harassment or bullying' },
+    { value: 'inappropriate', label: 'Inappropriate content' },
+    { value: 'other', label: 'Other (custom reason)' },
+  ];
 
   const handleBlock = async () => {
     if (isBlocking) return;
@@ -42,11 +54,27 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
       const res = await fetch('/api/blocks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_type: 'user', target_id: profile.uuid })
+        body: JSON.stringify({
+          target_type: 'user',
+          target_id: profile.uuid,
+          reason_code: blockReason,
+          details: blockReason === 'other' ? blockDetails : undefined,
+        })
       });
       if (res.ok) {
         onBlock?.(profile.uuid);
-        onClose();
+        // Show confirmation message
+        if (blockReason && blockReason !== 'other') {
+          setConfirmMsg('Thanks for letting us know.\nWe take every report seriously at VybeLocal and may follow up if we need more info. Our goal is to keep the vibe safe, real, and welcoming for everyone.');
+        } else {
+          setConfirmMsg("You won't see this user or event again.");
+        }
+        setShowConfirm(true);
+        setTimeout(() => {
+          setShowConfirm(false);
+          setConfirmMsg('');
+          onClose();
+        }, 3000);
       } else {
         const err = await res.json();
         alert(err.error || 'Failed to block user');
@@ -115,16 +143,42 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
               </ul>
             </div>
           )}
-          {/* Block Button */}
+          {/* Block Reason Dropdown */}
           <div className="pt-4 border-t">
+            <label className="block mb-2 font-medium">Reason for blocking (optional):</label>
+            <select
+              className="w-full p-2 border rounded mb-2"
+              value={blockReason}
+              onChange={e => setBlockReason(e.target.value)}
+              disabled={isBlocking}
+            >
+              {reasonOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            {blockReason === 'other' && (
+              <textarea
+                className="w-full p-2 border rounded mb-2"
+                placeholder="Add more details (optional)"
+                value={blockDetails}
+                onChange={e => setBlockDetails(e.target.value)}
+                disabled={isBlocking}
+                rows={3}
+              />
+            )}
             <button
               onClick={handleBlock}
               disabled={isBlocking}
-              className="flex items-center gap-2 py-2 px-4 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 py-2 px-4 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50 w-full justify-center"
             >
               <Shield className="h-4 w-4" />
               {isBlocking ? 'Blocking...' : 'Block User'}
             </button>
+            {showConfirm && (
+              <div className="mt-4 p-3 bg-green-50 text-green-700 rounded text-center whitespace-pre-line">
+                {confirmMsg}
+              </div>
+            )}
           </div>
         </div>
       </div>
