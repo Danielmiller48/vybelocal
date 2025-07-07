@@ -146,10 +146,21 @@ export default function VibeCalendar({ events, role = "user" }) {
     dayStart.setHours(0, 0, 0, 0);
     const nextDay = new Date(dayStart);
     nextDay.setDate(dayStart.getDate() + 1);
+    
+    // Get all events for this day
+    const allDayEvents = localEvents.filter((ev) => ev.start >= dayStart && ev.start < nextDay);
+    
+    // Apply the current vibe filter to the drawer events
+    const filteredDayEvents = allDayEvents.filter((ev) => {
+      if (vibe === "all") return true;
+      return ev.vibe === vibe;
+    });
+    
     setDrawer({
       open: true,
       date: dayStart,
-      dayEvents: localEvents.filter((ev) => ev.start >= dayStart && ev.start < nextDay),
+      dayEvents: filteredDayEvents,
+      currentFilter: vibe,
     });
   }
 
@@ -195,6 +206,7 @@ export default function VibeCalendar({ events, role = "user" }) {
           date={drawer.date}
           events={drawer.dayEvents}
           onClose={() => setDrawer({ ...drawer, open: false })}
+          currentFilter={drawer.currentFilter}
         />
       )}
     </div>

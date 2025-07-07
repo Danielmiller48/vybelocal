@@ -31,7 +31,7 @@ function formatDate(date) {
   });
 }
 
-export default function DayDrawer({ open, date, events, onClose }) {
+export default function DayDrawer({ open, date, events, onClose, currentFilter }) {
   // Close on Esc key
   const escListener = useCallback(
     (e) => {
@@ -44,6 +44,11 @@ export default function DayDrawer({ open, date, events, onClose }) {
     if (open) window.addEventListener("keydown", escListener);
     return () => window.removeEventListener("keydown", escListener);
   }, [open, escListener]);
+
+  const getFilterDisplay = () => {
+    if (!currentFilter || currentFilter === "all") return "";
+    return ` • ${currentFilter.charAt(0).toUpperCase() + currentFilter.slice(1)}`;
+  };
 
   return (
     <AnimatePresence>
@@ -68,9 +73,16 @@ export default function DayDrawer({ open, date, events, onClose }) {
           >
             {/* Header */}
             <header className="flex items-center justify-between p-4 border-b border-slate-700">
-              <h3 className="text-lg font-semibold text-slate-100">
-                {formatDate(date)}
-              </h3>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-100">
+                  {formatDate(date)}
+                </h3>
+                {currentFilter && currentFilter !== "all" && (
+                  <p className="text-sm text-slate-400">
+                    Showing {currentFilter} events only
+                  </p>
+                )}
+              </div>
               <button
                 onClick={onClose}
                 className="text-slate-400 hover:text-slate-200"
@@ -84,7 +96,10 @@ export default function DayDrawer({ open, date, events, onClose }) {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {events.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center">
-                  No events for this day.
+                  {currentFilter && currentFilter !== "all" 
+                    ? `No ${currentFilter} events for this day.`
+                    : "No events for this day."
+                  }
                 </p>
               ) : (
                 events.map((evt) => <EventCard key={evt.id} event={evt} />)
