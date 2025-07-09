@@ -7,20 +7,12 @@ export async function GET(request) {
   if (!q) return NextResponse.json([]);
 
   const sb = await createSupabaseServer();
-  const pattern = `%${q}%`;
+  const tsquery = q.split(/\s+/).map(w=>w+':*').join(' & ');
 
-  // Search by event title/description or host profile name
-  const { data, error } = await sb
-    .from('public_events')
-    .select('id,title,starts_at,vibe,host_id,host_name,host_avatar_url')
-    .or(`title.ilike.${pattern},description.ilike.${pattern},host_name.ilike.${pattern}`)
-    .limit(10);
+  const { data, error } = await sb.rpc('search_events_with_profiles', { q: tsquery });
+  if (error) return NextResponse.json({ error: error.message }, { status:500 });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const results = (data || []).map(r => ({
+  const results = (data||[]).map(r=>({
     id: r.id,
     title: r.title,
     starts_at: r.starts_at,
@@ -29,7 +21,7 @@ export async function GET(request) {
       id: r.host_id,
       name: r.host_name,
       avatar_url: r.host_avatar_url,
-    },
+    }
   }));
 
   return NextResponse.json(results);
