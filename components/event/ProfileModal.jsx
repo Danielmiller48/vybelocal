@@ -128,13 +128,14 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
     setReportBusy(true);
     try {
       // Submit the flag
+      const targetId = profile.uuid || profile.id;
       const res = await fetch('/api/flags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           target_type: 'user',
-          target_id: profile.uuid,
-          user_id: profile.uuid,
+          target_id: targetId,
+          user_id: targetId,
           reason_code: reason,
           details: details || null,
           source: 'user',
@@ -151,7 +152,7 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               target_type: 'user',
-              target_id: profile.uuid || profile.id,
+              target_id: targetId,
             }),
           });
           if (blockRes.ok || blockRes.status === 409) {
@@ -162,7 +163,9 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
         }
         onClose(); // Always close the profile modal after reporting
       } else {
-        toast.error('Failed to submit report.');
+        const err = await res.json().catch(() => null);
+        console.error('Flag API error', err);
+        toast.error(err?.error || 'Failed to submit report.');
       }
     } catch (err) {
       toast.error('Failed to submit report.');
