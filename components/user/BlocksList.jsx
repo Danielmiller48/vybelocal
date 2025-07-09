@@ -14,46 +14,49 @@ export default function BlocksList() {
 
   // Fetch blocked profiles on mount
   useEffect(() => {
-    fetch('/api/blocks')
-      .then((res) => res.json())
-      .then(async (data) => {
-        setBlocks(data);
-        // Fetch public profiles for all blocked user target_ids
-        const userBlocks = data.filter((b) => b.target_type === 'user');
-        const userIds = userBlocks.map((b) => b.target_id);
-        if (userIds.length > 0) {
-          const { data: profiles, error } = await supabase
-            .from('public_user_cards')
-            .select('*')
-            .in('uuid', userIds);
-          if (profiles) {
-            const profileMap = {};
-            profiles.forEach((p) => { profileMap[p.uuid] = p; });
-            setBlockedProfiles(profileMap);
-            // Fetch signed avatar URLs for each profile
-            const urlMap = {};
-            await Promise.all(profiles.map(async (p) => {
-              let url = '/avatar-placeholder.png';
-              if (p.avatar_url && typeof p.avatar_url === 'string' && p.avatar_url.trim() !== '' && p.avatar_url !== '/avatar-placeholder.png') {
-                if (p.avatar_url.startsWith('http')) {
-                  url = p.avatar_url;
-                } else {
-                  const { data: signed } = await supabase.storage
-                    .from('profile-images')
-                    .createSignedUrl(p.avatar_url, 3600);
-                  if (signed?.signedUrl) url = signed.signedUrl;
-                }
-              }
-              urlMap[p.uuid] = url;
-            }));
-            setAvatarUrls(urlMap);
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch blocks:', err);
+    (async () => {
+      const { data, error } = await supabase
+        .from('blocks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('Failed to fetch blocks:', error);
         setBlocks([]);
-      });
+        return;
+      }
+      setBlocks(data);
+      // Fetch public profiles for all blocked user target_ids
+      const userBlocks = data.filter((b) => b.target_type === 'user');
+      const userIds = userBlocks.map((b) => b.target_id);
+      if (userIds.length > 0) {
+        const { data: profiles, error } = await supabase
+          .from('public_user_cards')
+          .select('*')
+          .in('uuid', userIds);
+        if (profiles) {
+          const profileMap = {};
+          profiles.forEach((p) => { profileMap[p.uuid] = p; });
+          setBlockedProfiles(profileMap);
+          // Fetch signed avatar URLs for each profile
+          const urlMap = {};
+          await Promise.all(profiles.map(async (p) => {
+            let url = '/avatar-placeholder.png';
+            if (p.avatar_url && typeof p.avatar_url === 'string' && p.avatar_url.trim() !== '' && p.avatar_url !== '/avatar-placeholder.png') {
+              if (p.avatar_url.startsWith('http')) {
+                url = p.avatar_url;
+              } else {
+                const { data: signed } = await supabase.storage
+                  .from('profile-images')
+                  .createSignedUrl(p.avatar_url, 3600);
+                if (signed?.signedUrl) url = signed.signedUrl;
+              }
+            }
+            urlMap[p.uuid] = url;
+          }));
+          setAvatarUrls(urlMap);
+        }
+      }
+    })();
   }, [supabase]);
 
   // Unblock a profile (with flag removal)
