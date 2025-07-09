@@ -146,15 +146,19 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
         setReportReason('spam');
         // If block is checked, also block the user
         if (blockChecked) {
-          await fetch('/api/blocks', {
+          const blockRes = await fetch('/api/blocks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               target_type: 'user',
-              target_id: profile.uuid,
+              target_id: profile.uuid || profile.id,
             }),
           });
-          toast.success('User blocked.');
+          if (blockRes.ok || blockRes.status === 409) {
+            toast.success('User blocked.');
+          } else {
+            console.error('Block failed');
+          }
         }
         onClose(); // Always close the profile modal after reporting
       } else {
