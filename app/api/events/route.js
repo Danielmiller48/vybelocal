@@ -21,12 +21,11 @@ export async function POST(req) {
   const sb = await createSupabaseServer();
 
   /* 1 — auth gate */
-  const {
-    data: { session },
-  } = await sb.auth.getSession();
-  if (!session) {
+  const { data: { user }, error: userError } = await sb.auth.getUser();
+  if (userError || !user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  const session = { user };
 
   /* 2 — parse + minimal validation */
   const body = await req.json();

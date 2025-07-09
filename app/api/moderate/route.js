@@ -187,17 +187,21 @@ export async function POST(request) {
     console.log('User moderation result:', { status, ai_score: maxScore });
   }
 
-  // ── insert AI flag into flags table (only for approved content) ────────────────────────────
-  console.log('Inserting AI flag:', { kind, id, severity });
-  await sb.from('flags').insert({
-    target_type: kind,
-    target_id: id,
-    user_id: responsibleUserId,
-    reporter_id: null, // AI system
-    reason_code: 'ai_moderation',
-    severity,
-    details: mod,
-  });
+  // ── insert AI flag into flags table only for concerning content (severity > 1) ────────────
+  if (severity > 1) {
+    console.log('Inserting AI flag (severity > 1):', { kind, id, severity });
+    await sb.from('flags').insert({
+      target_type: kind,
+      target_id: id,
+      user_id: responsibleUserId,
+      reporter_id: null, // AI system
+      reason_code: 'ai_moderation',
+      severity,
+      details: mod,
+    });
+  } else {
+    console.log('Severity 1 (approved) — skipping flag insert to keep flags table clean');
+  }
 
   // optional Slack ping on hard flag
   if (status === 'hidden') {

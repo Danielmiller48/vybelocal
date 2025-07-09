@@ -9,6 +9,8 @@ import { useSession }          from "next-auth/react";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
 import toast from 'react-hot-toast';
 import ProfileModal from '@/components/event/ProfileModal';
+import { FaFlag } from 'react-icons/fa';
+import ReactDOM from 'react-dom';
 
 const supabase = createSupabaseBrowser();
 
@@ -73,6 +75,17 @@ export default function EventCard({
   const [busy,    setBusy]    = useState(false);
   const [hostProfile, setHostProfile] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('spam');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportBusy, setReportBusy] = useState(false);
+
+  const reportReasons = [
+    { value: 'spam', label: 'Spam or scam' },
+    { value: 'inappropriate', label: 'Inappropriate content' },
+    { value: 'misinfo', label: 'Misinformation' },
+    { value: 'other', label: 'Other' },
+  ];
 
   const isAdmin  = !!(onApprove || onDeny || onPending || onDelete);
   const imageSrc = useImage({ img, img_path: event.img_path });
@@ -172,6 +185,104 @@ export default function EventCard({
 
   const hostAvatarUrl = useAvatarUrl(hostProfile?.avatar_url);
 
+  function ReportModal({ open, onClose, reason, setReason, busy, onSubmit, reasons }) {
+    const [details, setDetails] = useState('');
+    // Reset details when modal opens/closes
+    useEffect(() => { if (!open) setDetails(''); }, [open]);
+    if (!open) return null;
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 pointer-events-auto" onClick={onClose}>
+        <div
+          className="bg-white rounded-xl shadow-xl p-8 w-full max-w-lg relative"
+          onClick={e => e.stopPropagation()}
+        >
+          <button
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          <h2 className="text-xl font-bold mb-2">Something off? Let us know.</h2>
+          <div className="mb-4 text-gray-700 text-sm leading-relaxed">
+            <p>VybeLocal is built on trust and real-world respect.<br/>
+            If this event or user feels unsafe, misleading, or out of alignment with our community values, please tell us.</p>
+            <p className="mt-2">You’re not starting drama—you’re helping us protect the vibe.</p>
+            <p className="mt-2">We review all reports with care, and your voice stays private.</p>
+          </div>
+          <form onSubmit={e => { e.preventDefault(); onSubmit(reason, details); }}>
+            <label className="block mb-2 font-medium">What’s going on?</label>
+            <select
+              className="w-full mb-4 p-2 border rounded"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+            >
+              <option value="spam">Spam or scam</option>
+              <option value="nsfw">NSFW or inappropriate content</option>
+              <option value="unsafe">Unsafe or violent behavior</option>
+              <option value="hate">Hate speech or discrimination</option>
+              <option value="misleading">Misleading or false event</option>
+              <option value="other">Other (please describe)</option>
+            </select>
+            <textarea
+              className="w-full p-2 border rounded mb-4 placeholder-gray-400"
+              rows={4}
+              placeholder="Add any details that might help us understand the context (optional)"
+              value={details}
+              onChange={e => setDetails(e.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={busy}
+              className="w-full py-2 rounded bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 font-semibold text-base"
+            >
+              {busy ? 'Reporting…' : 'Submit Report'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  async function handleReportSubmit(reason, details) {
+    if (reportBusy) return;
+    setReportBusy(true);
+    try {
+      const res = await fetch('/api/flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_type: 'event',
+          target_id: event.id,
+          user_id: event.host_id,
+          reason_code: reason,
+          details: details || null,
+          source: 'user',
+        }),
+      });
+      if (res.ok) {
+        toast.success('Thank you for your report.');
+        setReportOpen(false);
+        setReportReason('spam');
+      } else {
+        toast.error('Failed to submit report.');
+      }
+    } catch (err) {
+      toast.error('Failed to submit report.');
+    }
+    setReportBusy(false);
+  }
+
+  // Close modal on Escape
+  useEffect(() => {
+    if (!reportOpen) return;
+    function onKey(e) {
+      if (e.key === 'Escape') setReportOpen(false);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [reportOpen]);
+
   /* ───────── render ───────── */
   const Wrapper = noLink ? "div" : Link;
 
@@ -183,113 +294,132 @@ export default function EventCard({
   };
 
   return (
-    <Wrapper
-      {...(!noLink && { href })}
-      onClick={handleCardClick}
-      className={
-        "rounded-xl overflow-hidden shadow-md flex flex-col bg-white " +
-        (noLink ? "" : "hover:shadow-lg transition-shadow")
-      }
-    >
-      <Image
-        src={imageSrc}
-        alt={event.title}
-        width={640}
-        height={480}
-        className="object-cover aspect-[4/3] w-full"
-        unoptimized
-      />
+    <>
+      <Wrapper
+        {...(!noLink && { href })}
+        onClick={handleCardClick}
+        className={
+          "rounded-xl overflow-hidden shadow-md flex flex-col bg-white " +
+          (noLink ? "" : "hover:shadow-lg transition-shadow")
+        }
+      >
+        <Image
+          src={imageSrc}
+          alt={event.title}
+          width={640}
+          height={480}
+          className="object-cover aspect-[4/3] w-full"
+          unoptimized
+        />
 
-      <div className="p-4 flex flex-col grow">
-        <h3 className="font-semibold text-lg mb-1 line-clamp-1">
-          {event.title}
-        </h3>
-        <p className="text-sm text-gray-600 line-clamp-2 grow">
-          {event.description}
-        </p>
+        <div className="p-4 flex flex-col grow relative">
+          <div className="flex items-start justify-between mb-1">
+            <h3 className="font-semibold text-lg line-clamp-1">{event.title}</h3>
+            <button
+              className="text-gray-400 hover:text-red-500 p-1 rounded-full focus:outline-none focus:ring-2 focus:ring-red-300"
+              style={{ fontSize: 18 }}
+              title="Report event"
+              onClick={e => { e.stopPropagation(); e.preventDefault(); setReportOpen(true); }}
+            >
+              <FaFlag />
+            </button>
+          </div>
+          {/* ... existing code ... */}
+          <p className="text-sm text-gray-600 line-clamp-2 grow">
+            {event.description}
+          </p>
 
-        {/* Hosted by section */}
-        {hostProfile && (
-          <div
-            className="flex items-center gap-3 mt-3 cursor-pointer hover:bg-gray-100 rounded p-2"
-            onClick={e => { e.stopPropagation(); e.preventDefault(); setModalOpen(true); }}
-          >
-            <img
-              src={hostAvatarUrl}
-              alt={hostProfile.name}
-              className="w-8 h-8 rounded-full object-cover"
-            />
-            <div>
-              <div className="font-medium text-sm">{hostProfile.name}</div>
-              {hostProfile.pronouns && (
-                <div className="text-xs text-gray-500">{hostProfile.pronouns}</div>
+          {/* Hosted by section */}
+          {hostProfile && (
+            <div
+              className="flex items-center gap-3 mt-3 cursor-pointer hover:bg-gray-100 rounded p-2"
+              onClick={e => { e.stopPropagation(); e.preventDefault(); setModalOpen(true); }}
+            >
+              <img
+                src={hostAvatarUrl}
+                alt={hostProfile.name}
+                className="w-8 h-8 rounded-full object-cover"
+              />
+              <div>
+                <div className="font-medium text-sm">{hostProfile.name}</div>
+                {hostProfile.pronouns && (
+                  <div className="text-xs text-gray-500">{hostProfile.pronouns}</div>
+                )}
+              </div>
+              <span className="ml-auto text-xs text-gray-400">Host</span>
+            </div>
+          )}
+
+          {/* Public RSVP toggle */}
+          {!isAdmin && (
+            <button
+              onClick={toggleRsvp}
+              disabled={busy}
+              className={
+                "mt-3 py-2 px-4 rounded-lg w-full transition " +
+                (joined
+                  ? "bg-gray-500 hover:bg-gray-600 text-white"
+                  : "bg-indigo-600 hover:bg-indigo-700 text-white") +
+                (busy ? " opacity-60 cursor-wait" : "")
+              }
+            >
+              {busy ? "…" : joined ? "Cancel RSVP" : "RSVP"}
+            </button>
+          )}
+
+          {/* (admin buttons unchanged) */}
+          {isAdmin && (onApprove || onDeny || onPending) && (
+            <div className="mt-3 flex gap-2">
+              {onApprove && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onApprove(); }}
+                  disabled={disabled}
+                  className="flex-1 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  Approve
+                </button>
+              )}
+              {onDeny && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onDeny(); }}
+                  disabled={disabled}
+                  className="flex-1 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  Reject
+                </button>
+              )}
+              {onPending && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onPending(); }}
+                  disabled={disabled}
+                  className="flex-1 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+                >
+                  Pending
+                </button>
               )}
             </div>
-            <span className="ml-auto text-xs text-gray-400">Host</span>
-          </div>
-        )}
+          )}
 
-        {/* Public RSVP toggle */}
-        {!isAdmin && (
-          <button
-            onClick={toggleRsvp}
-            disabled={busy}
-            className={
-              "mt-3 py-2 px-4 rounded-lg w-full transition " +
-              (joined
-                ? "bg-gray-500 hover:bg-gray-600 text-white"
-                : "bg-indigo-600 hover:bg-indigo-700 text-white") +
-              (busy ? " opacity-60 cursor-wait" : "")
-            }
-          >
-            {busy ? "…" : joined ? "Cancel RSVP" : "RSVP"}
-          </button>
-        )}
-
-        {/* (admin buttons unchanged) */}
-        {isAdmin && (onApprove || onDeny || onPending) && (
-          <div className="mt-3 flex gap-2">
-            {onApprove && (
-              <button
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onApprove(); }}
-                disabled={disabled}
-                className="flex-1 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-              >
-                Approve
-              </button>
-            )}
-            {onDeny && (
-              <button
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onDeny(); }}
-                disabled={disabled}
-                className="flex-1 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                Reject
-              </button>
-            )}
-            {onPending && (
-              <button
-                onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onPending(); }}
-                disabled={disabled}
-                className="flex-1 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-              >
-                Pending
-              </button>
-            )}
-          </div>
-        )}
-
-        {typeof onDelete === "function" && (
-          <button
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onDelete(); }}
-            disabled={disabled}
-            className="mt-3 w-full py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-          >
-            Delete Permanently
-          </button>
-        )}
-      </div>
-
+          {typeof onDelete === "function" && (
+            <button
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); if (!disabled) onDelete(); }}
+              disabled={disabled}
+              className="mt-3 w-full py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              Delete Permanently
+            </button>
+          )}
+        </div>
+      </Wrapper>
+      <ReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        reason={reportReason}
+        setReason={setReportReason}
+        busy={reportBusy}
+        onSubmit={handleReportSubmit}
+        reasons={reportReasons}
+      />
       {/* Profile Modal for host */}
       {hostProfile && (
         <ProfileModal
@@ -300,6 +430,6 @@ export default function EventCard({
           onReport={() => alert('Report feature coming soon!')}
         />
       )}
-    </Wrapper>
+    </>
   );
 }

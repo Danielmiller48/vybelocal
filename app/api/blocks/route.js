@@ -4,10 +4,11 @@ import { createSupabaseServer } from '@/utils/supabase/server';
 // GET: List all blocks for the current user
 export async function GET(request) {
   const supabase = await createSupabaseServer();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+  const session = { user };
 
   // Fetch all blocks for this user
   const { data: blocks, error } = await supabase
@@ -26,10 +27,11 @@ export async function GET(request) {
 // POST: Create a new block
 export async function POST(request) {
   const supabase = await createSupabaseServer();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+  const session = { user };
 
   // Accept reason_code and details from the request
   const { target_type, target_id, reason_code, details } = await request.json();
