@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createSupabaseBrowser } from '@/utils/supabase/client';
 import EventCard from '@/components/event/EventCard';
 import { useSession } from 'next-auth/react';
+import EventSearchBar from '@/components/common/EventSearchBar';
 
 const vibes = ['all', 'chill', 'hype', 'creative', 'active'];
 
@@ -48,8 +49,8 @@ export default function DiscoverClient() {
 
   return (
     <section className="p-4 space-y-6">
-      {/* vibe pills */}
-      <div className="flex overflow-x-auto gap-2 pb-2">
+      {/* vibe pills + search */}
+      <div className="flex flex-wrap items-center gap-2 pb-2">
         {vibes.map((v) => (
           <button
             key={v}
@@ -63,6 +64,8 @@ export default function DiscoverClient() {
             {v}
           </button>
         ))}
+        <div className="flex-1" />
+        <EventSearchBar />
       </div>
 
       {/* event list */}
