@@ -2,11 +2,24 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServer } from '@/utils/supabase/server';
 
 export async function GET(request) {
-  const supabase = await createSupabaseServer();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  const sb = await createSupabaseServer();
+  const { data: { user }, error: userError } = await sb.auth.getUser();
   if (userError || !user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+
+  // Admin check
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (!profile?.is_admin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // Service key client for unrestricted read (avatar signing etc.)
+  const supabase = await createSupabaseServer({ admin: true });
   const session = { user };
 
   const { searchParams } = new URL(request.url);
