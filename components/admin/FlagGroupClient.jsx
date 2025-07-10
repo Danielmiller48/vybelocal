@@ -46,6 +46,10 @@ export default function FlagGroupClient({ profile, flags, onStatusChange }) {
     return <span className="italic text-gray-400">No additional details.</span>;
   }
 
+  const allStatus = flags.every(f => f.status === 'actioned') ? 'actioned'
+                   : flags.every(f => f.status === 'dismissed') ? 'dismissed'
+                   : null;
+
   return (
     <details className="bg-white border rounded shadow">
       <summary className="flex items-center gap-4 px-4 py-3 cursor-pointer hover:bg-gray-50">
@@ -84,15 +88,21 @@ export default function FlagGroupClient({ profile, flags, onStatusChange }) {
         </table>
         {/* Moderation workflow buttons */}
         <div className="flex gap-2 mt-4">
-          <button type="button" className="btn btn-sm bg-gray-100 text-gray-700" onClick={() => confirmAndUpdate("dismissed", "ignore")}>Ignore</button>
-          {(!profile.warning_issued) && (
-            <button type="button" className="btn btn-sm bg-yellow-100 text-yellow-800" onClick={() => confirmAndUpdate("actioned", "warn")}>Warn</button>
-          )}
-          {(profile.warning_issued && !profile.soft_ban_expires_at) && (
-            <button type="button" className="btn btn-sm bg-orange-100 text-orange-800" onClick={() => confirmAndUpdate("actioned", "soft-ban")}>Soft Ban</button>
-          )}
-          <div className="flex-grow"></div>
-          <button type="button" className="btn btn-sm bg-red-100 text-red-700 ml-auto" onClick={() => confirmAndUpdate("ban", "permanently ban")}>Ban</button>
+          { (allStatus === 'actioned' || allStatus === 'dismissed') ? (
+            <button type="button" className="btn btn-sm bg-blue-100 text-blue-700" onClick={() => confirmAndUpdate('pending','re-evaluate')}>Re-evaluate</button>
+          ) : (
+            <>
+              <button type="button" className="btn btn-sm bg-gray-100 text-gray-700" onClick={() => confirmAndUpdate("dismissed", "ignore")}>Ignore</button>
+              {(!profile.warning_issued) && (
+                <button type="button" className="btn btn-sm bg-yellow-100 text-yellow-800" onClick={() => confirmAndUpdate("actioned", "warn")}>Warn</button>
+              )}
+              {(profile.warning_issued && !profile.soft_ban_expires_at) && (
+                <button type="button" className="btn btn-sm bg-orange-100 text-orange-800" onClick={() => confirmAndUpdate("actioned", "soft-ban")}>Soft Ban</button>
+              )}
+              <div className="flex-grow"></div>
+              <button type="button" className="btn btn-sm bg-red-100 text-red-700 ml-auto" onClick={() => confirmAndUpdate("ban", "permanently ban")}>Ban</button>
+            </>
+          ) }
         </div>
       </div>
     </details>
