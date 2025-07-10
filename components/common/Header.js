@@ -72,7 +72,7 @@ export default function Header() {
         <div className="ml-auto flex items-center gap-5 text-sm">
           {session?.user && (
             <>
-              <Link href="/user/discover" className="hover:text-violet-600">
+              <Link href="/user" className="hover:text-violet-600">
                 Dashboard
               </Link>
               <Link href="/host" className="hover:text-violet-600">

@@ -21,8 +21,15 @@ export default function NotificationsList({ userId }) {
   useEffect(() => { if (userId) load(); }, [userId]);
 
   async function dismiss(id) {
-    await supabase.from('notifications').update({ is_dismissed: true }).eq('id', id);
-    setItems(items => items.map(n => n.id === id ? { ...n, is_dismissed: true } : n));
+    await supabase.from('notifications').delete().eq('id', id);
+    setItems(items => items.filter(n => n.id !== id));
+  }
+
+  async function clearAll() {
+    if (!items?.length) return;
+    if (!confirm('Clear all notifications?')) return;
+    await supabase.from('notifications').delete().eq('user_id', userId);
+    setItems([]);
   }
 
   if (loading) return <p className="p-6 text-gray-500">Loading…</p>;
@@ -30,7 +37,12 @@ export default function NotificationsList({ userId }) {
 
   return (
     <main className="p-4 space-y-4 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold">Notifications</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Notifications</h1>
+        {items?.length > 0 && (
+          <button onClick={clearAll} className="text-sm text-red-600 underline">Clear All</button>
+        )}
+      </div>
       <ul className="divide-y">
         {items.map(n => (
           <li key={n.id} className={`p-4 ${n.is_dismissed ? 'opacity-60' : ''}`}>
