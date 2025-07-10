@@ -38,7 +38,7 @@ export default function UserSidebar() {
   }, []);
 
   const nav = [
-    { href: '/user',           label: 'Discover' },
+    { href: '/user/discover',  label: 'Discover' },
     { href: '/user/calendar',  label: 'Calendar' },
     { href: '/user/profile',   label: 'Profile'  },
     { href: '/user/blocked',   label: 'Blocked Profiles' },
