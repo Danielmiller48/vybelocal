@@ -187,6 +187,11 @@ export default function EventCard({
         toast.success("RSVP confirmed! 🎉");
       }
     } else {
+      // Cancel flow with confirmation
+      if (!confirm("Are you sure you want to cancel your RSVP?")) {
+        setBusy(false);
+        return;
+      }
       ({ error } = await supabase
         .from("rsvps")
         .delete()

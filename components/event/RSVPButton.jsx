@@ -119,6 +119,7 @@ export default function RSVPButton({ eventId }) {
           toast.success("RSVP confirmed! 🎉");
         }
       } else {
+        if (!confirm("Are you sure you want to cancel your RSVP?")) return;
         ({ error } = await supabase.from("rsvps").delete().match(row));
         if (!error) {
           setJoined(false);

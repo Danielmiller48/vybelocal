@@ -2,6 +2,7 @@
 import { createSupabaseServer } from '@/utils/supabase/server';
 import { signedUrl }                  from '@/utils/signedUrl';
 import RSVPButton                     from '@/components/event/RSVPButton';
+import EventAttendees                 from '@/components/event/EventAttendees';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,8 @@ export default async function VybeDetail({ params }) {
       )}
 
       <RSVPButton eventId={ev.id} />
+      
+      <EventAttendees eventId={ev.id} />
     </main>
   );
 }
