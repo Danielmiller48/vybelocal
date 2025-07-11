@@ -21,6 +21,11 @@ export default function NotificationsList({ userId }) {
   useEffect(() => { if (userId) load(); }, [userId]);
 
   async function dismiss(id) {
+    await supabase.from('notifications').update({ is_dismissed: true }).eq('id', id);
+    setItems(items => items.map(n => n.id===id ? { ...n, is_dismissed: true } : n));
+  }
+
+  async function deleteNotif(id) {
     await supabase.from('notifications').delete().eq('id', id);
     setItems(items => items.filter(n => n.id !== id));
   }
@@ -52,8 +57,10 @@ export default function NotificationsList({ userId }) {
                 <p className="text-sm text-gray-700 whitespace-pre-wrap">{n.message}</p>
                 <p className="text-xs text-gray-400 mt-1">{new Date(n.created_at).toLocaleString()}</p>
               </div>
-              {!n.is_dismissed && (
+              {!n.is_dismissed ? (
                 <button onClick={() => dismiss(n.id)} className="text-xs text-blue-600 underline">Dismiss</button>
+              ) : (
+                <button onClick={() => deleteNotif(n.id)} className="text-xs text-red-600 underline">Delete</button>
               )}
             </div>
           </li>
