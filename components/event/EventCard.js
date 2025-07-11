@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import ProfileModal from '@/components/event/ProfileModal';
 import { FaFlag } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
+import TrustedHostBadge from '../TrustedHostBadge';
 
 const supabase = createSupabaseBrowser();
 
@@ -210,16 +211,33 @@ export default function EventCard({
     }
   }
 
-  /* Fetch host profile */
+  /* Fetch host profile with trusted status */
   useEffect(() => {
     async function fetchHostProfile() {
       if (!event.host_id) return;
-      const { data } = await supabase
+      
+      // First get the basic profile info
+      const { data: profileData, error: profileError } = await supabase
         .from('public_user_cards')
         .select('*')
         .eq('uuid', event.host_id)
         .single();
-      setHostProfile(data);
+      
+      if (profileError || !profileData) return;
+      
+      // Now get the trusted status from profiles table
+      const { data: trustedData } = await supabase
+        .from('profiles')
+        .select('is_trusted, trusted_since')
+        .eq('id', event.host_id)
+        .single();
+      
+      // Combine the data
+      setHostProfile({
+        ...profileData,
+        is_trusted: trustedData?.is_trusted || false,
+        trusted_since: trustedData?.trusted_since || null
+      });
     }
     fetchHostProfile();
   }, [event.host_id]);
@@ -387,7 +405,9 @@ export default function EventCard({
                   <div className="text-xs text-gray-500">{hostProfile.pronouns}</div>
                 )}
               </div>
-              <span className="ml-auto text-xs text-gray-400">Host</span>
+              <div className="ml-auto">
+                <TrustedHostBadge is_trusted={hostProfile.is_trusted} />
+              </div>
             </div>
           )}
 

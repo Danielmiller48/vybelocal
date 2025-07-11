@@ -246,6 +246,24 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
               <div>
                 <h3 className="text-lg font-semibold">{profile.name}</h3>
                 {profile.pronouns && <p className="text-sm text-gray-600">{profile.pronouns}</p>}
+                {profile.is_trusted && (
+                  <div className="mt-1">
+                    <div className="flex items-center gap-1 text-sm text-green-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Verified Host
+                    </div>
+                    {profile.trusted_since && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        Verified since {new Date(profile.trusted_since).toLocaleDateString('en-US', { 
+                          month: 'long', 
+                          year: 'numeric' 
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <button
