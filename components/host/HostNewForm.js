@@ -21,6 +21,7 @@ const schema = z.object({
   starts_at: z.string(),
   ends_at: z.string().optional(),
   address: z.string().max(120).optional(),
+  rsvp_capacity: z.number().min(1, "Capacity must be at least 1").optional(),
   image: z
     .custom(
       (val) => val === undefined || (val instanceof FileList && val.length === 1),
@@ -142,6 +143,7 @@ export default function HostNewForm() {
           address: vals.address ?? null,
           starts_at: vals.starts_at,
           ends_at: vals.ends_at || null,
+          rsvp_capacity: vals.rsvp_capacity || null,
           img_path,
           status: "pending",
         };
@@ -237,6 +239,22 @@ export default function HostNewForm() {
         >
           Use My Location
         </button>
+      </div>
+
+      {/* RSVP Capacity */}
+      <div>
+        <label htmlFor="rsvp_capacity" className="block text-sm font-medium text-gray-700">
+          RSVP Capacity (optional)
+        </label>
+        <input
+          id="rsvp_capacity"
+          type="number"
+          min="1"
+          {...register("rsvp_capacity", { valueAsNumber: true })}
+          className="input w-full"
+          placeholder="Leave blank for unlimited"
+        />
+        {errors.rsvp_capacity && <p className="err">{errors.rsvp_capacity.message}</p>}
       </div>
 
       {/* Dates */}

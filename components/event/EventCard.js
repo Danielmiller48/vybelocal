@@ -79,6 +79,7 @@ export default function EventCard({
   const [reportReason, setReportReason] = useState('spam');
   const [reportDetails, setReportDetails] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
+  const [rsvpCount, setRsvpCount] = useState(0);
 
   const reportReasons = [
     { value: 'spam', label: 'Spam or scam' },
@@ -118,56 +119,91 @@ export default function EventCard({
   useEffect(() => {
     if (!bridged || status !== "authenticated") return;
     (async () => {
-      const { data } = await supabase
+      console.log("EventCard: Fetching user RSVP status for event:", event.id, "user:", session.user.id);
+      const { data, error } = await supabase
         .from("rsvps")
         .select("event_id")
         .eq("event_id", event.id)
         .eq("user_id", session.user.id)
         .maybeSingle();
-      setJoined(Boolean(data));
+      
+      if (error) {
+        console.error("EventCard: Error fetching user RSVP status:", error);
+      } else {
+        console.log("EventCard: User RSVP status fetched:", data);
+        setJoined(Boolean(data));
+      }
     })();
   }, [bridged, status, event.id, session?.user?.id]);
 
-  /* 3 ─ RSVP toggle */
+  /* 3 ─ fetch RSVP count */
+  useEffect(() => {
+    if (!bridged) return;
+    (async () => {
+      console.log("EventCard: Fetching RSVP count for event:", event.id);
+      const { count, error } = await supabase
+        .from("rsvps")
+        .select("event_id", { count: "exact" })
+        .eq("event_id", event.id);
+      
+      if (error) {
+        console.error("EventCard: Error fetching RSVP count:", error);
+      } else {
+        console.log("EventCard: RSVP count fetched:", count);
+        setRsvpCount(count ?? 0);
+      }
+    })();
+  }, [bridged, event.id]);
+
+  /* 4 ─ RSVP toggle */
   async function toggleRsvp(e) {
-  e.stopPropagation();
-  e.preventDefault();
+    e.stopPropagation();
+    e.preventDefault();
 
-  if (status !== "authenticated") {
-    router.push(`/login?next=/vybes/${event.id}`);
-    return;
-  }
-  if (busy) return;
-
-  setBusy(true);
-  const row = { event_id: event.id, user_id: session.user.id };
-  let error;
-
-  if (!joined) {
-    ({ error } = await supabase
-      .from("rsvps")
-      .insert(row, { ignoreDuplicates: true }));
-    if (!error) {
-      setJoined(true);
-      toast.success("RSVP confirmed! 🎉");
+    if (status !== "authenticated") {
+      router.push(`/login?next=/vybes/${event.id}`);
+      return;
     }
-  } else {
-    ({ error } = await supabase
-      .from("rsvps")
-      .delete()
-      .match(row));
-    if (!error) {
-      setJoined(false);
-      toast("RSVP cancelled.");
+    if (busy) return;
+
+    // Check capacity before allowing RSVP
+    const capacity = event.rsvp_capacity;
+    if (!joined && capacity && rsvpCount >= capacity) {
+      toast.error("This event is at maximum capacity.");
+      return;
+    }
+
+    setBusy(true);
+    const row = { event_id: event.id, user_id: session.user.id };
+    let error;
+
+    if (!joined) {
+      ({ error } = await supabase
+        .from("rsvps")
+        .insert(row, { ignoreDuplicates: true }));
+      if (!error) {
+        setJoined(true);
+        setRsvpCount(rsvpCount + 1);
+        toast.success("RSVP confirmed! 🎉");
+      }
+    } else {
+      ({ error } = await supabase
+        .from("rsvps")
+        .delete()
+        .match(row));
+      if (!error) {
+        setJoined(false);
+        setRsvpCount(rsvpCount - 1);
+        toast("RSVP cancelled.");
+      }
+    }
+
+    setBusy(false);
+    if (error && error.code !== "23505") {
+      toast.error("Something went wrong.");
+      console.error(error.message);
     }
   }
-
-  setBusy(false);
-  if (error && error.code !== "23505") {
-    toast.error("Something went wrong.");
-    console.error(error.message);
-  }
-}
 
   /* Fetch host profile */
   useEffect(() => {
@@ -354,16 +390,26 @@ export default function EventCard({
           {!isAdmin && (
             <button
               onClick={toggleRsvp}
-              disabled={busy}
+              disabled={busy || (!joined && event.rsvp_capacity && rsvpCount >= event.rsvp_capacity)}
               className={
                 "mt-3 py-2 px-4 rounded-lg w-full transition " +
                 (joined
                   ? "bg-gray-500 hover:bg-gray-600 text-white"
                   : "bg-indigo-600 hover:bg-indigo-700 text-white") +
-                (busy ? " opacity-60 cursor-wait" : "")
+                (busy ? " opacity-60 cursor-wait" : "") +
+                ((!joined && event.rsvp_capacity && rsvpCount >= event.rsvp_capacity) ? " opacity-50 cursor-not-allowed" : "")
               }
             >
-              {busy ? "…" : joined ? "Cancel RSVP" : "RSVP"}
+              {busy 
+                ? "…" 
+                : joined 
+                  ? "Cancel RSVP" 
+                  : (!joined && event.rsvp_capacity && rsvpCount >= event.rsvp_capacity)
+                    ? "Max capacity reached"
+                    : event.rsvp_capacity 
+                      ? `RSVP (${Math.max(0, event.rsvp_capacity - rsvpCount)} left)`
+                      : "RSVP"
+              }
             </button>
           )}
 
