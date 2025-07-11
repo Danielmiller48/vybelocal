@@ -21,7 +21,6 @@ export default function SoftBanModalClient() {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        console.log("SoftBan: No user found");
         setShow(false);
         setIsChecking(false);
         setUserId(null); // clear userId
@@ -29,14 +28,11 @@ export default function SoftBanModalClient() {
       }
 
       setUserId(user.id); // <-- set userId here
-      console.log("SoftBan: Checking user", user.id);
       const { data: profile } = await supabase
         .from("profiles")
         .select("soft_ban_expires_at, warning_issued")
         .eq("id", user.id)
         .maybeSingle();
-
-      console.log("SoftBan: Profile data", profile);
 
       if (profile?.soft_ban_expires_at) {
         const now = new Date();
@@ -45,23 +41,13 @@ export default function SoftBanModalClient() {
         const readKey = `softBanRead-${user.id}`;
         const acknowledged = typeof window !== 'undefined' && localStorage.getItem(readKey) === '1';
 
-        console.log("SoftBan: Expiry check", { 
-          now: now.toISOString(), 
-          expiry: expiry.toISOString(), 
-          isActive, 
-          acknowledged 
-        });
-
         if (isActive || !acknowledged) {
-          console.log("SoftBan: SHOWING MODAL");
           setShow(true);
           setRemaining(msUntil(profile.soft_ban_expires_at));
         } else {
-          console.log("SoftBan: Not showing modal");
           setShow(false);
         }
       } else {
-        console.log("SoftBan: No soft_ban_expires_at found");
         setShow(false);
       }
     } catch (error) {
