@@ -8,14 +8,17 @@ import EventSearchBar from '@/components/common/EventSearchBar';
 
 const vibes = ['all', 'chill', 'hype', 'creative', 'active'];
 
-export default function DiscoverClient() {
+export default function DiscoverClient({ initialEvents = null }) {
   const supabase = createSupabaseBrowser();
   const { data: session } = useSession();
   const userId = session?.user?.id;
   const [active, setActive] = useState('all');
-  const [events, setEvents] = useState([]);
+  const [events, setEvents] = useState(initialEvents || []);
+  const [batch, setBatch] = useState({ rsvpCounts: {}, userRsvps: new Set(), hostProfiles: {} });
+  const [batchReady, setBatchReady] = useState(false);
 
   useEffect(() => {
+    if (initialEvents) return; // server already provided events list but may need batch data
     async function load() {
       // Fetch blocks for the current user
       let blockedUserIds = new Set();
@@ -45,7 +48,67 @@ export default function DiscoverClient() {
       setEvents(filtered);
     }
     load();
-  }, [active, supabase, userId]);
+  }, [active, supabase, userId, initialEvents]);
+
+  /* Batch fetch RSVP counts, user RSVPs, host profiles whenever events change */
+  useEffect(() => {
+    if (events.length === 0) return;
+
+    async function batchFetch() {
+      const eventIds = events.map(e => e.id);
+      const hostIds  = [...new Set(events.map(e => e.host_id))];
+
+      const promises = [];
+
+      // RSVP counts
+      promises.push(
+        supabase.from('rsvps')
+          .select('event_id')
+          .in('event_id', eventIds)
+          .then(({ data }) => {
+            const map = {};
+            eventIds.forEach(id => map[id] = 0);
+            (data || []).forEach(r => { map[r.event_id] = (map[r.event_id]||0)+1; });
+            return map;
+          })
+      );
+
+      // User RSVPs if logged in
+      if (userId) {
+        promises.push(
+          supabase.from('rsvps')
+            .select('event_id')
+            .eq('user_id', userId)
+            .in('event_id', eventIds)
+            .then(({ data }) => new Set((data||[]).map(r=>r.event_id)))
+        );
+      } else {
+        promises.push(Promise.resolve(new Set()));
+      }
+
+      // Host profiles
+      promises.push(
+        supabase.from('public_user_cards')
+          .select('*')
+          .in('uuid', hostIds)
+          .then(({ data }) => {
+            const map = {};
+            (data||[]).forEach(p=>{ map[p.uuid]=p; });
+            return map;
+          })
+      );
+
+      const [rsvpCounts, userRsvpSet, hostProfiles] = await Promise.all(promises);
+      setBatch({ rsvpCounts, userRsvps: userRsvpSet, hostProfiles });
+      setBatchReady(true);
+    }
+    batchFetch();
+  }, [events, supabase, userId]);
+
+  // Render loading placeholder until batch maps are ready
+  if (events.length && !batchReady) {
+    return <p className="p-6">Loading…</p>;
+  }
 
   return (
     <section className="p-4 space-y-6">
@@ -72,7 +135,14 @@ export default function DiscoverClient() {
       {events.length ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((ev) => (
-            <EventCard key={ev.id} event={ev} />
+            <EventCard
+              key={ev.id}
+              event={ev}
+              img={ev.thumb}
+              rsvpCountProp={batch.rsvpCounts[ev.id]}
+              userRsvpStatus={batch.userRsvps.has ? batch.userRsvps.has(ev.id) : false}
+              hostProfileProp={batch.hostProfiles[ev.host_id]}
+            />
           ))}
         </div>
       ) : (

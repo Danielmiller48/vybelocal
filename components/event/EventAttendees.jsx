@@ -3,27 +3,17 @@
 import { useState, useEffect } from "react";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
 import ProfileModal from "./ProfileModal";
+import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 
 const supabase = createSupabaseBrowser();
 
 function useAvatarUrl(avatarPath) {
   const [url, setUrl] = useState('/avatar-placeholder.png');
   useEffect(() => {
-    if (!avatarPath || typeof avatarPath !== 'string' || avatarPath.trim() === '' || avatarPath === '/avatar-placeholder.png') {
-      setUrl('/avatar-placeholder.png');
-      return;
-    }
-    if (avatarPath.startsWith('http')) {
-      setUrl(avatarPath);
-      return;
-    }
-    supabase.storage
-      .from('profile-images')
-      .createSignedUrl(avatarPath, 3600)
-      .then(({ data }) => {
-        if (data?.signedUrl) setUrl(data.signedUrl);
-        else setUrl('/avatar-placeholder.png');
-      });
+    (async () => {
+      const signed = await getAvatarUrl(avatarPath);
+      setUrl(signed);
+    })();
   }, [avatarPath]);
   return url;
 }

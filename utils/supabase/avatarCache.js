@@ -23,8 +23,8 @@ export async function getAvatarUrl(path) {
         .from('profile-images')
         .createSignedUrl(path, 60 * 60, {
           transform: {
-            width: 32,
-            height: 32,
+            width: 64,
+            height: 64,
             resize: 'cover',
             quality: 60,
           },

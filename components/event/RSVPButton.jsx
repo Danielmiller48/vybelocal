@@ -8,15 +8,15 @@ import toast from "react-hot-toast";
 
 const supabase = createSupabaseBrowser();
 
-export default function RSVPButton({ eventId }) {
+export default function RSVPButton({ eventId, initialJoined = null, initialRsvpCount = null, capacity: capacityProp = null }) {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  const [joined, setJoined] = useState(false);
+  const [joined, setJoined] = useState(initialJoined ?? false);
   const [busy, startBusy] = useTransition();
   const [bridged, setBridged] = useState(false);
-  const [rsvpCount, setRsvpCount] = useState(0);
-  const [capacity, setCapacity] = useState(null);
+  const [rsvpCount, setRsvpCount] = useState(initialRsvpCount ?? 0);
+  const [capacity, setCapacity] = useState(capacityProp);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -37,6 +37,7 @@ export default function RSVPButton({ eventId }) {
   }, [status, session]);
 
   useEffect(() => {
+    if (initialJoined !== null) return;
     async function fetchJoined() {
       if (status !== "authenticated") return;
       console.log("RSVPButton: Fetching user RSVP status for event:", eventId, "user:", session.user.id);
@@ -57,6 +58,7 @@ export default function RSVPButton({ eventId }) {
   }, [status, session, eventId]);
 
   useEffect(() => {
+    if (initialRsvpCount !== null && capacityProp !== null) { setCapacity(capacityProp); return; }
     async function fetchEventData() {
       if (!bridged) return;
       

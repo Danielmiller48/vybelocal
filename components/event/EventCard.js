@@ -62,6 +62,9 @@ function useAvatarUrl(avatarPath) {
 export default function EventCard({
   event,
   img,
+  userRsvpStatus = null,
+  rsvpCountProp = null,
+  hostProfileProp = null,
   onApprove,
   onDeny,
   onPending,
@@ -73,15 +76,15 @@ export default function EventCard({
   const router = useRouter();
 
   const [bridged, setBridged] = useState(false);
-  const [joined,  setJoined]  = useState(false);
+  const [joined,  setJoined]  = useState(userRsvpStatus ?? false);
   const [busy,    setBusy]    = useState(false);
-  const [hostProfile, setHostProfile] = useState(null);
+  const [hostProfile, setHostProfile] = useState(hostProfileProp ?? null);
   const [modalOpen, setModalOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('spam');
   const [reportDetails, setReportDetails] = useState('');
   const [reportBusy, setReportBusy] = useState(false);
-  const [rsvpCount, setRsvpCount] = useState(0);
+  const [rsvpCount, setRsvpCount] = useState(rsvpCountProp ?? 0);
 
   const reportReasons = [
     { value: 'spam', label: 'Spam or scam' },
@@ -117,8 +120,9 @@ export default function EventCard({
     })();
   }, [status, session]);
 
-  /* 2 ─ fetch existing RSVP */
+  /* 2 ─ fetch existing RSVP when not provided */
   useEffect(() => {
+    if (userRsvpStatus !== null) return;
     if (!bridged || status !== "authenticated") return;
     (async () => {
       console.log("EventCard: Fetching user RSVP status for event:", event.id, "user:", session.user.id);
@@ -138,8 +142,9 @@ export default function EventCard({
     })();
   }, [bridged, status, event.id, session?.user?.id]);
 
-  /* 3 ─ fetch RSVP count */
+  /* 3 ─ fetch RSVP count when not provided */
   useEffect(() => {
+    if (rsvpCountProp !== null) return;
     if (!bridged) return;
     (async () => {
       console.log("EventCard: Fetching RSVP count for event:", event.id);
@@ -212,8 +217,9 @@ export default function EventCard({
     }
   }
 
-  /* Fetch host profile with cache */
+  /* Fetch host profile with cache if not provided */
   useEffect(() => {
+    if (hostProfileProp) { return; }
     async function fetchHostProfile() {
       if (!event.host_id) return;
       const profile = await getHostProfile(event.host_id);
@@ -345,9 +351,10 @@ export default function EventCard({
         <Image
           src={imageSrc}
           alt={event.title}
-          width={640}
-          height={480}
+          width={320}
+          height={240}
           className="object-cover aspect-[4/3] w-full"
+          loading="lazy"
           unoptimized
         />
 
