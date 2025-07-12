@@ -3,33 +3,21 @@ import { useState, useEffect } from 'react';
 import { X, Shield } from 'lucide-react';
 import { FaFlag } from 'react-icons/fa';
 import toast from 'react-hot-toast';
+import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 
 function useAvatarUrl(avatarPath) {
   const [url, setUrl] = useState('/avatar-placeholder.png');
   useEffect(() => {
-    if (!avatarPath || typeof avatarPath !== 'string' || avatarPath.trim() === '' || avatarPath === '/avatar-placeholder.png') {
-      setUrl('/avatar-placeholder.png');
-      return;
-    }
-    if (avatarPath.startsWith('http')) {
-      setUrl(avatarPath);
-      return;
-    }
-    import('@/utils/supabase/client').then(({ createSupabaseBrowser }) => {
-      const supabase = createSupabaseBrowser();
-      supabase.storage
-        .from('profile-images')
-        .createSignedUrl(avatarPath, 3600)
-        .then(({ data }) => {
-          if (data?.signedUrl) setUrl(data.signedUrl);
-          else setUrl('/avatar-placeholder.png');
-        });
-    });
+    (async () => {
+      if (!avatarPath) { setUrl('/avatar-placeholder.png'); return; }
+      const signed = await getAvatarUrl(avatarPath);
+      setUrl(signed);
+    })();
   }, [avatarPath]);
   return url;
 }
 
-export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutualVybes = [], pastEvents = [] }) {
+export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutualVybes = [], pastEvents = [], avatarUrl: overrideAvatarUrl = null }) {
   const [isBlocking, setIsBlocking] = useState(false);
   const [blockReason, setBlockReason] = useState('');
   const [blockDetails, setBlockDetails] = useState('');
@@ -41,7 +29,7 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
   const [blockChecked, setBlockChecked] = useState(false);
 
   // Always call the hook, even if profile is null
-  const avatarUrl = useAvatarUrl(profile?.avatar_url);
+  const avatarUrl = overrideAvatarUrl || useAvatarUrl(profile?.avatar_url);
 
   if (!isOpen || !profile) return null;
 

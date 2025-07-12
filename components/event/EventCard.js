@@ -12,6 +12,7 @@ import ProfileModal from '@/components/event/ProfileModal';
 import { FaFlag } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
 import TrustedHostBadge from '../TrustedHostBadge';
+import { getHostProfile } from '@/utils/supabase/profileCache';
 
 const supabase = createSupabaseBrowser();
 
@@ -211,33 +212,12 @@ export default function EventCard({
     }
   }
 
-  /* Fetch host profile with trusted status */
+  /* Fetch host profile with cache */
   useEffect(() => {
     async function fetchHostProfile() {
       if (!event.host_id) return;
-      
-      // First get the basic profile info
-      const { data: profileData, error: profileError } = await supabase
-        .from('public_user_cards')
-        .select('*')
-        .eq('uuid', event.host_id)
-        .single();
-      
-      if (profileError || !profileData) return;
-      
-      // Now get the trusted status from profiles table
-      const { data: trustedData } = await supabase
-        .from('profiles')
-        .select('is_trusted, trusted_since')
-        .eq('id', event.host_id)
-        .single();
-      
-      // Combine the data
-      setHostProfile({
-        ...profileData,
-        is_trusted: trustedData?.is_trusted || false,
-        trusted_since: trustedData?.trusted_since || null
-      });
+      const profile = await getHostProfile(event.host_id);
+      if (profile) setHostProfile(profile);
     }
     fetchHostProfile();
   }, [event.host_id]);
@@ -497,6 +477,7 @@ export default function EventCard({
           profile={hostProfile}
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
+          avatarUrl={hostAvatarUrl}
           // Placeholder for report action
           onReport={() => alert('Report feature coming soon!')}
         />

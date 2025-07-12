@@ -9,16 +9,20 @@
  ****************************************************************/
 
 import React, { useMemo, useState, useEffect } from "react";
-import { Calendar, dateFnsLocalizer } from "react-big-calendar";
+import { dateFnsLocalizer } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import clsx from "clsx";
+import dynamic from 'next/dynamic';
 
 import VibeEvent from "@/components/event/VibeEvent";
 import DayDrawer from "@/components/event/DayDrawer";
 import MobileAgenda from "@/components/event/MobileAgenda";
 
 import "react-big-calendar/lib/css/react-big-calendar.css";
+
+// Dynamically import Calendar component so it loads **only** when the calendar page is rendered.
+const Calendar = dynamic(() => import('react-big-calendar').then(mod => mod.Calendar), { ssr: false });
 
 /* ---------- Constants -------------------------------------- */
 const locales = { "en-US": require("date-fns/locale/en-US") };

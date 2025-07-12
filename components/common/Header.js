@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { useSupabase } from '@/app/ClientProviders';
 import AvatarFallback from '@/components/common/AvatarFallback';
+import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 
 const Placeholder = () => (
   <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-semibold text-white select-none">
@@ -39,16 +40,8 @@ export default function Header() {
       setIsAdmin(!!profile.is_admin);
 
       if (profile.avatar_url) {
-        // If avatar_url already contains https, it's a signed/public URL
-        if (profile.avatar_url.startsWith('http')) {
-          setAvatarUrl(profile.avatar_url);
-        } else {
-          // Otherwise treat as storage path and sign on the fly
-          const { data: signed } = await supabase.storage
-            .from('profile-images')
-            .createSignedUrl(profile.avatar_url, 60 * 60);
-          if (!ignore) setAvatarUrl(signed?.signedUrl || null);
-        }
+        const url = await getAvatarUrl(profile.avatar_url);
+        if (!ignore) setAvatarUrl(url);
       } else {
         setAvatarUrl(null);
       }

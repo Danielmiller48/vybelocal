@@ -6,6 +6,7 @@ import Link           from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X }    from 'lucide-react'
 import { createSupabaseBrowser } from '@/utils/supabase/client';
+import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 
 /**
  * Mobile‑first sidebar for /user routes.
@@ -32,7 +33,9 @@ export default function UserSidebar() {
         .select('avatar_url')
         .eq('id', user.id)
         .single();
-      setAvatarUrl(profile?.avatar_url ?? null);
+
+      const url = await getAvatarUrl(profile?.avatar_url);
+      setAvatarUrl(url);
     }
     fetchAvatar();
   }, []);
