@@ -5,18 +5,28 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
 import toast from "react-hot-toast";
+import PaymentModal from "@/components/payments/PaymentModal";
 
 const supabase = createSupabaseBrowser();
 
-export default function RSVPButton({ eventId, initialJoined = null, initialRsvpCount = null, capacity: capacityProp = null }) {
+export default function RSVPButton({
+  eventId,
+  price = null,
+  initialJoined = null,
+  initialPaid = false,
+  initialRsvpCount = null,
+  capacity: capacityProp = null,
+}) {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   const [joined, setJoined] = useState(initialJoined ?? false);
-  const [busy, startBusy] = useTransition();
+  const [paid, setPaid]     = useState(initialPaid  ?? false);
+  const [busy, startBusy]   = useTransition();
   const [bridged, setBridged] = useState(false);
   const [rsvpCount, setRsvpCount] = useState(initialRsvpCount ?? 0);
   const [capacity, setCapacity] = useState(capacityProp);
+  const [showPayModal, setShowPayModal] = useState(false);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -43,7 +53,7 @@ export default function RSVPButton({ eventId, initialJoined = null, initialRsvpC
       console.log("RSVPButton: Fetching user RSVP status for event:", eventId, "user:", session.user.id);
       const { data, error } = await supabase
         .from("rsvps")
-        .select("user_id")
+        .select("user_id, paid")
         .eq("event_id", eventId)
         .eq("user_id", session.user.id);
       
@@ -51,7 +61,10 @@ export default function RSVPButton({ eventId, initialJoined = null, initialRsvpC
         console.error("RSVPButton: Error fetching user RSVP status:", error);
       } else {
         console.log("RSVPButton: User RSVP status fetched:", data);
-        if (data?.length) setJoined(true);
+        if (data?.length) {
+          setJoined(true);
+          setPaid(Boolean(data[0].paid));
+        }
       }
     }
     fetchJoined();
@@ -94,7 +107,12 @@ export default function RSVPButton({ eventId, initialJoined = null, initialRsvpC
     fetchEventData();
   }, [bridged, eventId]);
 
-  function toggleRsvp() {
+  function toggleRsvp(e) {
+    // Prevent navigation when nested inside a <Link>
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (!bridged) return;
     if (status !== "authenticated") {
       router.push("/login");
@@ -118,7 +136,15 @@ export default function RSVPButton({ eventId, initialJoined = null, initialRsvpC
         if (!error) {
           setJoined(true);
           setRsvpCount(rsvpCount + 1);
-          toast.success("RSVP confirmed! 🎉");
+
+          if (price && price > 0) {
+            // Paid event – open checkout modal instead of success toast
+            setShowPayModal(true);
+            toast("RSVP saved – complete payment to secure your spot.");
+          } else {
+            toast.success("RSVP confirmed! 🎉");
+            // Free event – keep paid false so user can still cancel
+          }
         }
       } else {
         if (!confirm("Are you sure you want to cancel your RSVP?")) return;
@@ -126,6 +152,7 @@ export default function RSVPButton({ eventId, initialJoined = null, initialRsvpC
         if (!error) {
           setJoined(false);
           setRsvpCount(rsvpCount - 1);
+          setPaid(false);
           toast("RSVP cancelled.");
         }
       }
@@ -138,23 +165,45 @@ export default function RSVPButton({ eventId, initialJoined = null, initialRsvpC
   }
 
   return (
+    <>
     <button
       onClick={toggleRsvp}
-      disabled={busy || !bridged || (!joined && capacity && rsvpCount >= capacity)}
+      disabled={busy || !bridged || (!joined && capacity && rsvpCount >= capacity) || (joined && price && price>0 && paid)}
       className={`mt-4 w-full rounded-lg py-2 text-white transition ${
-        joined ? "bg-gray-500 hover:bg-gray-600" : "bg-indigo-600 hover:bg-indigo-700"
+        joined
+          ? paid
+            ? "bg-green-600 cursor-default"
+            : "bg-yellow-600 hover:bg-yellow-700"
+          : "bg-indigo-600 hover:bg-indigo-700"
       } ${(!joined && capacity && rsvpCount >= capacity) ? "opacity-50 cursor-not-allowed" : ""}`}
     >
       {busy 
         ? "…" 
-        : joined 
-          ? "Cancel RSVP" 
+        : joined
+          ? (price && price>0
+              ? (paid ? "✓ Paid" : "Pay now")
+              : "Cancel RSVP")
           : (!joined && capacity && rsvpCount >= capacity)
             ? "Max capacity reached"
-            : capacity 
-              ? `RSVP (${Math.max(0, capacity - rsvpCount)} left)`
-              : "RSVP"
+            : price && price > 0
+              ? `Pay $${(price/100).toFixed(2)}`
+              : capacity 
+                ? `RSVP (${Math.max(0, capacity - rsvpCount)} left)`
+                : "RSVP"
       }
     </button>
+
+    {/* Payment Modal */}
+    <PaymentModal
+      open={showPayModal}
+      eventId={eventId}
+      amount={price}
+      onClose={() => setShowPayModal(false)}
+      onSuccess={() => {
+        setPaid(true);
+        setShowPayModal(false);
+      }}
+    />
+    </>
   );
 }

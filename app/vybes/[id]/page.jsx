@@ -35,6 +35,7 @@ export default async function VybeDetail({ params }) {
 
   /* 3 ─ RSVP count & joined (server-side) */
   let initialJoined = null;
+  let initialPaid   = false;
   let initialRsvpCount = null;
 
   // Total RSVP count (available to everyone)
@@ -48,11 +49,14 @@ export default async function VybeDetail({ params }) {
   if (user) {
     const { data: joinedRow } = await sb
       .from('rsvps')
-      .select('event_id')
+      .select('event_id, paid')
       .eq('event_id', ev.id)
       .eq('user_id', user.id)
       .maybeSingle();
-    initialJoined = Boolean(joinedRow);
+    if (joinedRow) {
+      initialJoined = true;
+      initialPaid   = Boolean(joinedRow.paid);
+    }
   }
 
   /* 4 ─ render */
@@ -84,7 +88,9 @@ export default async function VybeDetail({ params }) {
 
       <RSVPButton
         eventId={ev.id}
+        price={ev.price_in_cents}
         initialJoined={initialJoined}
+        initialPaid={initialPaid}
         initialRsvpCount={initialRsvpCount}
         capacity={ev.rsvp_capacity}
       />

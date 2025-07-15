@@ -18,6 +18,8 @@ const schema = z.object({
   starts_at: z.string().optional(),
   ends_at: z.string().nullable().optional(),
   img_file: z.any().optional(),
+  refund_policy: z.enum(["anytime","1week","48h","24h","no_refund"]).optional(),
+  price_in_cents: z.number().int().min(0).optional(),
 });
 
 export default function HostEditForm({ event }) {
@@ -26,6 +28,7 @@ export default function HostEditForm({ event }) {
   const [preview, setPreview] = useState(
     event.img_path ? supabase.storage.from("event-images").getPublicUrl(event.img_path).data.publicUrl : null
   );
+  const [paidToggle,setPaidToggle]=useState(Boolean(event.price_in_cents));
 
   const {
     register,
@@ -42,6 +45,8 @@ export default function HostEditForm({ event }) {
       address: event.address,
       starts_at: event.starts_at?.slice(0, 16),
       ends_at: event.ends_at?.slice(0, 16),
+      refund_policy: event.refund_policy ?? "no_refund",
+      price_in_cents: event.price_in_cents ?? undefined,
     },
   });
 
@@ -77,6 +82,8 @@ export default function HostEditForm({ event }) {
       const payload = {
         ...values,
         img_path: uploadedPath,
+        price_in_cents: paidToggle ? values.price_in_cents ?? null : null,
+        refund_policy: paidToggle ? values.refund_policy ?? event.refund_policy : 'no_refund',
         status: "pending", // always revert to pending
       };
 
@@ -110,6 +117,27 @@ export default function HostEditForm({ event }) {
         <option value="creative">Creative</option>
         <option value="active">Active</option>
       </select>
+
+      {/* Paid toggle */}
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={paidToggle} onChange={e=>setPaidToggle(e.target.checked)} disabled={event.locked} />
+        Paid event
+      </label>
+
+      {paidToggle && (
+        <>
+          <input type="number" min="0.5" step="0.01" placeholder="Ticket price USD" {...register("price_in_cents", { valueAsNumber: true })} className="input" disabled={event.locked} />
+          {event.locked && <p className="text-xs text-gray-500">Price locked after paid RSVPs.</p>}
+
+          <select {...register("refund_policy") } className="select" disabled={event.locked}>
+            <option value="anytime">Refund anytime</option>
+            <option value="1week">Refund until 1 week before start</option>
+            <option value="48h">Refund until 48 h before start</option>
+            <option value="24h">Refund until 24 h before start</option>
+            <option value="no_refund">No refunds</option>
+          </select>
+        </>
+      )}
 
       <input placeholder="Address" {...register("address")} className="input" />
 

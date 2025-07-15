@@ -73,17 +73,22 @@ export default function DiscoverClient({ initialEvents = null }) {
           })
       );
 
-      // User RSVPs if logged in
+      // User RSVPs with paid flag if logged in
       if (userId) {
         promises.push(
           supabase.from('rsvps')
-            .select('event_id')
+            .select('event_id, paid')
             .eq('user_id', userId)
             .in('event_id', eventIds)
-            .then(({ data }) => new Set((data||[]).map(r=>r.event_id)))
+            .then(({ data }) => {
+              const set = new Set();
+              const paidMap = {};
+              (data||[]).forEach(r=>{ set.add(r.event_id); paidMap[r.event_id]=Boolean(r.paid); });
+              return { set, paidMap };
+            })
         );
       } else {
-        promises.push(Promise.resolve(new Set()));
+        promises.push(Promise.resolve({ set:new Set(), paidMap:{} }));
       }
 
       // Host profiles
@@ -98,8 +103,8 @@ export default function DiscoverClient({ initialEvents = null }) {
           })
       );
 
-      const [rsvpCounts, userRsvpSet, hostProfiles] = await Promise.all(promises);
-      setBatch({ rsvpCounts, userRsvps: userRsvpSet, hostProfiles });
+      const [rsvpCounts, userData, hostProfiles] = await Promise.all(promises);
+      setBatch({ rsvpCounts, userRsvps: userData.set, paidMap: userData.paidMap, hostProfiles });
       setBatchReady(true);
     }
     batchFetch();
@@ -141,6 +146,7 @@ export default function DiscoverClient({ initialEvents = null }) {
               img={ev.thumb}
               rsvpCountProp={batch.rsvpCounts[ev.id]}
               userRsvpStatus={batch.userRsvps.has ? batch.userRsvps.has(ev.id) : false}
+              initialPaid={batch.paidMap ? batch.paidMap[ev.id] : false}
               hostProfileProp={batch.hostProfiles[ev.host_id]}
             />
           ))}

@@ -13,6 +13,7 @@ import { FaFlag } from 'react-icons/fa';
 import ReactDOM from 'react-dom';
 import TrustedHostBadge from '../TrustedHostBadge';
 import { getHostProfile } from '@/utils/supabase/profileCache';
+import RSVPButtonComp from '@/components/event/RSVPButton';
 
 const supabase = createSupabaseBrowser();
 
@@ -65,6 +66,7 @@ export default function EventCard({
   userRsvpStatus = null,
   rsvpCountProp = null,
   hostProfileProp = null,
+  initialPaid = false,
   onApprove,
   onDeny,
   onPending,
@@ -398,31 +400,16 @@ export default function EventCard({
             </div>
           )}
 
-          {/* Public RSVP toggle */}
+          {/* Paid-aware RSVP button */}
           {!isAdmin && (
-            <button
-              onClick={toggleRsvp}
-              disabled={busy || (!joined && event.rsvp_capacity && rsvpCount >= event.rsvp_capacity)}
-              className={
-                "mt-3 py-2 px-4 rounded-lg w-full transition " +
-                (joined
-                  ? "bg-gray-500 hover:bg-gray-600 text-white"
-                  : "bg-indigo-600 hover:bg-indigo-700 text-white") +
-                (busy ? " opacity-60 cursor-wait" : "") +
-                ((!joined && event.rsvp_capacity && rsvpCount >= event.rsvp_capacity) ? " opacity-50 cursor-not-allowed" : "")
-              }
-            >
-              {busy 
-                ? "…" 
-                : joined 
-                  ? "Cancel RSVP" 
-                  : (!joined && event.rsvp_capacity && rsvpCount >= event.rsvp_capacity)
-                    ? "Max capacity reached"
-                    : event.rsvp_capacity 
-                      ? `RSVP (${Math.max(0, event.rsvp_capacity - rsvpCount)} left)`
-                      : "RSVP"
-              }
-            </button>
+            <RSVPButtonComp
+              eventId={event.id}
+              price={event.price_in_cents}
+              initialJoined={joined}
+              initialPaid={initialPaid ?? false}
+              initialRsvpCount={rsvpCount}
+              capacity={event.rsvp_capacity}
+            />
           )}
 
           {/* (admin buttons unchanged) */}

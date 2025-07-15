@@ -21,6 +21,8 @@ const schema = z.object({
   starts_at: z.string(),
   ends_at: z.string().optional(),
   address: z.string().max(120).optional(),
+  refund_policy: z.enum(["anytime","1week","48h","24h","no_refund"]),
+  price_in_cents: z.number().int().min(0).optional(),
   rsvp_capacity: z.number().min(1, "Capacity must be at least 1").optional(),
   image: z
     .custom(
@@ -38,6 +40,7 @@ export default function HostNewForm() {
   const [serverErr, setErr] = useState("");
   const [submitting, startSubmit] = useTransition();
   const [thumb, setThumb] = useState("");
+  const [paid, setPaid] = useState(false);
 
   const prevStartRef = useRef(""); // for copy-over logic
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -50,7 +53,7 @@ export default function HostNewForm() {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { vibe: "chill" },
+    defaultValues: { vibe: "chill", refund_policy: "no_refund", price_in_cents: undefined },
   });
 
   /* ───────── live field watches ───────── */
@@ -143,6 +146,8 @@ export default function HostNewForm() {
           address: vals.address ?? null,
           starts_at: vals.starts_at,
           ends_at: vals.ends_at || null,
+          refund_policy: paid ? vals.refund_policy : "no_refund",
+          price_in_cents: paid ? vals.price_in_cents || null : null,
           rsvp_capacity: vals.rsvp_capacity || null,
           img_path,
           status: "pending",
@@ -200,6 +205,39 @@ export default function HostNewForm() {
           <option value="active">Active</option>
         </select>
       </div>
+
+      {/* Paid toggle */}
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={paid}
+          onChange={(e)=>setPaid(e.target.checked)}
+        />
+        Paid event
+      </label>
+
+      {paid && (
+        <>
+      {/* Ticket Price */}
+      <div>
+        <label htmlFor="price_in_cents" className="block text-sm font-medium text-gray-700">Ticket Price (USD)</label>
+        <input id="price_in_cents" type="number" min="0.5" step="0.01" {...register("price_in_cents", { valueAsNumber: true })} className="input w-full" placeholder="e.g. 5.00" />
+        {errors.price_in_cents && <p className="err">{errors.price_in_cents.message}</p>}
+      </div>
+
+      {/* Refund Policy */}
+      <div>
+        <label htmlFor="refund_policy" className="block text-sm font-medium text-gray-700">Refund policy</label>
+        <select id="refund_policy" {...register("refund_policy")} className="select w-full">
+          <option value="anytime">Refund anytime</option>
+          <option value="1week">Refund until 1 week before start</option>
+          <option value="48h">Refund until 48 h before start</option>
+          <option value="24h">Refund until 24 h before start</option>
+          <option value="no_refund">No refunds</option>
+        </select>
+      </div>
+        </>
+      )}
 
       {/* Description */}
       <div>
