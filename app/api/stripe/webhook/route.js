@@ -57,13 +57,33 @@ export async function POST(request) {
       const sb = await createSupabaseServer({ admin: true });
 
       // 1️⃣ Insert into payments (ignore duplicates if Stripe retries)
-      await sb.from('payments').upsert({
-        event_id:          eventId,
-        user_id:           userId,
-        stripe_payment_id: intentId,
-        amount_paid:       amount_received,
-        receipt_url:       receiptUrl,
-        refunded:          false,
+      const { data: paymentRow, error: payErr } = await sb.from('payments')
+        .upsert({
+          event_id:          eventId,
+          user_id:           userId,
+          stripe_payment_id: intentId,
+          amount_paid:       amount_received,
+          user_paid_cents:   amount_received,
+          stripe_fee_cents:  Number(metadata.stripe_fee || 0),
+          platform_fee_cents: Number(metadata.platform_fee || 0),
+          receipt_url:       receiptUrl,
+          refunded:          false,
+        })
+        .select('id')
+        .single();
+
+      if (payErr) throw payErr;
+
+      // 1.5 – Ledger entry (platform revenue breakdown)
+      const vybeFee   = Number(metadata.platform_fee || 0);
+      const stripeFee = Number(metadata.stripe_fee   || 0);
+      const net       = vybeFee; // After user-covers-stripe-fee model, net == vybeFee
+
+      await sb.from('ledger').upsert({
+        payment_id:       paymentRow.id,
+        vybe_fee_cents:   vybeFee,
+        stripe_fee_cents: stripeFee,
+        net_cents:        net,
       });
 
       // 2️⃣ Mark RSVP row as paid

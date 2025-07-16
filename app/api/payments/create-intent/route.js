@@ -8,6 +8,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/utils/auth';
 import { stripe } from '@/utils/stripe/server';
 import { createSupabaseServer } from '@/utils/supabase/server';
+import { calcFees } from '@/lib/fees.js';
 // NEW: helper uses service role when we need to update profiles
 
 export async function POST(request) {
@@ -17,8 +18,12 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const { eventId, amount } = await request.json();
-    if (!eventId || !amount || amount <= 0) {
+    let { eventId, amount } = await request.json(); // amount here is base price in cents
+
+    // Explicitly cast amount to a Number to avoid unexpected string/NaN issues
+    amount = Number(amount);
+
+    if (!eventId || !amount || Number.isNaN(amount) || amount <= 0) {
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
     }
 
@@ -60,21 +65,33 @@ export async function POST(request) {
     // STEP 2: Create PaymentIntent linked to that customer.
     // ──────────────────────────────────────────────────────────────
 
-    const intent = await stripe.paymentIntents.create({
-      amount,
+    const { total, stripe: stripeFee, platform: platformFee } = calcFees(amount);
+
+    // We are now holding funds in escrow on the PLATFORM account.
+    // Hence we do NOT set transfer_data or application_fee_amount here.
+
+    const intentParams = {
+      amount: total,
       currency: 'usd',
       customer: customerId,
       metadata: {
         eventId,
         userId: session.user.id,
+        base: String(amount),
+        stripe_fee: String(stripeFee),
+        platform_fee: String(platformFee),
       },
       automatic_payment_methods: { enabled: true },
-      setup_future_usage: 'off_session', // allows saving card for next time
-    });
+      setup_future_usage: 'off_session',
+    };
+
+    const intent = await stripe.paymentIntents.create(intentParams);
 
     return NextResponse.json({ client_secret: intent.client_secret });
   } catch (err) {
     console.error('Stripe create-intent error:', err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    // Return the underlying Stripe error message in dev for easier debugging.
+    // In production you might want to keep this generic.
+    return NextResponse.json({ error: err?.message || 'Server error' }, { status: 500 });
   }
 } 

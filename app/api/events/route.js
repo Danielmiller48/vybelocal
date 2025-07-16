@@ -43,6 +43,11 @@ export async function POST(req) {
     address: body.address ?? "",
     starts_at: body.starts_at,
     ends_at: body.ends_at || null,
+    refund_policy: body.refund_policy ?? "no_refund",
+    price_in_cents: Number.isFinite(body.price_in_cents) ? body.price_in_cents : null,
+    rsvp_capacity: Number.isFinite(body.rsvp_capacity) ? body.rsvp_capacity : null,
+    // Add +1 so host's auto-RSVP doesn't reduce the advertised guest capacity
+    ...(Number.isFinite(body.rsvp_capacity) ? { rsvp_capacity: body.rsvp_capacity + 1 } : {}),
     status: "pending",
     img_path: body.img_path || null,
   };
@@ -56,6 +61,18 @@ export async function POST(req) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  /* 4.5 — auto-RSVP host (counts toward capacity) */
+  try {
+    await sb.from('rsvps')
+      .insert({
+        event_id: data.id,
+        user_id: session.user.id,
+        paid: event.price_in_cents ? true : false, // host considered paid
+      }, { ignoreDuplicates: true });
+  } catch (rsvpErr) {
+    console.error('Auto-RSVP insert failed:', rsvpErr);
   }
 
   /* 5 — trigger moderation */

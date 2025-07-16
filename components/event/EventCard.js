@@ -402,14 +402,26 @@ export default function EventCard({
 
           {/* Paid-aware RSVP button */}
           {!isAdmin && (
-            <RSVPButtonComp
-              eventId={event.id}
-              price={event.price_in_cents}
-              initialJoined={joined}
-              initialPaid={initialPaid ?? false}
-              initialRsvpCount={rsvpCount}
-              capacity={event.rsvp_capacity}
-            />
+            <>
+              <RSVPButtonComp
+                eventId={event.id}
+                price={event.price_in_cents}
+                initialJoined={joined}
+                initialPaid={initialPaid ?? false}
+                initialRsvpCount={rsvpCount}
+                capacity={event.rsvp_capacity}
+                onCountChange={setRsvpCount}
+              />
+
+              {/* Capacity remaining */}
+              {event.rsvp_capacity !== null && event.rsvp_capacity !== undefined && (
+                <p className="mt-1 text-xs text-gray-500 text-center">
+                  {event.rsvp_capacity - rsvpCount > 0
+                    ? `${event.rsvp_capacity - rsvpCount} spot${event.rsvp_capacity - rsvpCount === 1 ? '' : 's'} left`
+                    : 'No spots left'}
+                </p>
+              )}
+            </>
           )}
 
           {/* (admin buttons unchanged) */}

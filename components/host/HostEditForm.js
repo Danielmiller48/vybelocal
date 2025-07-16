@@ -20,6 +20,11 @@ const schema = z.object({
   img_file: z.any().optional(),
   refund_policy: z.enum(["anytime","1week","48h","24h","no_refund"]).optional(),
   price_in_cents: z.number().int().min(0).optional(),
+  rsvp_capacity: z
+    .preprocess(
+      (v) => (v === '' || v === null || Number.isNaN(v)) ? undefined : Number(v),
+      z.number().int().min(1).optional()
+    ),
 });
 
 export default function HostEditForm({ event }) {
@@ -46,7 +51,8 @@ export default function HostEditForm({ event }) {
       starts_at: event.starts_at?.slice(0, 16),
       ends_at: event.ends_at?.slice(0, 16),
       refund_policy: event.refund_policy ?? "no_refund",
-      price_in_cents: event.price_in_cents ?? undefined,
+      price_in_cents: event.price_in_cents ? event.price_in_cents / 100 : undefined,
+      rsvp_capacity: event.rsvp_capacity ?? undefined,
     },
   });
 
@@ -79,11 +85,14 @@ export default function HostEditForm({ event }) {
         uploadedPath = fileName;
       }
 
+      const baseCents = paidToggle ? Math.round((values.price_in_cents || 0)*100) : null;
+
       const payload = {
         ...values,
         img_path: uploadedPath,
-        price_in_cents: paidToggle ? values.price_in_cents ?? null : null,
+        price_in_cents: baseCents,
         refund_policy: paidToggle ? values.refund_policy ?? event.refund_policy : 'no_refund',
+        rsvp_capacity: (values.rsvp_capacity === '' || Number.isNaN(values.rsvp_capacity)) ? null : values.rsvp_capacity,
         status: "pending", // always revert to pending
       };
 
@@ -140,6 +149,8 @@ export default function HostEditForm({ event }) {
       )}
 
       <input placeholder="Address" {...register("address")} className="input" />
+
+      <input type="number" placeholder="RSVP capacity (leave blank)" {...register("rsvp_capacity", { valueAsNumber: true })} className="input" disabled={event.locked} />
 
       <div className="flex flex-col space-y-2">
         <label className="text-sm">Event Start</label>

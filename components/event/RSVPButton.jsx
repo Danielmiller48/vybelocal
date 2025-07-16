@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
 import toast from "react-hot-toast";
 import PaymentModal from "@/components/payments/PaymentModal";
+import { calcFees } from "@/lib/fees";
 
 const supabase = createSupabaseBrowser();
 
@@ -16,6 +17,7 @@ export default function RSVPButton({
   initialPaid = false,
   initialRsvpCount = null,
   capacity: capacityProp = null,
+  onCountChange = null,
 }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -25,6 +27,13 @@ export default function RSVPButton({
   const [busy, startBusy]   = useTransition();
   const [bridged, setBridged] = useState(false);
   const [rsvpCount, setRsvpCount] = useState(initialRsvpCount ?? 0);
+
+  // keep local count in sync if parent provides a newer value
+  useEffect(() => {
+    if (initialRsvpCount !== null && initialRsvpCount !== undefined) {
+      setRsvpCount(initialRsvpCount);
+    }
+  }, [initialRsvpCount]);
   const [capacity, setCapacity] = useState(capacityProp);
   const [showPayModal, setShowPayModal] = useState(false);
 
@@ -103,6 +112,7 @@ export default function RSVPButton({
         console.log("RSVPButton: RSVP count fetched:", count);
         setRsvpCount(count ?? 0);
       }
+      if (typeof onCountChange === 'function') onCountChange(count ?? 0);
     }
     fetchEventData();
   }, [bridged, eventId]);
@@ -135,7 +145,9 @@ export default function RSVPButton({
           .insert(row, { ignoreDuplicates: true }));
         if (!error) {
           setJoined(true);
-          setRsvpCount(rsvpCount + 1);
+          const newCount = rsvpCount + 1;
+          setRsvpCount(newCount);
+          if (typeof onCountChange === 'function') onCountChange(newCount);
 
           if (price && price > 0) {
             // Paid event – open checkout modal instead of success toast
@@ -151,7 +163,9 @@ export default function RSVPButton({
         ({ error } = await supabase.from("rsvps").delete().match(row));
         if (!error) {
           setJoined(false);
-          setRsvpCount(rsvpCount - 1);
+          const newCount = rsvpCount - 1;
+          setRsvpCount(newCount);
+          if (typeof onCountChange === 'function') onCountChange(newCount);
           setPaid(false);
           toast("RSVP cancelled.");
         }
@@ -163,6 +177,8 @@ export default function RSVPButton({
       }
     });
   }
+
+  const totalWithFees = price && price > 0 ? calcFees(price).total : 0;
 
   return (
     <>
@@ -186,7 +202,9 @@ export default function RSVPButton({
           : (!joined && capacity && rsvpCount >= capacity)
             ? "Max capacity reached"
             : price && price > 0
-              ? `Pay $${(price/100).toFixed(2)}`
+              ? capacity
+                ? `Pay $${(totalWithFees/100).toFixed(2)} (${Math.max(0, capacity - rsvpCount)} left)`
+                : `Pay $${(totalWithFees/100).toFixed(2)}`
               : capacity 
                 ? `RSVP (${Math.max(0, capacity - rsvpCount)} left)`
                 : "RSVP"

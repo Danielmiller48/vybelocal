@@ -4,29 +4,38 @@ import sbAdmin from '@/utils/supabase/admin';
 import { getUserIdFromJwt } from '@/utils/auth';
 
 export async function GET(req) {
-  // 1️⃣ identify the current host
+  const url = new URL(req.url);
+  const search = url.searchParams;
+
   const hostId = await getUserIdFromJwt(req);
+  if (!hostId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-  if (!hostId) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-  }
+  const range  = search.get('range')  ?? 'upcoming'; // upcoming | past
+  const cursor = search.get('cursor');               // ISO timestamp of last row when paginating past
+  const limit  = 20;
 
-  // 2️⃣ query events with RSVP counts
-  const { data, error } = await sbAdmin
+  let q = sbAdmin
     .from('events')
-    .select(`
-      *,
-      rsvps(count)
-    `)
-    .eq('host_id', hostId)
-    .order('starts_at', { ascending: false });
+    .select(`*, rsvps(count)`)
+    .eq('host_id', hostId);
 
-  // 3️⃣ error handling
-  if (error) {
-    console.error('Host events fetch error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (range === 'upcoming') {
+    q = q.gte('starts_at', sbAdmin.rpc('now'))
+         .order('starts_at', { ascending: true });
+  } else {
+    q = q.lt('starts_at', sbAdmin.rpc('now'))
+         .order('starts_at', { ascending: false })
+         .limit(limit);
+    if (cursor) q = q.lt('starts_at', cursor);
   }
 
-  // 4️⃣ return the list
-  return NextResponse.json(data);
+  const { data, error } = await q;
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  let next_cursor = null;
+  if (range === 'past' && data.length === limit) {
+    next_cursor = data[data.length - 1].starts_at;
+  }
+
+  return NextResponse.json({ data, next_cursor });
 }

@@ -31,6 +31,7 @@ export default function AdminSidebar() {
   </div>
 
   <Link href="/admin/metrics" className={cls(isMetrics)}>Metrics</Link>
+  <Link href="/admin/revenue" className={cls(pathname.startsWith("/admin/revenue"))}>Revenue</Link>
   <Link href="/admin/flags"   className={cls(pathname.startsWith("/admin/flags"))}>Flags</Link>
 </nav>
     </aside>

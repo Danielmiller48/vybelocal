@@ -23,7 +23,11 @@ const schema = z.object({
   address: z.string().max(120).optional(),
   refund_policy: z.enum(["anytime","1week","48h","24h","no_refund"]),
   price_in_cents: z.number().int().min(0).optional(),
-  rsvp_capacity: z.number().min(1, "Capacity must be at least 1").optional(),
+  rsvp_capacity: z
+    .preprocess(
+      (v) => (v === '' || v === null || Number.isNaN(v)) ? undefined : Number(v),
+      z.number().int().min(1).optional()
+    ),
   image: z
     .custom(
       (val) => val === undefined || (val instanceof FileList && val.length === 1),
@@ -138,6 +142,8 @@ export default function HostNewForm() {
       try {
         const img_path = vals.image ? await uploadImage(vals.image[0]) : null;
 
+        const baseCents = paid ? Math.round((vals.price_in_cents || 0) * 100) : null;
+
         const payload = {
           host_id: session?.user?.id ?? null,
           title: vals.title,
@@ -147,8 +153,8 @@ export default function HostNewForm() {
           starts_at: vals.starts_at,
           ends_at: vals.ends_at || null,
           refund_policy: paid ? vals.refund_policy : "no_refund",
-          price_in_cents: paid ? vals.price_in_cents || null : null,
-          rsvp_capacity: vals.rsvp_capacity || null,
+          price_in_cents: baseCents,
+          rsvp_capacity: (vals.rsvp_capacity === '' || Number.isNaN(vals.rsvp_capacity)) ? null : vals.rsvp_capacity,
           img_path,
           status: "pending",
         };
@@ -287,7 +293,6 @@ export default function HostNewForm() {
         <input
           id="rsvp_capacity"
           type="number"
-          min="1"
           {...register("rsvp_capacity", { valueAsNumber: true })}
           className="input w-full"
           placeholder="Leave blank for unlimited"

@@ -73,7 +73,9 @@ export default function HostEventTable({ events = [], handleDelete }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [attendees, setAttendees] = useState({}); // eventId -> array of profiles
   const [openEventId, setOpenEventId] = useState(null); // Track which event's Disclosure is open
-  const [eventList, setEventList] = useState(events); // Local state for events
+  const [eventList, setEventList] = useState(events); // all events
+  const [tab, setTab] = useState('upcoming'); // 'upcoming' | 'past'
+  const [pastLimit, setPastLimit] = useState(15);
   const supabase = createSupabaseBrowser();
 
   useEffect(() => { setEventList(events); }, [events]);
@@ -118,14 +120,37 @@ export default function HostEventTable({ events = [], handleDelete }) {
     }
   }
 
+  const nowTs = Date.now();
+  const upcoming = eventList.filter(e => new Date(e.starts_at).getTime() >= nowTs - 60*60*1000);
+  const pastAll  = eventList.filter(e => new Date(e.starts_at).getTime() < nowTs - 60*60*1000);
+  const past     = pastAll.slice(0, pastLimit);
+
+  const listToShow = tab==='upcoming' ? upcoming : past;
+
   if (!eventList.length)
     return <p className="italic text-gray-500">No events yet.</p>;
 
   return (
     <section className="space-y-2">
-      <h2 className="font-semibold text-lg">Your Events</h2>
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          onClick={()=>setTab('upcoming')}
+          className={`px-3 py-1 rounded ${tab==='upcoming'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+        >Upcoming</button>
+        <button
+          onClick={()=>setTab('past')}
+          className={`px-3 py-1 rounded ${tab==='past'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+        >Past</button>
+      </div>
 
-      {eventList.map((e) => (
+      {tab==='past' && pastAll.length>pastLimit && (
+        <button
+          onClick={()=>setPastLimit(pastLimit+15)}
+          className="mb-2 text-sm text-indigo-600 hover:underline"
+        >Load older events…</button>
+      )}
+
+      {listToShow.map((e) => (
         <Disclosure key={e.id} as="div" className="bg-white rounded shadow">
           {({ open }) => {
             return (
