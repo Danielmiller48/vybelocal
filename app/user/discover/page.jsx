@@ -15,12 +15,16 @@ export default async function UserPage() {
   /* ---------- server-side fetch + thumbnail signing ---------- */
   const sb = await createSupabaseServer();
 
-  // 1. Fetch events (approved + future)
+  const threshold = new Date(Date.now() - 60*60*1000).toISOString();
+
+  // 1. Fetch events still visible (approved and not yet 1h past ends_at)
   const { data: events } = await sb
     .from('events')
     .select('*')
     .eq('status', 'approved')
-    .gte('starts_at', new Date().toISOString())
+    .or(
+      `and(ends_at.is.null(),starts_at.gte.${threshold}),and(ends_at.gte.${threshold})`
+    )
     .order('starts_at');
 
   if (!events) return <DiscoverClient events={[]} />;

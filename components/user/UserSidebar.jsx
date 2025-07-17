@@ -46,6 +46,7 @@ export default function UserSidebar() {
     { href: '/user/calendar',  label: 'Calendar' },
     { href: '/user/profile',   label: 'Profile'  },
     { href: '/user/blocked',   label: 'Blocked Profiles' },
+    { href: '/user/history',   label: 'Past Events' },
   ]
 
   /* utility */

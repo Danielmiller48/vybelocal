@@ -68,13 +68,13 @@ function BlockedUserAvatar({ profile }) {
  *
  * Tailwind + lucide-react icons keep things lightweight; no extra CSS.
  */
-export default function HostEventTable({ events = [], handleDelete }) {
+export default function HostEventTable({ events = [], handleDelete, showUpcomingTab=true, showPastTab=true, initialTab='upcoming' }) {
   const [modalProfile, setModalProfile] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [attendees, setAttendees] = useState({}); // eventId -> array of profiles
   const [openEventId, setOpenEventId] = useState(null); // Track which event's Disclosure is open
   const [eventList, setEventList] = useState(events); // all events
-  const [tab, setTab] = useState('upcoming'); // 'upcoming' | 'past'
+  const [tab, setTab] = useState(initialTab);
   const [pastLimit, setPastLimit] = useState(15);
   const supabase = createSupabaseBrowser();
 
@@ -121,8 +121,14 @@ export default function HostEventTable({ events = [], handleDelete }) {
   }
 
   const nowTs = Date.now();
-  const upcoming = eventList.filter(e => new Date(e.starts_at).getTime() >= nowTs - 60*60*1000);
-  const pastAll  = eventList.filter(e => new Date(e.starts_at).getTime() < nowTs - 60*60*1000);
+  const upcoming = eventList.filter(e => {
+    const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
+    return endTs >= nowTs;
+  });
+  const pastAll  = eventList.filter(e => {
+    const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
+    return endTs < nowTs;
+  });
   const past     = pastAll.slice(0, pastLimit);
 
   const listToShow = tab==='upcoming' ? upcoming : past;
@@ -133,14 +139,18 @@ export default function HostEventTable({ events = [], handleDelete }) {
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-2 mb-2">
-        <button
-          onClick={()=>setTab('upcoming')}
-          className={`px-3 py-1 rounded ${tab==='upcoming'?'bg-indigo-600 text-white':'bg-gray-200'}`}
-        >Upcoming</button>
-        <button
-          onClick={()=>setTab('past')}
-          className={`px-3 py-1 rounded ${tab==='past'?'bg-indigo-600 text-white':'bg-gray-200'}`}
-        >Past</button>
+        {showUpcomingTab && (
+          <button
+            onClick={()=>setTab('upcoming')}
+            className={`px-3 py-1 rounded ${tab==='upcoming'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+          >Upcoming</button>
+        )}
+        {showPastTab && (
+          <button
+            onClick={()=>setTab('past')}
+            className={`px-3 py-1 rounded ${tab==='past'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+          >Past</button>
+        )}
       </div>
 
       {tab==='past' && pastAll.length>pastLimit && (
@@ -180,7 +190,14 @@ export default function HostEventTable({ events = [], handleDelete }) {
                   </div>
 
                   <div className="flex items-center gap-6">
-                    <span className="text-sm tabular-nums">{fmt(e.rsvp_count)} RSVP</span>
+                    {e.price_in_cents !== null && e.price_in_cents>0 ? (
+                      <span className="text-sm tabular-nums">{fmt(e.paid_count)} paid / {fmt(e.unpaid_count)} free</span>
+                    ) : (
+                      <span className="text-sm tabular-nums">{fmt(e.rsvp_count)} RSVP</span>
+                    )}
+                    {e.price_in_cents !== null && e.price_in_cents>0 && e.expected_payout_cents > 0 && (
+                      <span className="text-sm text-green-700 font-medium">${(e.expected_payout_cents/100).toFixed(2)}</span>
+                    )}
                     <ChevronDown
                       className={`h-5 w-5 transition-transform ${open ? "rotate-180" : "rotate-0"}`}
                     />
@@ -210,6 +227,11 @@ export default function HostEventTable({ events = [], handleDelete }) {
                           {new Date(e.starts_at).toLocaleString()}
                         </p>
                       )}
+                      {e.price_in_cents !== null && e.price_in_cents>0 && e.expected_payout_cents > 0 && (
+                        <p><span className="font-medium">Expected payout: </span>${(e.expected_payout_cents/100).toFixed(2)}</p>
+                      )}
+                      <p><span className="font-medium">Refund policy: </span>{e.refund_policy.replace('_',' ')}</p>
+                      <Countdown startsAt={e.starts_at} />
                       {/* RSVP attendee list */}
                       {attendees[e.id]?.length > 0 && (
                         <div className="mt-3">
@@ -278,6 +300,27 @@ export default function HostEventTable({ events = [], handleDelete }) {
       />
     </section>
   );
+}
+
+/* ---------- small countdown component ---------- */
+function Countdown({ startsAt }) {
+  const [diff, setDiff] = useState(() => calc());
+
+  function calc() {
+    const ms = new Date(startsAt).getTime() - Date.now();
+    if (ms <= 0) return "Started";
+    const hrs = Math.floor(ms / 3600000);
+    const days = Math.floor(hrs / 24);
+    if (days > 0) return `${days}d ${hrs % 24}h`;
+    return `${hrs}h`;
+  }
+
+  useEffect(() => {
+    const id = setInterval(() => setDiff(calc()), 60000);
+    return () => clearInterval(id);
+  }, [startsAt]);
+
+  return <p><span className="font-medium">Starts in: </span>{diff}</p>;
 }
 
 /* --------------- tiny utility class --------------- */

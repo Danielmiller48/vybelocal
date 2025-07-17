@@ -37,5 +37,25 @@ export async function GET(req) {
     next_cursor = data[data.length - 1].starts_at;
   }
 
-  return NextResponse.json({ data, next_cursor });
+  /* augment with paid/unpaid and earnings */
+  const ids = data.map(e=>e.id);
+  let paidCounts = {};
+  if(ids.length){
+    const { data: payRows } = await sbAdmin
+      .from('payments')
+      .select('event_id')
+      .eq('refunded', false)
+      .in('event_id', ids);
+    payRows?.forEach(r=>{ paidCounts[r.event_id]=(paidCounts[r.event_id]??0)+1; });
+  }
+
+  const enriched = data.map(e=>{
+    const total = e.rsvps?.[0]?.count ?? 0;
+    const paid  = paidCounts[e.id] ?? 0;
+    const unpaid= total - paid;
+    const earnings_cents = (e.price_in_cents || 0) * paid;
+    return { ...e, paid_count: paid, unpaid_count: unpaid, expected_payout_cents: earnings_cents };
+  });
+
+  return NextResponse.json({ data: enriched, next_cursor });
 }

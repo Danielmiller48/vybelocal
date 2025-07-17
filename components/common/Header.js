@@ -71,6 +71,7 @@ export default function Header() {
               <Link href="/host" className="hover:text-violet-600">
                 Host a Vybe
               </Link>
+              <Link href="/host/history" className="hover:text-violet-600">Past Events</Link>
               {isAdmin && (
                 <Link href="/admin/dashboard" className="hover:text-violet-600">
                   Admin
