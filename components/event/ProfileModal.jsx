@@ -17,7 +17,7 @@ function useAvatarUrl(avatarPath) {
   return url;
 }
 
-export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutualVybes = [], pastEvents = [], avatarUrl: overrideAvatarUrl = null }) {
+export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutualVybes = [], pastEvents = [], avatarUrl: overrideAvatarUrl = null, hostStats = {} }) {
   const [isBlocking, setIsBlocking] = useState(false);
   const [blockReason, setBlockReason] = useState('');
   const [blockDetails, setBlockDetails] = useState('');
@@ -234,6 +234,15 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
               <div>
                 <h3 className="text-lg font-semibold">{profile.name}</h3>
                 {profile.pronouns && <p className="text-sm text-gray-600">{profile.pronouns}</p>}
+                {hostStats.completed !== undefined && (
+                  <div className="text-xs text-gray-500">
+                    {(() => {
+                      const comp = Number(hostStats?.completed ?? 0);
+                      const canc = Number(hostStats?.cancels ?? 0);
+                      return `${comp} completed event${comp===1?'':'s'} · ${canc} cancellation${canc===1?'':'s'} (last 6 mo)`;
+                    })()}
+                  </div>
+                )}
                 {profile.is_trusted && (
                   <div className="mt-1">
                     <div className="flex items-center gap-1 text-sm text-green-600">
@@ -276,7 +285,7 @@ export default function ProfileModal({ profile, isOpen, onClose, onBlock, mutual
               </ul>
             </div>
           )}
-          {/* Past Events */}
+          {/* Past Events restored */}
           {pastEvents.length > 0 && (
             <div>
               <div className="font-medium mb-1">Past Events</div>

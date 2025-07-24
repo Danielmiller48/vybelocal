@@ -31,16 +31,21 @@ export default async function HostDashboard() {
 
   const paidEventIds = events.map(e=>e.id);
 
-  let paidMap = {}, totalMap = {};
+  let paidMap = {}, totalMap = {}, canceledTotal=0;
   if(paidEventIds.length){
     const { data: rsvpRows } = await sb
       .from('rsvps')
-      .select('event_id, paid')
+      .select('event_id, paid, user_id, status')
       .in('event_id', paidEventIds);
 
     rsvpRows?.forEach(r=>{
-      totalMap[r.event_id] = (totalMap[r.event_id] ?? 0) + 1;
-      if(r.paid) paidMap[r.event_id] = (paidMap[r.event_id] ?? 0) + 1;
+      if(r.user_id === user.id) return; // exclude host's own RSVP
+      if(r.status==='attending'){
+        totalMap[r.event_id] = (totalMap[r.event_id] ?? 0) + 1;
+        if(r.paid) paidMap[r.event_id] = (paidMap[r.event_id] ?? 0) + 1;
+      } else {
+        canceledTotal++;
+      }
     });
   }
 
@@ -59,10 +64,7 @@ export default async function HostDashboard() {
   });
 
   /* ── compute metrics ──────────────────────── */
-  const totalRsvps = eventsWithCount.reduce(
-    (sum, e) => sum + e.rsvp_count,
-    0
-  );
+  const totalRsvps = eventsWithCount.reduce((sum,e)=>sum+e.rsvp_count,0);
 
    /* gather today's RSVPs (UTC) */
   let rsvpsToday = 0;
@@ -91,19 +93,10 @@ export default async function HostDashboard() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const monthEnd   = new Date(now.getFullYear(), now.getMonth()+1, 1).toISOString();
 
-  let monthEarnCents = 0;
-  if(eventIds.length){
-    const { data: monthPay } = await sb
-      .from('payments')
-      .select('amount_paid')
-      .eq('refunded', false)
-      .gte('paid_at', monthStart)
-      .lt('paid_at', monthEnd)
-      .in('event_id', eventIds);
-    monthPay?.forEach(p=>{ monthEarnCents += p.amount_paid; });
-  }
-
+  // Compute revenue as ticket price (face value, excluding fees) times paid_count
   const monthEvents = eventsWithCount.filter(e=> e.starts_at >= monthStart && e.starts_at < monthEnd);
+  const monthEarnCents = monthEvents.reduce((sum, e)=> sum + (e.price_in_cents||0) * e.paid_count, 0);
+
   const topEvent    = monthEvents.sort((a,b)=>b.rsvp_count - a.rsvp_count)[0];
 
   /* ── pass down to components ──────────────── */
@@ -118,7 +111,7 @@ export default async function HostDashboard() {
         expectedPayout={expectedPayout}
       />
 
-      <HostMetricsCards totals={{ total: totalRsvps, today: rsvpsToday }} />
+      <HostMetricsCards totals={{ total: totalRsvps, today: rsvpsToday, canceled: canceledTotal }} />
 
       {/* Insights */}
       <div className="bg-white rounded shadow p-4 space-y-1 text-sm">

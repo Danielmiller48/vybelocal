@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import CancelEventModal from "./CancelEventModal";
 
 export default function HostNextEventCard({ event, paidCount, unpaidCount, expectedPayout }) {
+  const [showCancel, setShowCancel] = useState(false);
   if (!event) return null;
   return (
     <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -11,7 +14,7 @@ export default function HostNextEventCard({ event, paidCount, unpaidCount, expec
         <p className="text-sm text-gray-600 mb-2">
           {new Date(event.starts_at).toLocaleString()} • {event.vibe}
         </p>
-        <p className="text-sm">RSVPs: <span className="font-medium">{paidCount + unpaidCount}</span> (<span className="text-green-700">{paidCount} paid</span> / {unpaidCount} unpaid)</p>
+        <p className="text-sm">RSVPs: <span className="font-medium">{paidCount + unpaidCount}</span> (<span className="text-green-700">{paidCount} PAID</span>{unpaidCount>0?` / ${unpaidCount} UNPAID`:''})</p>
         <p className="text-sm">Expected payout: <span className="font-medium">${expectedPayout.toFixed(2)}</span></p>
         <p className="text-xs mt-1">Refund policy: {event.refund_policy.replace("_"," ")}</p>
       </div>
@@ -19,7 +22,16 @@ export default function HostNextEventCard({ event, paidCount, unpaidCount, expec
         <Link href={`/host/events/${event.id}`} className="px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700">Edit</Link>
         <Link href={`/vybes/${event.id}`} className="px-3 py-1 rounded bg-gray-200 text-sm hover:bg-gray-300">View RSVPs</Link>
         <button className="px-3 py-1 rounded bg-gray-200 text-sm hover:bg-gray-300" onClick={()=>navigator.clipboard.writeText(`${window.location.origin}/vybes/${event.id}`)}>Copy Link</button>
+        <button className="px-3 py-1 rounded bg-red-600 text-white text-sm hover:bg-red-700" onClick={()=>setShowCancel(true)}>Cancel & Refund</button>
       </div>
+      <CancelEventModal
+        open={showCancel}
+        eventId={event.id}
+        onClose={(success)=>{
+          setShowCancel(false);
+          if(success){ /* optionally refresh page */ window.location.reload(); }
+        }}
+      />
     </div>
   );
 } 

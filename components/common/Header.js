@@ -2,6 +2,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import SettingsMenu from '@/components/settings/SettingsMenu';
+import NotificationsMenu from '@/components/notifications/NotificationsMenu';
+import AdminNavLink from '@/components/admin/AdminNavLink';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
@@ -71,16 +74,17 @@ export default function Header() {
               <Link href="/host" className="hover:text-violet-600">
                 Host a Vybe
               </Link>
-              <Link href="/host/history" className="hover:text-violet-600">Past Events</Link>
-              {isAdmin && (
-                <Link href="/admin/dashboard" className="hover:text-violet-600">
-                  Admin
-                </Link>
-              )}
+              {isAdmin && (<AdminNavLink />)}
             </>
           )}
 
-          {/* avatar */}
+          {session?.user && (
+            <>
+              <NotificationsMenu />
+              <SettingsMenu />
+            </>
+          )}
+
           {status === 'loading' ? (
      <Placeholder />          /* renders on the server too */
    ) : session?.user ? (

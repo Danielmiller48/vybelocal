@@ -8,7 +8,7 @@
 
 'use client'
 console.log('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:', process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import {
   Elements,
@@ -18,6 +18,9 @@ import {
 } from '@stripe/react-stripe-js'
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+
+// Simple in-memory cache of client secrets keyed by eventId
+const intentCache = {};
 
 /* ─────────────────────────── internal checkout form ───────────────────────── */
 function CheckoutForm({ onSuccess, onError }) {
@@ -64,13 +67,17 @@ function CheckoutForm({ onSuccess, onError }) {
 
 /* ───────────────────────────── PaymentForm ──────────────────────────────── */
 export default function PaymentForm({ eventId, amount, onSuccess, onError }) {
-  const [clientSecret, setClientSecret] = useState(null)
+  const [clientSecret, setClientSecret] = useState(()=> intentCache[eventId] || null)
   const [fetchErr, setFetchErr] = useState(null)
+  const creating = useRef(false);
+  const requested = useRef(false);
 
   useEffect(() => {
     let aborted = false
 
     async function createIntent() {
+      creating.current = true;
+      intentCache[eventId] = 'PENDING';
       try {
         const res = await fetch('/api/payments/create-intent', {
           method: 'POST',
@@ -80,16 +87,22 @@ export default function PaymentForm({ eventId, amount, onSuccess, onError }) {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Server error')
         if (aborted) return
+        intentCache[eventId] = data.client_secret;
         setClientSecret(data.client_secret)
       } catch (err) {
         if (!aborted) setFetchErr(err.message)
         onError?.(err)
+        delete intentCache[eventId];
+      } finally {
+        creating.current = false;
       }
     }
 
-    if (eventId && amount) createIntent()
-    return () => { aborted = true }
-  }, [eventId, amount, onError])
+    if (!eventId || !amount || clientSecret || fetchErr || requested.current || creating.current || intentCache[eventId]==='PENDING') return;
+    requested.current = true;
+    createIntent();
+    return () => { requested.current = false; creating.current = false; }
+  }, [eventId, amount, onError, clientSecret, fetchErr])
 
   if (fetchErr) {
     return <p className="text-red-600 text-sm">{fetchErr}</p>

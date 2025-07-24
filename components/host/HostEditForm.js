@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
+
+// Mapbox env token (public)
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 const supabase = createSupabaseBrowser();
 
@@ -25,6 +28,14 @@ const schema = z.object({
       (v) => (v === '' || v === null || Number.isNaN(v)) ? undefined : Number(v),
       z.number().int().min(1).optional()
     ),
+}).superRefine((vals,ctx)=>{
+  if(vals.starts_at && vals.ends_at){
+    const s=new Date(vals.starts_at);
+    const e=new Date(vals.ends_at);
+    if(e - s < 60*60*1000){
+      ctx.addIssue({code:'custom', path:['ends_at'], message:'Events are locked to a 1-hour minimum — don’t worry if yours wraps early. We won’t tell anyone.'});
+    }
+  }
 });
 
 export default function HostEditForm({ event }) {
@@ -33,6 +44,7 @@ export default function HostEditForm({ event }) {
   const [preview, setPreview] = useState(
     event.img_path ? supabase.storage.from("event-images").getPublicUrl(event.img_path).data.publicUrl : null
   );
+  const [addrSuggestions, setAddrSuggestions] = useState([]);
   const [paidToggle,setPaidToggle]=useState(Boolean(event.price_in_cents));
 
   const {
@@ -48,22 +60,46 @@ export default function HostEditForm({ event }) {
       description: event.description,
       vibe: event.vibe,
       address: event.address,
-      starts_at: event.starts_at?.slice(0, 16),
-      ends_at: event.ends_at?.slice(0, 16),
+      starts_at: event.starts_at ? toInputValue(new Date(event.starts_at)) : undefined,
+      ends_at: event.ends_at ? toInputValue(new Date(event.ends_at)) : undefined,
       refund_policy: event.refund_policy ?? "no_refund",
       price_in_cents: event.price_in_cents ? event.price_in_cents / 100 : undefined,
       rsvp_capacity: event.rsvp_capacity ?? undefined,
     },
   });
 
+  const prevStartRef = useRef("");
+
   useEffect(() => {
     const sub = watch((vals, { name }) => {
-      if (name === "starts_at" && vals.starts_at && !vals.ends_at) {
-        setValue("ends_at", vals.starts_at, { shouldValidate: true });
+      if (name !== "starts_at" || !vals.starts_at) return;
+      // auto-fill end when blank or when following previous auto-fill
+      if (!vals.ends_at || vals.ends_at === prevStartRef.current) {
+        const dt = new Date(vals.starts_at);
+        if (!Number.isNaN(dt.getTime())) {
+          dt.setHours(dt.getHours() + 1);
+          const localStr = toInputValue(dt);
+          setValue("ends_at", localStr, { shouldValidate: false, shouldDirty: true });
+        }
       }
+      prevStartRef.current = vals.starts_at;
     });
     return () => sub.unsubscribe();
   }, [watch, setValue]);
+
+  // Mapbox address autocomplete
+  const addrVal = watch("address");
+  useEffect(() => {
+    if (!MAPBOX_TOKEN) return;
+    if (!addrVal || addrVal.trim().length < 3) { setAddrSuggestions([]); return; }
+    const ctrl = new AbortController();
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(addrVal)}.json?autocomplete=true&limit=5&access_token=${MAPBOX_TOKEN}`;
+    fetch(url, { signal: ctrl.signal })
+      .then(r=>r.json())
+      .then(d=> setAddrSuggestions(d.features ?? []))
+      .catch(()=>{});
+    return ()=>ctrl.abort();
+  }, [addrVal]);
 
   function onFileChange(e) {
     const file = e.target.files?.[0];
@@ -148,15 +184,19 @@ export default function HostEditForm({ event }) {
         </>
       )}
 
-      <input placeholder="Address" {...register("address")} className="input" />
+      <input placeholder="Address" list="addr-suggestions" {...register("address")} className="input" />
+      <datalist id="addr-suggestions">
+        {addrSuggestions.map(f=>(<option key={f.id} value={f.place_name} />))}
+      </datalist>
 
       <input type="number" placeholder="RSVP capacity (leave blank)" {...register("rsvp_capacity", { valueAsNumber: true })} className="input" disabled={event.locked} />
 
       <div className="flex flex-col space-y-2">
         <label className="text-sm">Event Start</label>
-        <input type="datetime-local" {...register("starts_at")} className="input" />
+        <input type="datetime-local" {...register('starts_at')} className="input" />
         <label className="text-sm">Event End</label>
-        <input type="datetime-local" {...register("ends_at")} className="input" />
+        <input type="datetime-local" {...register('ends_at')} className="input" />
+        {errors.ends_at && <p className="text-red-500 text-xs">{errors.ends_at.message}</p>}
       </div>
 
       <label className="flex flex-col border border-dashed p-4 text-center cursor-pointer">
@@ -169,4 +209,10 @@ export default function HostEditForm({ event }) {
       </button>
     </form>
   );
+}
+
+function toInputValue(date){
+  const off = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - off*60000);
+  return local.toISOString().slice(0,16);
 }

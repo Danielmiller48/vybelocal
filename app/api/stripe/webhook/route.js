@@ -42,8 +42,12 @@ export async function POST(request) {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
+  console.log('[webhook] received:', event.type);
+
   if (event.type === 'payment_intent.succeeded') {
     const intent = event.data.object;
+    console.log('[webhook] intent id', intent.id);
+    console.log('[webhook] metadata', intent.metadata);
     try {
       const { metadata, amount_received, charges, id: intentId } = intent;
       const eventId = metadata.eventId;
@@ -69,8 +73,10 @@ export async function POST(request) {
           receipt_url:       receiptUrl,
           refunded:          false,
         })
-        .select('id')
+        .select('*')
         .single();
+
+      console.log('[webhook] insert result', { paymentRow, payErr });
 
       if (payErr) throw payErr;
 

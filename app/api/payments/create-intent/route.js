@@ -67,25 +67,48 @@ export async function POST(request) {
 
     const { total, stripe: stripeFee, platform: platformFee } = calcFees(amount);
 
-    // We are now holding funds in escrow on the PLATFORM account.
-    // Hence we do NOT set transfer_data or application_fee_amount here.
-
     const intentParams = {
       amount: total,
       currency: 'usd',
       customer: customerId,
       metadata: {
-        eventId,
+        eventId,              // <-- required for webhook insert
         userId: session.user.id,
-        base: String(amount),
-        stripe_fee: String(stripeFee),
+        stripe_fee:  String(stripeFee),
         platform_fee: String(platformFee),
       },
       automatic_payment_methods: { enabled: true },
       setup_future_usage: 'off_session',
     };
 
-    const intent = await stripe.paymentIntents.create(intentParams);
+    console.log('[create-intent] params', intentParams);
+
+    // We are now holding funds in escrow on the PLATFORM account.
+    // Hence we do NOT set transfer_data or application_fee_amount here.
+
+    let intent;
+    try {
+      intent = await stripe.paymentIntents.create(intentParams);
+    } catch (piErr) {
+      // Handle stale customer ID (e.g., after Stripe test data wipe)
+      if (piErr?.code === 'resource_missing' && piErr?.message?.includes('No such customer')) {
+        console.warn('Stale stripe_customer_id detected, rebuilding customer…');
+        // Create fresh customer
+        const newCust = await stripe.customers.create({
+          email: profile.email || session.user.email || undefined,
+          metadata: { userId: session.user.id },
+        });
+        customerId = newCust.id;
+        // Persist new ID
+        await sb.from('profiles').update({ stripe_customer_id: customerId }).eq('id', session.user.id);
+        // Retry PaymentIntent
+        intent = await stripe.paymentIntents.create({ ...intentParams, customer: customerId });
+      } else {
+        throw piErr;
+      }
+    }
+
+    console.log('[create-intent] created PI', intent.id);
 
     return NextResponse.json({ client_secret: intent.client_secret });
   } catch (err) {

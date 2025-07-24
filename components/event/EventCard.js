@@ -73,6 +73,7 @@ export default function EventCard({
   onDelete,
   noLink = false,
   disabled = false,
+  hostStats = {},
 }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -81,6 +82,7 @@ export default function EventCard({
   const [joined,  setJoined]  = useState(userRsvpStatus ?? false);
   const [busy,    setBusy]    = useState(false);
   const [hostProfile, setHostProfile] = useState(hostProfileProp ?? null);
+  const [localStats, setLocalStats] = useState(hostStats);
   const [modalOpen, setModalOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('spam');
@@ -202,12 +204,12 @@ export default function EventCard({
         return;
       }
       ({ error } = await supabase
-        .from("rsvps")
-        .delete()
+        .from('rsvps')
+        .update({ status: 'canceled_by_guest', paid: false })
         .match(row));
       if (!error) {
         setJoined(false);
-        setRsvpCount(rsvpCount - 1);
+        setRsvpCount(Math.max(0, rsvpCount - 1));
         toast("RSVP cancelled.");
       }
     }
@@ -229,6 +231,38 @@ export default function EventCard({
     }
     fetchHostProfile();
   }, [event.host_id]);
+
+  /* Fetch host stats (completed events + cancellations) if not provided */
+  useEffect(() => {
+    if (hostStats && hostStats.completed !== undefined) return; // already provided
+    if (!bridged) return;
+    if (!event?.host_id) return;
+
+    (async () => {
+      try {
+        // completed events (all-time)
+        const { count: compCnt } = await supabase
+          .from('v_past_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('host_id', event.host_id);
+
+        // cancellations in last 6 months (strike view)
+        const { data: strikeRows } = await supabase
+          .from('v_host_strikes_last6mo')
+          .select('strike_count')
+          .eq('host_id', event.host_id)
+          .maybeSingle();
+
+        const stats = {
+          completed: compCnt || 0,
+          cancels: Number(strikeRows?.strike_count ?? 0)
+        };
+        setLocalStats(stats);
+      } catch (err) {
+        console.error('EventCard: failed to fetch host stats', err);
+      }
+    })();
+  }, [hostStats, bridged, event?.host_id]);
 
   const hostAvatarUrl = useAvatarUrl(hostProfile?.avatar_url);
 
@@ -331,7 +365,7 @@ export default function EventCard({
   }, [reportOpen]);
 
   /* ───────── render ───────── */
-  const Wrapper = noLink ? "div" : Link;
+  const Wrapper = (noLink || modalOpen) ? "div" : Link;
 
   const handleCardClick = (e) => {
     if (modalOpen) {
@@ -394,6 +428,17 @@ export default function EventCard({
                   <div className="text-xs text-gray-500">{hostProfile.pronouns}</div>
                 )}
               </div>
+              {localStats?.completed !== undefined && (
+                <div className="text-xs text-gray-500">
+                  {(() => {
+                    let comp = parseInt(localStats?.completed, 10);
+                    let canc = parseInt(localStats?.cancels, 10);
+                    if (isNaN(comp)) comp = 0;
+                    if (isNaN(canc)) canc = 0;
+                    return `${comp} completed event${comp===1?'':'s'} · ${canc} cancellation${canc===1?'':'s'}`;
+                  })()}
+                </div>
+              )}
               <div className="ml-auto">
                 <TrustedHostBadge is_trusted={hostProfile.is_trusted} />
               </div>
@@ -484,6 +529,7 @@ export default function EventCard({
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           avatarUrl={hostAvatarUrl}
+          hostStats={localStats || hostStats}
           // Placeholder for report action
           onReport={() => alert('Report feature coming soon!')}
         />

@@ -7,12 +7,25 @@ import {
   PencilLine,
   Copy as CopyIcon,
   Trash2 as TrashIcon,
+  XCircle as CancelIcon,
 } from "lucide-react";
 import ProfileModal from '../event/ProfileModal';
+import CancelEventModal from './CancelEventModal';
 import { createSupabaseBrowser } from '@/utils/supabase/client';
 import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 
 const fmt = (n) => (n ?? 0).toLocaleString("en-US");
+
+// Builds a friendly label for paid attendee counts.
+// If some RSVPs exist but payment not completed yet, we show them as “UNPAID”.
+function formatPaidStatus(paid = 0, unpaid = 0) {
+  paid = paid ?? 0;
+  unpaid = unpaid ?? 0;
+  if (paid > 0 && unpaid > 0) return `${fmt(paid)} PAID / ${fmt(unpaid)} UNPAID`;
+  if (paid > 0) return `${fmt(paid)} PAID`;
+  if (unpaid > 0) return `${fmt(unpaid)} UNPAID`;
+  return "0 PAID"; // default when no RSVPs yet
+}
 
 function useAvatarUrl(avatarPath) {
   const [url, setUrl] = useState('/avatar-placeholder.png');
@@ -68,7 +81,7 @@ function BlockedUserAvatar({ profile }) {
  *
  * Tailwind + lucide-react icons keep things lightweight; no extra CSS.
  */
-export default function HostEventTable({ events = [], handleDelete, showUpcomingTab=true, showPastTab=true, initialTab='upcoming' }) {
+export default function HostEventTable({ events = [], handleDelete, showUpcomingTab=true, showPastTab=true, showCanceledTab=true, initialTab='upcoming' }) {
   const [modalProfile, setModalProfile] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [attendees, setAttendees] = useState({}); // eventId -> array of profiles
@@ -77,6 +90,7 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
   const [tab, setTab] = useState(initialTab);
   const [pastLimit, setPastLimit] = useState(15);
   const supabase = createSupabaseBrowser();
+  const [cancelEventId, setCancelEventId] = useState(null); // event id being canceled
 
   useEffect(() => { setEventList(events); }, [events]);
 
@@ -122,6 +136,7 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
 
   const nowTs = Date.now();
   const upcoming = eventList.filter(e => {
+    if(e.status==='canceled') return false;
     const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
     return endTs >= nowTs;
   });
@@ -130,8 +145,9 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
     return endTs < nowTs;
   });
   const past     = pastAll.slice(0, pastLimit);
+  const canceled = eventList.filter(e=> e.status==='canceled');
 
-  const listToShow = tab==='upcoming' ? upcoming : past;
+  const listToShow = tab==='upcoming' ? upcoming : (tab==='past'? past : canceled);
 
   if (!eventList.length)
     return <p className="italic text-gray-500">No events yet.</p>;
@@ -150,6 +166,12 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
             onClick={()=>setTab('past')}
             className={`px-3 py-1 rounded ${tab==='past'?'bg-indigo-600 text-white':'bg-gray-200'}`}
           >Past</button>
+        )}
+        {showCanceledTab && (
+          <button
+            onClick={()=>setTab('canceled')}
+            className={`px-3 py-1 rounded ${tab==='canceled'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+          >Canceled</button>
         )}
       </div>
 
@@ -191,7 +213,7 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
 
                   <div className="flex items-center gap-6">
                     {e.price_in_cents !== null && e.price_in_cents>0 ? (
-                      <span className="text-sm tabular-nums">{fmt(e.paid_count)} paid / {fmt(e.unpaid_count)} free</span>
+                      <span className="text-sm tabular-nums">{formatPaidStatus(e.paid_count, e.unpaid_count)}</span>
                     ) : (
                       <span className="text-sm tabular-nums">{fmt(e.rsvp_count)} RSVP</span>
                     )}
@@ -273,12 +295,13 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
                         <CopyIcon className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(e.id)}
+                        onClick={() => setCancelEventId(e.id)}
                         className="btn-icon text-red-600 hover:bg-red-50"
-                        title="Delete event"
+                        title="Cancel & refund"
                       >
-                        <TrashIcon className="h-4 w-4" />
+                        <CancelIcon className="h-4 w-4" />
                       </button>
+                      {/* Hard-delete option removed; hosts must use Cancel & Refund */}
                     </div>
                   </div>
                 </Disclosure.Panel>
@@ -297,6 +320,15 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
           if (openEventId) fetchAttendees(openEventId, true);
         }}
         useAvatarUrl={useAvatarUrl}
+      />
+      {/* Cancel Event Modal */}
+      <CancelEventModal
+        open={Boolean(cancelEventId)}
+        eventId={cancelEventId}
+        onClose={(success)=>{
+          if(success){ setEventList(prev=>prev.filter(ev=>ev.id!==cancelEventId)); }
+          setCancelEventId(null);
+        }}
       />
     </section>
   );

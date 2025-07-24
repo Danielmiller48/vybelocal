@@ -15,6 +15,7 @@ export default function DiscoverClient({ initialEvents = null }) {
   const [active, setActive] = useState('all');
   const [events, setEvents] = useState(initialEvents || []);
   const [batch, setBatch] = useState({ rsvpCounts: {}, userRsvps: new Set(), hostProfiles: {} });
+  const [hostStats, setHostStats] = useState({}); // hostId -> {completed, cancels}
   const [batchReady, setBatchReady] = useState(false);
 
   useEffect(() => {
@@ -103,8 +104,43 @@ export default function DiscoverClient({ initialEvents = null }) {
           })
       );
 
-      const [rsvpCounts, userData, hostProfiles] = await Promise.all(promises);
+      // Host cancellation strikes (last 6 months)
+      promises.push(
+        supabase.from('v_host_strikes_last6mo')
+          .select('host_id, strike_count')
+          .in('host_id', hostIds)
+          .then(({ data }) => {
+            const map={};
+            (data||[]).forEach(r=>{ map[r.host_id]={ cancels: Number(r.strike_count) }; });
+            return map;
+          })
+      );
+
+      // Host completed events: fetch rows and count in JS (avoids PostgREST aggregates)
+      promises.push(
+        supabase.from('v_past_events')
+          .select('host_id')
+          .in('host_id', hostIds)
+          .then(({ data })=>{
+            const map={};
+            (data||[]).forEach(r=>{ map[r.host_id]=(map[r.host_id]??0)+1; });
+            return map;
+          })
+      );
+
+      const [rsvpCounts, userData, hostProfiles, cancelsMap, completedMap] = await Promise.all(promises);
+
+      // Merge stats
+      const stats = {};
+      hostIds.forEach(h=>{
+        stats[h]={
+          completed: completedMap?.[h] ?? 0,
+          cancels:   cancelsMap?.[h]?.cancels ?? 0,
+        };
+      });
+
       setBatch({ rsvpCounts, userRsvps: userData.set, paidMap: userData.paidMap, hostProfiles });
+      setHostStats(stats);
       setBatchReady(true);
     }
     batchFetch();
@@ -148,6 +184,7 @@ export default function DiscoverClient({ initialEvents = null }) {
               userRsvpStatus={batch.userRsvps.has ? batch.userRsvps.has(ev.id) : false}
               initialPaid={batch.paidMap ? batch.paidMap[ev.id] : false}
               hostProfileProp={batch.hostProfiles[ev.host_id]}
+              hostStats={hostStats[ev.host_id]}
             />
           ))}
         </div>

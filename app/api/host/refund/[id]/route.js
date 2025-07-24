@@ -4,13 +4,15 @@ import { stripe } from '@/utils/stripe/server';
 import { createSupabaseServer } from '@/utils/supabase/server';
 import { getUserIdFromJwt } from '@/utils/auth';
 
-export async function POST(req, { params }) {
+export async function POST(req, context) {
+  // First, extract route param synchronously
+  const eventId = context.params.id;
+
   const hostId = await getUserIdFromJwt(req);
   if (!hostId) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  const eventId = params.id;
   const sb = await createSupabaseServer({ admin: true });
 
   // Verify host owns the event and refund window open
@@ -24,6 +26,7 @@ export async function POST(req, { params }) {
     return NextResponse.json({ error: 'Event not found' }, { status: 404 });
   }
   if (event.host_id !== hostId) {
+    console.warn('Refund rejected: host mismatch', { hostId, eventHostId: event.host_id, eventId });
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
   }
 

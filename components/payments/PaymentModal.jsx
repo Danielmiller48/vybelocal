@@ -16,7 +16,7 @@
 
 import { useCallback } from "react";
 import { X } from "lucide-react";
-import { Toaster, toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 import PaymentForm from "./PaymentForm";
 
 export default function PaymentModal({
@@ -45,7 +45,6 @@ export default function PaymentModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e)=>{e.stopPropagation(); handleBackdrop(e);}}
     >
-      <Toaster position="top-center" />
       <div className="relative w-full max-w-md bg-white rounded-xl shadow-xl p-6 max-h-[90vh] overflow-y-auto">
         {/* Close button */}
         <button

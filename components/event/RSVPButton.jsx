@@ -140,22 +140,20 @@ export default function RSVPButton({
       let error;
 
       if (!joined) {
-        ({ error } = await supabase
-          .from("rsvps")
-          .insert(row, { ignoreDuplicates: true }));
-        if (!error) {
-          setJoined(true);
-          const newCount = rsvpCount + 1;
-          setRsvpCount(newCount);
-          if (typeof onCountChange === 'function') onCountChange(newCount);
-
-          if (price && price > 0) {
-            // Paid event – open checkout modal instead of success toast
-            setShowPayModal(true);
-            toast("RSVP saved – complete payment to secure your spot.");
-          } else {
+        if (isPaidEvent) {
+          // Paid event – open checkout modal first; insert RSVP after payment success
+          setShowPayModal(true);
+          toast("Complete payment to secure your spot.");
+        } else {
+          ({ error } = await supabase
+            .from("rsvps")
+            .insert(row, { ignoreDuplicates: true }));
+          if (!error) {
+            setJoined(true);
+            const newCount = rsvpCount + 1;
+            setRsvpCount(newCount);
+            if (typeof onCountChange === 'function') onCountChange(newCount);
             toast.success("RSVP confirmed! 🎉");
-            // Free event – keep paid false so user can still cancel
           }
         }
       } else {
@@ -178,13 +176,17 @@ export default function RSVPButton({
     });
   }
 
-  const totalWithFees = price && price > 0 ? calcFees(price).total : 0;
+  // Normalise price so that strings like "0" or "" don’t slip through.
+  const priceCents = Number(price) || 0;
+  const isPaidEvent = priceCents > 0;
+
+  const totalWithFees = isPaidEvent ? calcFees(priceCents).total : 0;
 
   return (
     <>
     <button
       onClick={toggleRsvp}
-      disabled={busy || !bridged || (!joined && capacity && rsvpCount >= capacity) || (joined && price && price>0 && paid)}
+      disabled={busy || !bridged || (!joined && capacity && rsvpCount >= capacity) || (joined && isPaidEvent && paid)}
       className={`mt-4 w-full rounded-lg py-2 text-white transition ${
         joined
           ? paid
@@ -196,12 +198,12 @@ export default function RSVPButton({
       {busy 
         ? "…" 
         : joined
-          ? (price && price>0
+          ? (isPaidEvent
               ? (paid ? "✓ Paid" : "Pay now")
               : "Cancel RSVP")
           : (!joined && capacity && rsvpCount >= capacity)
             ? "Max capacity reached"
-            : price && price > 0
+            : isPaidEvent
               ? capacity
                 ? `Pay $${(totalWithFees/100).toFixed(2)} (${Math.max(0, capacity - rsvpCount)} left)`
                 : `Pay $${(totalWithFees/100).toFixed(2)}`
@@ -215,10 +217,21 @@ export default function RSVPButton({
     <PaymentModal
       open={showPayModal}
       eventId={eventId}
-      amount={price}
+      amount={priceCents}
       onClose={() => setShowPayModal(false)}
-      onSuccess={() => {
-        setPaid(true);
+      onSuccess={async () => {
+        // Insert RSVP row now that payment succeeded
+        const row = { event_id: eventId, user_id: session.user.id, paid: true };
+        const { error } = await supabase
+          .from('rsvps')
+          .insert(row, { ignoreDuplicates: true });
+        if (!error) {
+          setJoined(true);
+          const newCount = rsvpCount + 1;
+          setRsvpCount(newCount);
+          if (typeof onCountChange === 'function') onCountChange(newCount);
+          setPaid(true);
+        }
         setShowPayModal(false);
       }}
     />

@@ -28,9 +28,10 @@ export default async function HostHistory() {
   if(ids.length){
     const { data: rsvpRows } = await sb
       .from('rsvps')
-      .select('event_id, paid')
+      .select('event_id, paid, user_id')
       .in('event_id', ids);
     rsvpRows?.forEach(r=>{
+      if(r.user_id===auth.user.id) return; // exclude host from stats
       totalMap[r.event_id]=(totalMap[r.event_id]??0)+1;
       if(r.paid) paidMap[r.event_id]=(paidMap[r.event_id]??0)+1;
     });
