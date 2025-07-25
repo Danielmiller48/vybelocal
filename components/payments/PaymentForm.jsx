@@ -1,120 +1,54 @@
 // components/payments/PaymentForm.jsx
 // -----------------------------------------------------------------------------
-// Reusable payment form for paying for an event RSVP.
+// Simulation payment form – bypasses Stripe and marks payment as complete.
+// -----------------------------------------------------------------------------
 // Props:
-//   • eventId   – UUID of the event the user is paying for
-//   • amount    – price in cents (integer)
+//   • eventId – UUID of the event being paid for
+//   • amount  – price in cents (integer)
+//   • onSuccess – callback when payment succeeds
+//   • onError   – callback when an error occurs
 // -----------------------------------------------------------------------------
 
-'use client'
-console.log('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:', process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { loadStripe } from '@stripe/stripe-js'
-import {
-  Elements,
-  PaymentElement,
-  useStripe,
-  useElements,
-} from '@stripe/react-stripe-js'
+'use client';
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+import { useState } from 'react';
 
-// Simple in-memory cache of client secrets keyed by eventId
-const intentCache = {};
+export default function PaymentForm({ eventId, amount, onSuccess, onError }) {
+  const [loading, setLoading] = useState(false);
 
-/* ─────────────────────────── internal checkout form ───────────────────────── */
-function CheckoutForm({ onSuccess, onError }) {
-  const stripe = useStripe()
-  const elements = useElements()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault()
-    if (!stripe || !elements) return
-    setLoading(true)
-    setError(null)
-
-    const { error: stripeErr } = await stripe.confirmPayment({
-      elements,
-      confirmParams: { return_url: window.location.href }, // optional redirect
-      redirect: 'if_required',
-    })
-
-    if (stripeErr) {
-      setError(stripeErr.message)
-      onError?.(stripeErr)
-    } else {
-      onSuccess?.()
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/payments/create-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId, amount }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.success) throw new Error(json.error || 'Payment failed');
+      onSuccess?.();
+    } catch (err) {
+      console.error(err);
+      onError?.(err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false)
-  }, [stripe, elements, onSuccess, onError])
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement id="payment-element" />
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      <p className="text-sm text-center">
+        You will be charged <span className="font-semibold">${(amount / 100).toFixed(2)}</span> (simulation).
+      </p>
       <button
         type="submit"
-        disabled={!stripe || loading}
-        className="w-full bg-violet-700 hover:bg-violet-800 text-white py-2 rounded disabled:opacity-50"
+        disabled={loading}
+        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded disabled:opacity-50"
       >
-        {loading ? 'Processing…' : 'Pay'}
+        {loading ? 'Processing…' : 'Confirm Payment'}
       </button>
     </form>
-  )
-}
-
-/* ───────────────────────────── PaymentForm ──────────────────────────────── */
-export default function PaymentForm({ eventId, amount, onSuccess, onError }) {
-  const [clientSecret, setClientSecret] = useState(()=> intentCache[eventId] || null)
-  const [fetchErr, setFetchErr] = useState(null)
-  const creating = useRef(false);
-  const requested = useRef(false);
-
-  useEffect(() => {
-    let aborted = false
-
-    async function createIntent() {
-      creating.current = true;
-      intentCache[eventId] = 'PENDING';
-      try {
-        const res = await fetch('/api/payments/create-intent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ eventId, amount }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Server error')
-        if (aborted) return
-        intentCache[eventId] = data.client_secret;
-        setClientSecret(data.client_secret)
-      } catch (err) {
-        if (!aborted) setFetchErr(err.message)
-        onError?.(err)
-        delete intentCache[eventId];
-      } finally {
-        creating.current = false;
-      }
-    }
-
-    if (!eventId || !amount || clientSecret || fetchErr || requested.current || creating.current || intentCache[eventId]==='PENDING') return;
-    requested.current = true;
-    createIntent();
-    return () => { requested.current = false; creating.current = false; }
-  }, [eventId, amount, onError, clientSecret, fetchErr])
-
-  if (fetchErr) {
-    return <p className="text-red-600 text-sm">{fetchErr}</p>
-  }
-
-  if (!clientSecret) {
-    return <p>Loading payment form…</p>
-  }
-
-  return (
-    <Elements stripe={stripePromise} options={{ clientSecret }}>
-      <CheckoutForm onSuccess={onSuccess} onError={onError} />
-    </Elements>
-  )
+  );
 } 

@@ -1,23 +1,36 @@
 // utils/stripe/server.js
-// -------------------------------------------------------------
-// Centralised Stripe server SDK wrapper. Import this file in API
-// routes or server components to get a pre-configured Stripe
-// instance that automatically uses the project secret key and
-// latest API version. Keeps key out of client bundles.
-// -------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Stripe has been removed from the project. This stub exists purely so that
+// legacy imports (`import { stripe } from '@/utils/stripe/server'`) continue to
+// resolve while we migrate all code paths. Every method returns a minimal
+// object that satisfies callers but **does not** contact Stripe.
+// -----------------------------------------------------------------------------
 
-import Stripe from 'stripe';
-
-const secretKey = process.env.STRIPE_SECRET_KEY;
-
-if (!secretKey) {
-  throw new Error('STRIPE_SECRET_KEY is not set in environment variables.');
-}
-
-export const stripe = new Stripe(secretKey, {
-  apiVersion: '2024-04-10',
-  appInfo: {
-    name: 'VybeLocal',
-    version: '1.0.0',
+export const stripe = {
+  paymentIntents: {
+    create: async (params) => ({
+      id: 'sim_pi_' + crypto.randomUUID(),
+      client_secret: 'sim_client_secret',
+      status: 'succeeded',
+      ...params,
+    }),
+    retrieve: async (id) => ({ id, status: 'succeeded' }),
   },
-}); 
+  refunds: {
+    create: async () => ({ id: 'sim_refund_' + crypto.randomUUID() }),
+  },
+  customers: {
+    create: async () => ({ id: 'sim_cust_' + crypto.randomUUID() }),
+  },
+  accounts: {
+    create: async () => ({ id: 'sim_acct_' + crypto.randomUUID() }),
+    retrieve: async (id) => ({ id }),
+    createLoginLink: async () => ({ url: 'https://example.com/login' }),
+  },
+  accountLinks: {
+    create: async () => ({ url: 'https://example.com/onboard' }),
+  },
+  webhooks: {
+    constructEvent: () => ({ type: 'simulated.event', data: { object: {} } }),
+  },
+}; 

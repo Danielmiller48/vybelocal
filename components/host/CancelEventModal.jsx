@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+// Stripe removed – penalty payments run through simulated endpoint
 import toast from "react-hot-toast";
 
 export default function CancelEventModal({ open, onClose, eventId }) {
@@ -101,15 +101,11 @@ export default function CancelEventModal({ open, onClose, eventId }) {
     setLoading(true);
     try {
       // 1️⃣ If penalty payment required, handle card charge first
-      if(paidEvent && preview.willChargeHost){
-        const payRes = await fetch(`/api/events/${eventId}/penalty-intent`,{method:'POST'});
+      if (paidEvent && preview.willChargeHost) {
+        const payRes = await fetch(`/api/events/${eventId}/penalty-intent`, { method: 'POST' });
         const payJson = await payRes.json();
-        if(!payRes.ok) throw new Error(payJson.error||'Payment init failed');
-
-        if(payJson.status==='requires_action'){
-          const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-          const { error } = await stripe.confirmPayment({ clientSecret: payJson.client_secret, elements:null, redirect:'if_required' });
-          if(error) throw new Error(error.message);
+        if (!payRes.ok || payJson.status !== 'succeeded') {
+          throw new Error(payJson.error || 'Penalty payment failed');
         }
       }
 

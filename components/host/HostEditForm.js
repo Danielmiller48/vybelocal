@@ -46,6 +46,7 @@ export default function HostEditForm({ event }) {
   );
   const [addrSuggestions, setAddrSuggestions] = useState([]);
   const [paidToggle,setPaidToggle]=useState(Boolean(event.price_in_cents));
+  const [ffLoading, setFfLoading] = useState(false);
 
   const {
     register,
@@ -149,6 +150,21 @@ export default function HostEditForm({ event }) {
     });
   }
 
+  async function fastForward() {
+    setFfLoading(true);
+    try {
+      const res = await fetch(`/api/events/${event.id}/fast-forward`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || 'Failed');
+      alert('Event fast-forwarded to past.');
+      router.refresh?.();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setFfLoading(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col space-y-4">
       <input placeholder="Title" {...register("title")} className="input" />
@@ -207,6 +223,11 @@ export default function HostEditForm({ event }) {
       <button disabled={isPending} className="btn primary">
         {isPending ? "Saving…" : "Save Changes"}
       </button>
+      {process.env.NODE_ENV !== 'production' && (
+        <button type="button" onClick={fastForward} disabled={ffLoading} className="btn secondary">
+          {ffLoading ? 'Fast-forward…' : 'Fast-forward to end'}
+        </button>
+      )}
     </form>
   );
 }
