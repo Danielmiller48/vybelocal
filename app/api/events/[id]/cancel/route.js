@@ -105,7 +105,7 @@ export async function GET(req, ctx) {
     const totals = await computeTotals(sb, eventId, hostId);
     const { data: ev } = await sb
       .from('events')
-      .select('price_in_cents, starts_at, ends_at')
+      .select('price_in_cents, starts_at')
       .eq('id', eventId)
       .maybeSingle();
 
@@ -119,19 +119,7 @@ export async function GET(req, ctx) {
     if (ev?.starts_at) {
       const now   = Date.now();
       const start = new Date(ev.starts_at).getTime();
-      const end   = ev.ends_at ? new Date(ev.ends_at).getTime() : null;
-
-      const millis24h = 24 * 60 * 60 * 1000;
-
-      // Upcoming soon
-      if (start - now <= millis24h && start > now - 60*1000) {
-        shortNotice = true;
-      }
-
-      // Ongoing and ending soon
-      if (!shortNotice && end && start <= now && end - now <= millis24h && end > now - 60*1000) {
-        shortNotice = true;
-      }
+      shortNotice = start - now <= 24*60*60*1000 && start > now - 60*1000;
     }
      return NextResponse.json({ ...totals, isPaidEvent: isPaid, shortNotice });
   } catch (err) {
