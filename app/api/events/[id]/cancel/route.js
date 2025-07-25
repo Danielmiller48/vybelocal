@@ -105,19 +105,33 @@ export async function GET(req, ctx) {
     const totals = await computeTotals(sb, eventId, hostId);
     const { data: ev } = await sb
       .from('events')
-      .select('price_in_cents, starts_at')
+      .select('price_in_cents, starts_at, ends_at')
       .eq('id', eventId)
       .maybeSingle();
 
     // Consider event paid only when price_in_cents is a positive integer
     const isPaid = ev?.price_in_cents !== null && Number(ev.price_in_cents) > 0;
 
-    // Short-notice cancellation: event starts within 24h
+    // Short-notice cancellation:
+    //   • Event starts within 24h (upcoming)
+    //   • OR event already started but ends within 24h (ongoing)
     let shortNotice = false;
     if (ev?.starts_at) {
       const now   = Date.now();
       const start = new Date(ev.starts_at).getTime();
-      shortNotice = start - now <= 24*60*60*1000 && start > now - 60*1000; // starts in ≤24h but not past
+      const end   = ev.ends_at ? new Date(ev.ends_at).getTime() : null;
+
+      const millis24h = 24 * 60 * 60 * 1000;
+
+      // Upcoming soon
+      if (start - now <= millis24h && start > now - 60*1000) {
+        shortNotice = true;
+      }
+
+      // Ongoing and ending soon
+      if (!shortNotice && end && start <= now && end - now <= millis24h && end > now - 60*1000) {
+        shortNotice = true;
+      }
     }
      return NextResponse.json({ ...totals, isPaidEvent: isPaid, shortNotice });
   } catch (err) {
