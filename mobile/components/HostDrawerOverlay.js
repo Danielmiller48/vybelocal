@@ -86,7 +86,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   async function pickImage(){
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if(status!=='granted'){ Alert.alert('Permission required','We need media library permission'); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes:ImagePicker.MediaTypeOptions.Images, quality:0.8 });
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality:0.8 });
     if(!res.canceled){
       const uri = res.assets[0].uri;
       setImageUri(uri);
@@ -201,47 +201,6 @@ export default function HostDrawerOverlay({ onCreated }) {
             maxLength={280}
           />
 
-          {/* Capacity */}
-          <Text style={[styles.label,{ marginTop:16 }]}>Capacity (optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., 20"
-            value={capacity}
-            onChangeText={setCapacity}
-            placeholderTextColor="#aaa"
-            keyboardType="number-pad"
-          />
-
-          {/* Price */}
-          <Text style={[styles.label,{ marginTop:16 }]}>Price in USD</Text>
-          <TextInput
-            style={[styles.input, !canCharge && styles.inputDisabled ]}
-            placeholder={canCharge ? "0 (requires payouts)" : "Requires payouts"}
-            value={price}
-            onChangeText={setPrice}
-            placeholderTextColor={canCharge ? '#aaa' : '#ff6b6b'}
-            keyboardType="decimal-pad"
-            editable={canCharge}
-          />
-          {!canCharge && (
-            <TouchableOpacity onPress={()=>Alert.alert('Payouts','Gotta register to get paid. Click OK to set it up — takes 2 mins.',[{text:'Cancel',style:'cancel'},{text:'OK'}])}>
-              <Text style={styles.warnTxt}>Gotta register to get paid. Tap here — takes 2 mins.</Text>
-            </TouchableOpacity>
-          )}
-
-          {priceEnabled && (
-            <>
-              <Text style={[styles.label,{ marginTop:16 }]}>Refund Policy</Text>
-              <View style={styles.vibeRow}>
-                {['anytime','1week','48h','24h','no_refund'].map(opt=>(
-                  <TouchableOpacity key={opt} style={[styles.vibeBtn, refund===opt && styles.vibeBtnActive,{ marginBottom:8 }]} onPress={()=>setRefund(opt)}>
-                    <Text style={[styles.vibeTxt, refund===opt && styles.vibeTxtActive]}>{opt.replace('_',' ')}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-
           {/* Address */}
           <Text style={[styles.label,{ marginTop:16 }]}>Address</Text>
           <TextInput
@@ -269,17 +228,21 @@ export default function HostDrawerOverlay({ onCreated }) {
             <Text style={{ color:'#fff' }}>{new Date(startTime).toLocaleDateString()}</Text>
           </TouchableOpacity>
 
-          {/* Start Time */}
-          <Text style={[styles.label,{ marginTop:16 }]}>Start Time</Text>
-          <TouchableOpacity style={styles.input} onPress={()=>setShowStart(true)}>
-            <Text style={{ color:'#fff' }}>{new Date(startTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
-          </TouchableOpacity>
-
-          {/* End Time */}
-          <Text style={[styles.label,{ marginTop:16 }]}>End Time</Text>
-          <TouchableOpacity style={styles.input} onPress={()=>setShowEnd(true)}>
-            <Text style={{ color:'#fff' }}>{new Date(endTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
-          </TouchableOpacity>
+          {/* Times Row */}
+          <View style={[styles.timeRow,{ marginTop:16 }]}>
+            <View style={{ flex:1, marginRight:8 }}>
+              <Text style={styles.label}>Start Time</Text>
+              <TouchableOpacity style={styles.input} onPress={()=>setShowStart(true)}>
+                <Text style={{ color:'#fff' }}>{new Date(startTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex:1 }}>
+              <Text style={styles.label}>End Time</Text>
+              <TouchableOpacity style={styles.input} onPress={()=>setShowEnd(true)}>
+                <Text style={{ color:'#fff' }}>{new Date(endTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
           <TouchableOpacity style={[styles.createBtn, busy && { opacity:0.5 }]} onPress={createEvent} disabled={busy}>
             <Text style={styles.createTxt}>{busy? 'Creating…':'Create Draft'}</Text>
@@ -359,6 +322,7 @@ const styles = StyleSheet.create({
   suggList:{ borderRadius:8, marginTop:4, overflow:'hidden' },
   suggItem:{ paddingVertical:8, paddingHorizontal:12 },
   suggTxt:{ color:'#fff', fontSize:13 },
-  thumbRect:{ width:'100%', height:160, borderRadius:12, backgroundColor:'rgba(255,255,255,0.1)', justifyContent:'center', alignItems:'center', marginBottom:16 },
+  timeRow:{ flexDirection:'row', alignItems:'flex-start' },
+  thumbRect:{ width:'100%', height:200, borderRadius:16, backgroundColor:'rgba(255,255,255,0.1)', justifyContent:'center', alignItems:'center', marginBottom:16 },
   thumbTxt:{ color:'#888', fontSize:14 },
 }); 
