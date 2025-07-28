@@ -10,6 +10,17 @@ import colors from '../theme/colors';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../auth/AuthProvider';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import ImageCropModal from './ImageCropModal';
+
+function getCardAspect(){
+  const screenW = Dimensions.get('window').width - 32; // assume 16px margin both sides similar to EventCard
+  const cardH = 200; // EventCard image height
+  const w = Math.round(screenW);
+  const h = cardH;
+  function gcd(a,b){ return b===0? a : gcd(b, a % b); }
+  const g = gcd(w,h);
+  return [Math.round(w/g), Math.round(h/g)];
+}
 
 export default function HostDrawerOverlay({ onCreated }) {
   const sheetH = Dimensions.get('window').height * 0.8;
@@ -34,6 +45,8 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [address, setAddress] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [imageUri, setImageUri] = useState(null);
+  const [cropUri, setCropUri]   = useState(null);
+  const [cropOpen, setCropOpen] = useState(false);
   const roundToNextHalfHour = (d)=>{ const ms=30*60*1000; return new Date(Math.ceil(d.getTime()/ms)*ms); };
   const [startTime, setStartTime] = useState(()=> roundToNextHalfHour(new Date()));
   const [endTime, setEndTime]     = useState(()=> new Date(roundToNextHalfHour(new Date()).getTime()+60*60*1000));
@@ -92,12 +105,13 @@ export default function HostDrawerOverlay({ onCreated }) {
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
-      allowsEditing: true,           // enable built-in crop UI
-      aspect: [4,3],                // 4:3 ratio crop
+      allowsEditing: false,
+      aspect: getCardAspect(),       // computed ratio matches card image
     });
     if(!res.canceled){
       const uri = res.assets[0].uri;
-      setImageUri(uri);
+      setCropUri(uri);
+      setCropOpen(true);
     }
   }
 
@@ -301,6 +315,7 @@ export default function HostDrawerOverlay({ onCreated }) {
           </View>
         </Modal>
       )}
+      <ImageCropModal uri={cropUri} visible={cropOpen} onClose={()=>setCropOpen(false)} onCrop={(uri)=>{ setImageUri(uri); setCropOpen(false); }} />
     </Animated.View>
   );
 }
