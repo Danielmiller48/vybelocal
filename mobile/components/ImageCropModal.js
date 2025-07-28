@@ -4,7 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { PanGestureHandler, PinchGestureHandler } from 'react-native-gesture-handler';
-import Animated, { useSharedValue, useAnimatedGestureHandler, useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedGestureHandler, useAnimatedStyle, withTiming, runOnJS } from 'react-native-reanimated';
 import { Image as RNImage } from 'react-native';
 const AnimatedImage = Animated.createAnimatedComponent(RNImage);
 
@@ -27,27 +27,26 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
     });
   },[uri]);
 
-  function clampPosition(){
-    if(!imgSize.w) return;
-    const renderW = imgSize.w * scale.value;
-    const renderH = imgSize.h * scale.value;
-    const frameLeft = 0;
+  // clampPosition no longer used during gesture
+
+  const clampJS = (tx, ty, scl)=>{
+    if(!imgSize.w) return { tx, ty };
+    const renderW = imgSize.w * scl;
+    const renderH = imgSize.h * scl;
     const frameTop = (Dimensions.get('window').height/2)-CARD_H/2;
+    const frameLeft = 0;
     const frameRight = SCREEN_W;
     const frameBottom = frameTop + CARD_H;
-
-    // image edges relative to center
     const halfW = renderW/2;
     const halfH = renderH/2;
-
-    const minX = frameRight - halfW;
-    const maxX = frameLeft + halfW;
-    translateX.value = Math.min(Math.max(translateX.value, minX - SCREEN_W/2), maxX - SCREEN_W/2);
-
-    const minY = frameBottom - halfH;
-    const maxY = frameTop + halfH;
-    translateY.value = Math.min(Math.max(translateY.value, minY - Dimensions.get('window').height/2), maxY - Dimensions.get('window').height/2);
-  }
+    const minX = frameRight - halfW - SCREEN_W/2;
+    const maxX = frameLeft + halfW - SCREEN_W/2;
+    const minY = frameBottom - halfH - Dimensions.get('window').height/2;
+    const maxY = frameTop + halfH - Dimensions.get('window').height/2;
+    const clampedX = Math.min(Math.max(tx, minX), maxX);
+    const clampedY = Math.min(Math.max(ty, minY), maxY);
+    return { tx: clampedX, ty: clampedY };
+  };
 
   const panHandler = useAnimatedGestureHandler({
     onStart: (_, ctx) => {
@@ -57,8 +56,14 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
     onActive: (e, ctx) => {
       translateX.value = ctx.startX + e.translationX;
       translateY.value = ctx.startY + e.translationY;
-      clampPosition();
     },
+    onEnd: () => {
+      runOnJS(()=>{
+        const result = clampJS(translateX.value, translateY.value, scale.value);
+        translateX.value = result.tx;
+        translateY.value = result.ty;
+      })();
+    }
   });
 
   const pinchHandler = useAnimatedGestureHandler({
@@ -67,8 +72,14 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
     },
     onActive: (e, ctx) => {
       scale.value = Math.max(SCREEN_W/imgSize.w, ctx.startScale * e.scale);
-      clampPosition();
     },
+    onEnd: () => {
+      runOnJS(()=>{
+        const result = clampJS(translateX.value, translateY.value, scale.value);
+        translateX.value = result.tx;
+        translateY.value = result.ty;
+      })();
+    }
   });
 
   const imgStyle = useAnimatedStyle(()=>({
