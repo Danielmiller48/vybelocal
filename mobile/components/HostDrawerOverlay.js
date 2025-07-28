@@ -85,8 +85,16 @@ export default function HostDrawerOverlay({ onCreated }) {
 
   async function pickImage(){
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if(status!=='granted'){ Alert.alert('Permission required','We need media library permission'); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality:0.8 });
+    if(status!=='granted' && status!=='limited'){
+      Alert.alert('Permission required','We need photo access to pick an image');
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: true,           // enable built-in crop UI
+      aspect: [4,3],                // 4:3 ratio crop
+    });
     if(!res.canceled){
       const uri = res.assets[0].uri;
       setImageUri(uri);
@@ -165,7 +173,7 @@ export default function HostDrawerOverlay({ onCreated }) {
           {/* Thumbnail */}
           <TouchableOpacity style={styles.thumbRect} onPress={pickImage}>
             {imageUri ? (
-              <Image source={{ uri:imageUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              <Image source={{ uri:imageUri }} style={StyleSheet.absoluteFill} resizeMode="cover" pointerEvents="none" />
             ) : (
               <Text style={styles.thumbTxt}>Tap to add image</Text>
             )}
