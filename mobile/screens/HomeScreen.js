@@ -126,8 +126,8 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  greet:{ color:'#fff', fontSize:22, fontWeight:'600', marginBottom:8, textShadowColor:'rgba(0,0,0,0.1)', textShadowOffset:{ width:0, height:1 }, textShadowRadius:2 },
-  subhead:{ color:'#fff', fontSize:18, fontWeight:'500', marginBottom:20 },
+  greet:{ color:'#001f3f', fontSize:22, fontWeight:'600', marginBottom:8, textShadowColor:'rgba(255,255,255,0.2)', textShadowOffset:{ width:0, height:1 }, textShadowRadius:2 },
+  subhead:{ color:'#001f3f', fontSize:18, fontWeight:'500', marginBottom:20 },
   rowText:{ color:'#fff', fontSize:18, fontWeight:'600', textShadowColor:'rgba(0,0,0,0.15)', textShadowOffset:{ width:0, height:1 }, textShadowRadius:2 },
   // removed drawer-specific styles
 }); 
