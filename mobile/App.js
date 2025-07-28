@@ -1,0 +1,148 @@
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { Text, View, TextInput, Button, ActivityIndicator, SafeAreaView } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
+import colors from './theme/colors';
+import AppHeader from './components/AppHeader';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import DiscoverScreen from './screens/DiscoverScreen';
+import HomeDashboard from './screens/HomeScreen';
+import { StatusBar } from 'expo-status-bar';
+import SplashScreen from './components/SplashScreen';
+import 'react-native-gesture-handler';
+import React from 'react';
+import { AuthProvider, useAuth } from './auth/AuthProvider';
+import HostCreateScreen from './screens/HostCreateScreen';
+import CalendarScreen from './screens/CalendarScreen';
+import GuidelinesScreen from './screens/GuidelinesScreen';
+
+console.log('ENV check →', {
+  url: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  anon: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+});
+
+const Stack = createNativeStackNavigator();
+const HomeStack = createNativeStackNavigator();
+const Tab   = createBottomTabNavigator();
+
+function Login() {
+  const { signIn } = useAuth();
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  const handleSignIn = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError(null);
+    const { error } = await signIn(email.trim(), password);
+    if (error) {
+      setError(error.message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <View style={{ flex:1, alignItems:'center', justifyContent:'center', padding:20, width:'100%' }}>
+      <Text>Email</Text>
+      <TextInput
+        style={{ borderWidth:1, width:'100%', marginBottom:8, padding:4 }}
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+      <Text>Password</Text>
+      <TextInput
+        style={{ borderWidth:1, width:'100%', marginBottom:12, padding:4 }}
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
+      {error && <Text style={{ color:'red', marginBottom:8 }}>{error}</Text>}
+      {loading ? (
+        <ActivityIndicator />
+      ) : (
+        <Button title="Sign in" onPress={handleSignIn} disabled={!email || !password} />
+      )}
+    </View>
+  );
+}
+
+function RootNavigator() {
+  const { user } = useAuth();
+  return (
+    <Stack.Navigator screenOptions={{ headerShown:false }}>
+      {user ? (
+        <>
+          <Stack.Screen name="Tabs" component={AuthedTabs} />
+        </>
+      ) : (
+        <>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
+        </>
+      )}
+    </Stack.Navigator>
+  );
+}
+
+function GradientTabBackground() {
+  return <View style={{ flex:1, backgroundColor: '#000' }} />;
+}
+
+function HomeStackScreen() {
+  return (
+    <HomeStack.Navigator screenOptions={{ headerShown:false }}>
+      <HomeStack.Screen name="HomeMain" component={HomeDashboard} />
+      <HomeStack.Screen name="Calendar" component={CalendarScreen} />
+      <HomeStack.Screen name="Guidelines" component={GuidelinesScreen} />
+    </HomeStack.Navigator>
+  );
+}
+
+function AuthedTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route })=>({
+        headerShown:false,
+        tabBarActiveTintColor:'#fff',
+        tabBarInactiveTintColor:'#ffffffaa',
+        tabBarStyle:{ backgroundColor: '#000', borderTopWidth:0, overflow:'visible' },
+        tabBarBackground: () => <GradientTabBackground />,
+        tabBarIcon: ({ color, size }) => {
+          let icon;
+          if(route.name==='Home') icon='home';
+          else if(route.name==='Discover') icon='search';
+          else if(route.name==='Host') icon='add-circle';
+          return <Ionicons name={icon} size={size} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen name="Home" component={HomeStackScreen} options={{ headerShown:false }} />
+      <Tab.Screen name="Discover" component={DiscoverScreen} />
+      <Tab.Screen name="Host" component={HostCreateScreen} />
+    </Tab.Navigator>
+  );
+}
+
+export default function App() {
+  const [splashDone, setSplashDone] = React.useState(false);
+
+  return (
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer>
+          <StatusBar style="light" backgroundColor="#000" />
+          <RootNavigator />
+          {!splashDone && <SplashScreen onFinish={() => setSplashDone(true)} />}
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
+  );
+}

@@ -1,9 +1,5 @@
 "use client";
 
-// ↑ add these 2 lines right at the top of the file
-export const runtime     = "nodejs";   // switch off the 1 MB Edge limit
-export const maxBodySize = 10 * 1024 * 1024; // 10 MB (adjust as you like)
-
 import { createSupabaseBrowser } from "@/utils/supabase/client";
 import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";

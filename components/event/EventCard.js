@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useRouter }           from "next/navigation";
 import { useSession }          from "next-auth/react";
 import { createSupabaseBrowser } from "@/utils/supabase/client";
+import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 import toast from 'react-hot-toast';
 import ProfileModal from '@/components/event/ProfileModal';
 import { FaFlag } from 'react-icons/fa';
@@ -40,21 +41,11 @@ function useImage({ img, img_path }) {
 function useAvatarUrl(avatarPath) {
   const [url, setUrl] = useState('/avatar-placeholder.png');
   useEffect(() => {
-    if (!avatarPath || typeof avatarPath !== 'string' || avatarPath.trim() === '' || avatarPath === '/avatar-placeholder.png') {
-      setUrl('/avatar-placeholder.png');
-      return;
-    }
-    if (avatarPath.startsWith('http')) {
-      setUrl(avatarPath);
-      return;
-    }
-    supabase.storage
-      .from('profile-images')
-      .createSignedUrl(avatarPath, 3600)
-      .then(({ data }) => {
-        if (data?.signedUrl) setUrl(data.signedUrl);
-        else setUrl('/avatar-placeholder.png');
-      });
+    (async () => {
+      if (!avatarPath) { setUrl('/avatar-placeholder.png'); return; }
+      const signed = await getAvatarUrl(avatarPath);
+      setUrl(signed || '/avatar-placeholder.png');
+    })();
   }, [avatarPath]);
   return url;
 }
@@ -223,14 +214,14 @@ export default function EventCard({
 
   /* Fetch host profile with cache if not provided */
   useEffect(() => {
-    if (hostProfileProp) { return; }
+    if (hostProfileProp && hostProfileProp.avatar_url) { return; }
     async function fetchHostProfile() {
       if (!event.host_id) return;
       const profile = await getHostProfile(event.host_id);
       if (profile) setHostProfile(profile);
     }
     fetchHostProfile();
-  }, [event.host_id]);
+  }, [event.host_id, hostProfileProp?.avatar_url]);
 
   /* Fetch host stats (completed events + cancellations) if not provided */
   useEffect(() => {

@@ -5,7 +5,6 @@ import { Disclosure } from "@headlessui/react";
 import {
   ChevronDown,
   PencilLine,
-  Copy as CopyIcon,
   Trash2 as TrashIcon,
   XCircle as CancelIcon,
 } from "lucide-react";
@@ -280,27 +279,24 @@ export default function HostEventTable({ events = [], handleDelete, showUpcoming
 
                     {/* right: tool set */}
                     <div className="flex gap-3 flex-wrap shrink-0">
-                      <Link
-                        href={`/host/events/${e.id}`}
-                        className="btn-icon"
-                        title="Edit event"
-                      >
-                        <PencilLine className="h-4 w-4" />
-                      </Link>
-                      <button
-                        onClick={() => console.log("duplicate", e.id)}
-                        className="btn-icon"
-                        title="Duplicate event"
-                      >
-                        <CopyIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setCancelEventId(e.id)}
-                        className="btn-icon text-red-600 hover:bg-red-50"
-                        title="Cancel & refund"
-                      >
-                        <CancelIcon className="h-4 w-4" />
-                      </button>
+                      {tab !== 'past' && (
+                        <>
+                          <Link
+                            href={`/host/events/${e.id}`}
+                            className="btn-icon"
+                            title="Edit event"
+                          >
+                            <PencilLine className="h-4 w-4" />
+                          </Link>
+                          <button
+                            onClick={() => setCancelEventId(e.id)}
+                            className="btn-icon text-red-600 hover:bg-red-50"
+                            title="Cancel & refund"
+                          >
+                            <CancelIcon className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                       {/* Hard-delete option removed; hosts must use Cancel & Refund */}
                     </div>
                   </div>
