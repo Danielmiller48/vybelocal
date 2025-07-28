@@ -10,6 +10,7 @@ const AnimatedImage = Animated.createAnimatedComponent(RNImage);
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_H = 200;
+const FRAME_TOP = (Dimensions.get('window').height/2) - CARD_H/2;
 
 export default function ImageCropModal({ uri, visible, onClose, onCrop }){
   const translateX = useSharedValue(0);
@@ -17,32 +18,33 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
   const scale      = useSharedValue(1);
 
   const [imgSize,setImgSize] = useState({ w:0,h:0 });
+  const imgW = useSharedValue(0);
+  const imgH = useSharedValue(0);
 
   useEffect(()=>{
     if(!uri) return;
     RNImage.getSize(uri,(w,h)=>{
       setImgSize({ w, h });
-      const baseScale = SCREEN_W / w;
-      scale.value = baseScale;
+      imgW.value = w;
+      imgH.value = h;
+      const coverScale = Math.max(SCREEN_W / w, CARD_H / h);
+      scale.value = coverScale < 1 ? 1 : coverScale; // never start smaller than 1:1
     });
   },[uri]);
 
   // clampPosition no longer used during gesture
 
-  const clampJS = (tx, ty, scl)=>{
-    if(!imgSize.w) return { tx, ty };
-    const renderW = imgSize.w * scl;
-    const renderH = imgSize.h * scl;
-    const frameTop = (Dimensions.get('window').height/2)-CARD_H/2;
-    const frameLeft = 0;
-    const frameRight = SCREEN_W;
-    const frameBottom = frameTop + CARD_H;
+  const clampWorklet = (tx, ty, scl)=>{
+    'worklet';
+    if(imgW.value===0) return { tx, ty };
+    const renderW = imgW.value * scl;
+    const renderH = imgH.value * scl;
     const halfW = renderW/2;
     const halfH = renderH/2;
-    const minX = frameRight - halfW - SCREEN_W/2;
-    const maxX = frameLeft + halfW - SCREEN_W/2;
-    const minY = frameBottom - halfH - Dimensions.get('window').height/2;
-    const maxY = frameTop + halfH - Dimensions.get('window').height/2;
+    const minX = (SCREEN_W - halfW) - SCREEN_W/2; // right edge align
+    const maxX = (0 + halfW) - SCREEN_W/2;       // left edge align
+    const minY = (FRAME_TOP + CARD_H) - halfH - Dimensions.get('window').height/2;
+    const maxY = FRAME_TOP + halfH - Dimensions.get('window').height/2;
     const clampedX = Math.min(Math.max(tx, minX), maxX);
     const clampedY = Math.min(Math.max(ty, minY), maxY);
     return { tx: clampedX, ty: clampedY };
@@ -58,11 +60,9 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
       translateY.value = ctx.startY + e.translationY;
     },
     onEnd: () => {
-      runOnJS(()=>{
-        const result = clampJS(translateX.value, translateY.value, scale.value);
-        translateX.value = result.tx;
-        translateY.value = result.ty;
-      })();
+      const res = clampWorklet(translateX.value, translateY.value, scale.value);
+      translateX.value = withTiming(res.tx);
+      translateY.value = withTiming(res.ty);
     }
   });
 
@@ -71,14 +71,12 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
       ctx.startScale = scale.value;
     },
     onActive: (e, ctx) => {
-      scale.value = Math.max(SCREEN_W/imgSize.w, ctx.startScale * e.scale);
+      scale.value = Math.max(1, ctx.startScale * e.scale);
     },
     onEnd: () => {
-      runOnJS(()=>{
-        const result = clampJS(translateX.value, translateY.value, scale.value);
-        translateX.value = result.tx;
-        translateY.value = result.ty;
-      })();
+      const r = clampWorklet(translateX.value, translateY.value, scale.value);
+      translateX.value = withTiming(r.tx);
+      translateY.value = withTiming(r.ty);
     }
   });
 
@@ -88,17 +86,17 @@ export default function ImageCropModal({ uri, visible, onClose, onCrop }){
 
   async function handleCrop(){
     // convert frame to image space
-    const renderW = imgSize.w * scale.value;
-    const renderH = imgSize.h * scale.value;
+    const renderW = imgW.value * scale.value;
+    const renderH = imgH.value * scale.value;
 
     const offsetX = (SCREEN_W/2 - translateX.value) - renderW/2;
     const offsetY = (Dimensions.get('window').height/2 - translateY.value) - renderH/2;
 
-    const originX = (-offsetX) * (imgSize.w / renderW);
-    const originY = (-offsetY) * (imgSize.h / renderH);
+    const originX = (-offsetX) * (imgW.value / renderW);
+    const originY = (-offsetY) * (imgH.value / renderH);
 
-    const cropW = SCREEN_W * (imgSize.w / renderW);
-    const cropH = CARD_H * (imgSize.h / renderH);
+    const cropW = SCREEN_W * (imgW.value / renderW);
+    const cropH = CARD_H * (imgH.value / renderH);
 
     const rect = { originX, originY, width: cropW, height: cropH };
 
