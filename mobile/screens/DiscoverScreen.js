@@ -309,16 +309,16 @@ export default function DiscoverScreen() {
     return eventsWithImgs;
   };
 
-  const loadEvents = useCallback(async (vibe, filterKey) => {
+  const loadEvents = useCallback(async (vibe, filterKey, skipLoading = false) => {
     const cacheKey = `${vibe}-${filterKey}`;
     if (eventsCache.current[cacheKey]) {
       setEvents(eventsCache.current[cacheKey]);
       return;
     }
-    if (!refreshing) setLoading(true);
+    if (!refreshing && !skipLoading) setLoading(true);
     const res = await fetchEventsFromServer(vibe, filterKey);
     setEvents(res);
-    setLoading(false);
+    if (!skipLoading) setLoading(false);
   }, []);
 
   // Initial load
@@ -398,7 +398,10 @@ export default function DiscoverScreen() {
         {/* VybeLocal Welcome Microcopy */}
         <VibeWelcomeBanner activeVibe={activeVibe} />
         
-        <DateFilterBar active={dateFilter} onChange={(f)=>setDateFilter(f)} />
+        <DateFilterBar active={dateFilter} onChange={(f)=>{
+          setDateFilter(f);
+          loadEvents(activeVibe, f, true); // Skip loading screen for date filter changes
+        }} />
 
         <Animated.View style={{ flex:1, transform:[{ translateX: listTranslateX }] }} {...panResponder.panHandlers}>
           <SectionList
