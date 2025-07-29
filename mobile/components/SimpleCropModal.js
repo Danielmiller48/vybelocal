@@ -27,7 +27,17 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
     const zoomedWidth = imageSize.width * zoom;
     const zoomedHeight = imageSize.height * zoom;
     
-    // Calculate max scroll positions to keep crop frame within image bounds
+    // Only constrain if image is larger than crop frame
+    // When zoomed out smaller than crop frame, center it instead
+    if (zoomedWidth <= CROP_WIDTH && zoomedHeight <= CROP_HEIGHT) {
+      // Image is smaller than crop frame - center it
+      return {
+        x: Math.max(0, (zoomedWidth - CROP_WIDTH) / 2),
+        y: Math.max(0, (zoomedHeight - CROP_HEIGHT) / 2)
+      };
+    }
+    
+    // Image is larger than crop frame - constrain to prevent black bars
     const maxX = Math.max(0, zoomedWidth - CROP_WIDTH);
     const maxY = Math.max(0, zoomedHeight - CROP_HEIGHT);
     
@@ -57,11 +67,19 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
         
         setImageSize({ width: scaledWidth, height: scaledHeight });
         
+        // Calculate minimum zoom to ensure image always covers crop rectangle
+        const minZoomToFillWidth = CROP_WIDTH / scaledWidth;
+        const minZoomToFillHeight = CROP_HEIGHT / scaledHeight;
+        const calculatedMinZoom = Math.max(minZoomToFillWidth, minZoomToFillHeight, 0.1);
+        
         // Reset zoom and center the image after a brief delay
         setTimeout(() => {
           if (scrollViewRef.current) {
-            // Reset zoom to 1 first
-            scrollViewRef.current.setNativeProps({ zoomScale: 1 });
+            // Set the calculated minimum zoom
+            scrollViewRef.current.setNativeProps({ 
+              minimumZoomScale: calculatedMinZoom,
+              zoomScale: 1 
+            });
             
             // Then center the image
             const centerX = Math.max(0, (scaledWidth - CROP_WIDTH) / 2);
@@ -163,8 +181,8 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
               width: imageSize.width,
               height: imageSize.height,
             }}
-            minimumZoomScale={0.5}
-            maximumZoomScale={2}
+            minimumZoomScale={0.1}
+            maximumZoomScale={3}
             zoomScale={1}
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
@@ -181,13 +199,41 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
             onScrollEndDrag={(event) => {
               const { contentOffset, zoomScale } = event.nativeEvent;
               const zoom = zoomScale || 1;
-              const constrained = constrainScrollPosition(contentOffset.x, contentOffset.y, zoom);
+              const zoomedWidth = imageSize.width * zoom;
+              const zoomedHeight = imageSize.height * zoom;
               
-              // Only adjust if position is out of bounds
-              if (constrained.x !== contentOffset.x || constrained.y !== contentOffset.y) {
+              // Only snap back if there's a massive black bar (more than 50% of crop frame)
+              const blackBarThreshold = 0.5;
+              const maxOffsetX = zoomedWidth - CROP_WIDTH * (1 - blackBarThreshold);
+              const maxOffsetY = zoomedHeight - CROP_HEIGHT * (1 - blackBarThreshold);
+              const minOffsetX = -CROP_WIDTH * blackBarThreshold;
+              const minOffsetY = -CROP_HEIGHT * blackBarThreshold;
+              
+              let newX = contentOffset.x;
+              let newY = contentOffset.y;
+              let needsAdjustment = false;
+              
+              // Only constrain if we're way out of bounds
+              if (contentOffset.x > maxOffsetX) {
+                newX = maxOffsetX;
+                needsAdjustment = true;
+              } else if (contentOffset.x < minOffsetX) {
+                newX = minOffsetX;
+                needsAdjustment = true;
+              }
+              
+              if (contentOffset.y > maxOffsetY) {
+                newY = maxOffsetY;
+                needsAdjustment = true;
+              } else if (contentOffset.y < minOffsetY) {
+                newY = minOffsetY;
+                needsAdjustment = true;
+              }
+              
+              if (needsAdjustment) {
                 scrollViewRef.current?.scrollTo({
-                  x: constrained.x,
-                  y: constrained.y,
+                  x: newX,
+                  y: newY,
                   animated: true
                 });
               }
