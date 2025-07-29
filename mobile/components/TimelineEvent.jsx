@@ -5,6 +5,7 @@ import colors from '../theme/colors';
 import RSVPButton from './RSVPButton';
 import { supabase } from '../utils/supabase';
 import ProfileModal from './ProfileModal';
+import EventChatModal from './EventChatModal';
 
 export default function TimelineEvent({ event, onCancel }) {
   const minutesAway = differenceInMinutes(new Date(event.starts_at), new Date());
@@ -19,6 +20,7 @@ export default function TimelineEvent({ event, onCancel }) {
   const [attendees, setAttendees] = useState([]); // full list
   const fadeAnim = useState(new Animated.Value(0))[0];
   const [profileModal, setProfileModal] = useState({ visible:false, profile:null, stats:{} });
+  const [chatModalVisible, setChatModalVisible] = useState(false);
 
   // helper to resolve avatar path to signed URL
   const resolveAvatarUrl = async (path) => {
@@ -126,6 +128,10 @@ export default function TimelineEvent({ event, onCancel }) {
     }
   };
 
+  const openChatModal = () => {
+    setChatModalVisible(true);
+  };
+
   const openProfile = async (uuid) => {
     try {
       const { data: prof } = await supabase
@@ -153,9 +159,14 @@ export default function TimelineEvent({ event, onCancel }) {
         ) : (
           <View style={[styles.circle,{ backgroundColor:'#ddd' }]} />
         )}
-        <View style={{ marginLeft:12, flex:1 }}>
-          <Text style={styles.title} numberOfLines={1}>{event.title}</Text>
-          <Text style={styles.time}>{format(new Date(event.starts_at), 'h:mm a')}</Text>
+        <View style={{ marginLeft:12, flex:1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title} numberOfLines={1}>{event.title}</Text>
+            <Text style={styles.time}>{format(new Date(event.starts_at), 'h:mm a')}</Text>
+          </View>
+          <TouchableOpacity onPress={openChatModal} style={styles.chatBubble}>
+            <Text style={styles.chatBubbleEmoji}>💬</Text>
+          </TouchableOpacity>
         </View>
       </View>
       {/* Description */}
@@ -179,7 +190,7 @@ export default function TimelineEvent({ event, onCancel }) {
                 ))}
               </View>
             ) : null}
-            <Text style={styles.statusText}>You + {Math.max(0, (event.attendees?.count ?? avatars.length ?? 1) - 1)} going</Text>
+            <Text style={styles.statusText}>Tap to meet locals</Text>
           </TouchableOpacity>
         )}
         {expanded && (
@@ -200,6 +211,13 @@ export default function TimelineEvent({ event, onCancel }) {
               </TouchableOpacity>
             ))}
           </ScrollView>
+          
+          {/* Share button positioned below attendee list */}
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
+            <TouchableOpacity onPress={() => console.log('Share event:', event.id)} style={styles.shareButton}>
+              <Text style={styles.shareButtonText}>Share</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
       )}
       {/* Footer row toggle */}
@@ -215,6 +233,11 @@ export default function TimelineEvent({ event, onCancel }) {
         profile={profileModal.profile}
         stats={profileModal.stats}
         onClose={() => setProfileModal({ ...profileModal, visible:false })}
+      />
+      <EventChatModal
+        visible={chatModalVisible}
+        onClose={() => setChatModalVisible(false)}
+        event={event}
       />
     </TouchableOpacity>
   );
@@ -240,4 +263,57 @@ const styles = StyleSheet.create({
   cancelTxt:{ color:'#fff', fontSize:12 },
   footerRow:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:12 },
   countdown:{ color:'#ffbc8b', fontSize:12, fontWeight:'600' },
+  joinChatButton: {
+    backgroundColor: colors.secondary,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: colors.secondary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  joinChatText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  chatBubble: {
+    backgroundColor: colors.secondary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+    shadowColor: colors.secondary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  chatBubbleEmoji: {
+    fontSize: 20,
+    color: '#fff',
+  },
+  shareButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 }); 
