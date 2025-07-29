@@ -10,7 +10,7 @@ import colors from '../theme/colors';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../auth/AuthProvider';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import ImageCropModal from './ImageCropModal';
+import SimpleCropModal from './SimpleCropModal';
 
 function getCardAspect(){
   const screenW = Dimensions.get('window').width - 32; // assume 16px margin both sides similar to EventCard
@@ -96,24 +96,23 @@ export default function HostDrawerOverlay({ onCreated }) {
 
   React.useEffect(()=>{ const minS=getMinStart(); if(startTime<minS){ setStartTime(minS); setEndTime(new Date(minS.getTime()+60*60*1000)); } },[price, canCharge]);
 
-  async function pickImage(){
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if(status!=='granted' && status!=='limited'){
-      Alert.alert('Permission required','We need photo access to pick an image');
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
-      allowsEditing: false,
-      aspect: getCardAspect(),       // computed ratio matches card image
-    });
-    if(!res.canceled){
-      const uri = res.assets[0].uri;
-      setCropUri(uri);
-      setCropOpen(true);
-    }
-  }
+        async function pickImage(){
+     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+     if(status!=='granted' && status!=='limited'){
+       Alert.alert('Permission required','We need photo access to pick an image');
+       return;
+     }
+     const res = await ImagePicker.launchImageLibraryAsync({
+       mediaTypes: ImagePicker.MediaTypeOptions.Images,
+       quality: 1,
+       allowsEditing: false,
+     });
+     if(!res.canceled){
+       const uri = res.assets[0].uri;
+       setCropUri(uri);
+       setCropOpen(true);
+     }
+   }
 
   async function uploadImageMobile(uri){
     if(!uri) return null;
@@ -315,7 +314,12 @@ export default function HostDrawerOverlay({ onCreated }) {
           </View>
         </Modal>
       )}
-      <ImageCropModal uri={cropUri} visible={cropOpen} onClose={()=>setCropOpen(false)} onCrop={(uri)=>{ setImageUri(uri); setCropOpen(false); }} />
+             <SimpleCropModal 
+         visible={cropOpen} 
+         imageUri={cropUri} 
+         onClose={() => setCropOpen(false)} 
+         onCrop={(uri) => { setImageUri(uri); setCropOpen(false); }} 
+       />
     </Animated.View>
   );
 }
