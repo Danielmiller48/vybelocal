@@ -131,27 +131,46 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
           const cropWidth = (CROP_WIDTH / zoomScale) * scaleToOriginal;
           const cropHeight = (CROP_HEIGHT / zoomScale) * scaleToOriginal;
 
+          // Ensure crop coordinates are valid
+          const finalCropX = Math.max(0, Math.min(cropX, originalWidth - 1));
+          const finalCropY = Math.max(0, Math.min(cropY, originalHeight - 1));
+          const finalCropWidth = Math.min(cropWidth, originalWidth - finalCropX);
+          const finalCropHeight = Math.min(cropHeight, originalHeight - finalCropY);
+
+          // Ensure minimum crop size
+          const minCropWidth = Math.max(finalCropWidth, 100);
+          const minCropHeight = Math.max(finalCropHeight, 50);
+
           console.log('Crop params:', {
             scroll: cropRegion,
             original: { originalWidth, originalHeight },
             displayed: imageSize,
             scale: scaleToOriginal,
-            crop: { cropX, cropY, cropWidth, cropHeight }
+            calculated: { cropX, cropY, cropWidth, cropHeight },
+            final: { 
+              originX: Math.round(finalCropX), 
+              originY: Math.round(finalCropY), 
+              width: Math.round(minCropWidth), 
+              height: Math.round(minCropHeight) 
+            }
           });
 
           const result = await ImageManipulator.manipulateAsync(
             imageUri,
             [{ 
               crop: { 
-                originX: Math.round(cropX), 
-                originY: Math.round(cropY), 
-                width: Math.round(cropWidth), 
-                height: Math.round(cropHeight) 
+                originX: Math.round(finalCropX), 
+                originY: Math.round(finalCropY), 
+                width: Math.round(minCropWidth), 
+                height: Math.round(minCropHeight) 
               } 
             }],
             { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
           );
 
+          console.log('✅ CROP COMPLETE - Result URI:', result.uri);
+          console.log('Result dimensions:', result.width, 'x', result.height);
+          
           onCrop(result.uri);
         } catch (error) {
           console.warn('Crop error:', error);
