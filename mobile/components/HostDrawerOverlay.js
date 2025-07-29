@@ -42,6 +42,10 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [capacity, setCapacity] = useState('');
   const [price, setPrice]    = useState(''); // in USD text
   const [refund, setRefund]  = useState('no_refund');
+  const [paid, setPaid] = useState(false);
+  const [strikeCount, setStrikeCount] = useState(0);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingVals, setPendingVals] = useState(null);
   const [address, setAddress] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [imageUri, setImageUri] = useState(null);
@@ -68,16 +72,26 @@ export default function HostDrawerOverlay({ onCreated }) {
     extrapolate: 'clamp',
   });
 
-  // fetch stripe_account_id
+  // fetch stripe_account_id and strike count
   React.useEffect(()=>{
     if(!user?.id) return;
     (async()=>{
       const { data } = await supabase.from('profiles').select('stripe_account_id').eq('id', user.id).single();
       setCanCharge(!!data?.stripe_account_id);
+      
+      // Fetch strike count
+      const { data: strikeData } = await supabase
+        .from('v_host_strikes_last6mo')
+        .select('strike_count')
+        .eq('host_id', user.id)
+        .maybeSingle();
+      if(strikeData){
+        setStrikeCount(strikeData.strike_count ?? 0);
+      }
     })();
   },[user?.id]);
 
-  const priceEnabled = canCharge && parseFloat(price) > 0;
+  const priceEnabled = paid && canCharge && parseFloat(price) > 0;
 
   const MAPBOX_TOKEN = Constants?.expoConfig?.extra?.mapboxToken || process.env?.EXPO_PUBLIC_MAPBOX_TOKEN || process.env?.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
@@ -126,43 +140,138 @@ export default function HostDrawerOverlay({ onCreated }) {
   }
 
   const createEvent = async () => {
-    if (!title.trim()) { Alert.alert('Title required'); return; }
-    if(!address.trim()){ Alert.alert('Address required'); return; }
+    // Basic validation
+    if (!title.trim()) { Alert.alert('Error', 'Title required'); return; }
+    if (title.trim().length < 3) { Alert.alert('Error', 'Title too short'); return; }
+    if (title.trim().length > 60) { Alert.alert('Error', 'Title too long'); return; }
+    if (!address.trim()) { Alert.alert('Error', 'Address required'); return; }
+    if (address.trim().length > 120) { Alert.alert('Error', 'Address too long'); return; }
+    if (desc.length > 280) { Alert.alert('Error', 'Description too long'); return; }
+    
     const minS = getMinStart();
-    if(startTime<minS){ Alert.alert('Start date too soon'); return; }
-    if(endTime-startTime<60*60*1000){ Alert.alert('End time must be at least 1h after start'); return; }
+    if (startTime < minS) { Alert.alert('Error', 'Start date too soon'); return; }
+    if (endTime - startTime < 60*60*1000) { Alert.alert('Error', 'Events are locked to a 1-hour minimum — don\'t worry if yours wraps early. We won\'t tell anyone.'); return; }
+    
+    const capInt = parseInt(capacity, 10);
+    if (capacity && (Number.isNaN(capInt) || capInt < 1)) { Alert.alert('Error', 'Capacity must be a positive number'); return; }
+    
+    const priceFloat = parseFloat(price);
+    if (paid && (Number.isNaN(priceFloat) || priceFloat < 0.5)) { Alert.alert('Error', 'Price must be at least $0.50'); return; }
+
+    const vals = {
+      title: title.trim(),
+      vibe,
+      description: desc.trim(),
+      address: address.trim(),
+      starts_at: startTime.toISOString(),
+      ends_at: endTime.toISOString(),
+      refund_policy: priceEnabled ? refund : 'no_refund',
+      price_in_cents: priceEnabled ? priceFloat : null,
+      rsvp_capacity: capInt || null,
+      image: imageUri
+    };
+
+    // If host has at least one prior guest-attended cancellation, show warning modal first
+    if (strikeCount >= 1) {
+      setPendingVals(vals);
+      setConfirmOpen(true);
+      return;
+    }
+    submitEvent(vals);
+  };
+
+  const submitEvent = async (vals) => {
     setBusy(true);
     try {
-      const insertObj = {
-        title: title.trim(),
-        vibe,
-        host_id: user.id,
-        status: 'draft',
-        starts_at: startTime.toISOString(),
-        ends_at: endTime.toISOString(),
-        address: address.trim(),
-        description: desc.trim() || null,
-        refund_policy: priceEnabled ? refund : 'no_refund',
-      };
-      if(imageUri){
-        const imgKey = await uploadImageMobile(imageUri);
-        insertObj.img_path = imgKey;
+      let img_path = null;
+      if (vals.image) {
+        img_path = await uploadImageMobile(vals.image);
       }
-      const capInt = parseInt(capacity,10);
-      if (!Number.isNaN(capInt)) insertObj.rsvp_capacity = capInt;
-      const priceFloat = parseFloat(price);
-      if (!Number.isNaN(priceFloat) && priceFloat>0) insertObj.price_in_cents = Math.round(priceFloat*100);
 
-      const { error } = await supabase.from('events').insert(insertObj);
-      if (error) throw error;
-      Alert.alert('Draft created');
+      const baseCents = paid ? Math.round((vals.price_in_cents || 0) * 100) : null;
+
+      const payload = {
+        host_id: user?.id ?? null,
+        title: vals.title,
+        vibe: vals.vibe,
+        description: vals.description || null,
+        address: vals.address,
+        starts_at: vals.starts_at,
+        ends_at: vals.ends_at,
+        refund_policy: paid ? vals.refund_policy : "no_refund",
+        price_in_cents: baseCents,
+        rsvp_capacity: vals.rsvp_capacity,
+        img_path,
+        status: "pending", // Match web version
+      };
+
+      // Insert directly into Supabase (mobile doesn't have access to Next.js API routes)
+      const { data, error } = await supabase.from('events').insert(payload).select().single();
+      
+      if (error) {
+        throw new Error(error.message || 'Submission failed');
+      }
+
+      // Auto-RSVP the host
+      try {
+        await supabase.from('rsvps').insert({
+          event_id: data.id,
+          user_id: user.id,
+          paid: payload.price_in_cents ? true : false,
+        });
+      } catch (rsvpErr) {
+        console.warn('Auto-RSVP failed:', rsvpErr);
+      }
+
+      // Trigger basic content moderation (simplified for mobile)
+      try {
+        const moderationResult = await moderateContent(data);
+        if (!moderationResult.approved) {
+          // Delete the event if moderation fails
+          await supabase.from('events').delete().eq('id', data.id);
+          Alert.alert('Content Moderation Failed', moderationResult.reason || 'Your content violates community guidelines');
+          return;
+        }
+        
+        // Update event status to approved if moderation passes
+        await supabase.from('events').update({ 
+          status: 'approved',
+          ai_score: moderationResult.aiScore,
+          updated_at: new Date().toISOString()
+        }).eq('id', data.id);
+      } catch (modError) {
+        console.warn('Moderation failed, keeping as pending:', modError);
+        // Event remains in pending status - will need manual review
+      }
+
+      Alert.alert('Success', 'Event created successfully! 🎉');
+      // Reset form
       setTitle('');
+      setDesc('');
+      setAddress('');
+      setCapacity('');
+      setPrice('');
+      setPaid(false);
+      setImageUri(null);
       toggle();
       onCreated?.();
     } catch (err) {
       Alert.alert('Error', err.message);
     }
     setBusy(false);
+  };
+
+  // Modal confirm handlers
+  const handleModalConfirm = () => {
+    if (!pendingVals) return;
+    setConfirmOpen(false);
+    submitEvent(pendingVals);
+    setPendingVals(null);
+  };
+
+  const handleModalCancel = () => {
+    setConfirmOpen(false);
+    setPendingVals(null);
   };
 
   return (
@@ -210,6 +319,60 @@ export default function HostDrawerOverlay({ onCreated }) {
             ))}
           </View>
 
+          {/* Paid Event Toggle */}
+          <View style={[styles.toggleRow, { marginTop: 16 }]}>
+            <Text style={styles.label}>Paid Event</Text>
+            <TouchableOpacity 
+              style={[styles.toggle, paid && styles.toggleActive]} 
+              onPress={() => setPaid(!paid)}
+            >
+              <View style={[styles.toggleThumb, paid && styles.toggleThumbActive]} />
+            </TouchableOpacity>
+          </View>
+
+          {paid && canCharge && (
+            <>
+              {/* Price Input */}
+              <Text style={[styles.label, { marginTop: 16 }]}>Ticket Price (USD)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 5.00"
+                value={price}
+                onChangeText={setPrice}
+                placeholderTextColor="#aaa"
+                keyboardType="decimal-pad"
+              />
+
+              {/* Refund Policy */}
+              <Text style={[styles.label, { marginTop: 16 }]}>Refund Policy</Text>
+              <View style={styles.refundRow}>
+                {[
+                  { value: 'anytime', label: 'Anytime' },
+                  { value: '1week', label: '1 Week' },
+                  { value: '48h', label: '48h' },
+                  { value: '24h', label: '24h' },
+                  { value: 'no_refund', label: 'No Refunds' }
+                ].map(option => (
+                  <TouchableOpacity 
+                    key={option.value} 
+                    style={[styles.refundBtn, refund === option.value && styles.refundBtnActive]} 
+                    onPress={() => setRefund(option.value)}
+                  >
+                    <Text style={[styles.refundTxt, refund === option.value && styles.refundTxtActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {paid && !canCharge && (
+            <Text style={[styles.warnTxt, { marginTop: 8 }]}>
+              Set up Stripe payments in settings to charge for events
+            </Text>
+          )}
+
           {/* Description */}
           <Text style={[styles.label,{ marginTop:16 }]}>Description</Text>
           <TextInput
@@ -220,6 +383,17 @@ export default function HostDrawerOverlay({ onCreated }) {
             placeholderTextColor="#aaa"
             multiline
             maxLength={280}
+          />
+
+          {/* RSVP Capacity */}
+          <Text style={[styles.label, { marginTop: 16 }]}>RSVP Capacity (optional)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Leave blank for unlimited"
+            value={capacity}
+            onChangeText={setCapacity}
+            placeholderTextColor="#aaa"
+            keyboardType="number-pad"
           />
 
           {/* Address */}
@@ -314,13 +488,149 @@ export default function HostDrawerOverlay({ onCreated }) {
           </View>
         </Modal>
       )}
-             <SimpleCropModal 
-         visible={cropOpen} 
-         imageUri={cropUri} 
-         onClose={() => setCropOpen(false)} 
-         onCrop={(uri) => { setImageUri(uri); setCropOpen(false); }} 
-       />
+      {/* Second Strike Modal */}
+      {confirmOpen && pendingVals && (
+        <SecondStrikeModal
+          open={confirmOpen}
+          onConfirm={handleModalConfirm}
+          onCancel={handleModalCancel}
+          priceCents={paid ? Math.round((parseFloat(price) || 0) * 100) : 0}
+          capacity={parseInt(capacity, 10) || null}
+        />
+      )}
+      
+      <SimpleCropModal 
+        visible={cropOpen} 
+        imageUri={cropUri} 
+        onClose={() => setCropOpen(false)} 
+        onCrop={(uri) => { setImageUri(uri); setCropOpen(false); }} 
+      />
     </Animated.View>
+  );
+}
+
+// Simplified fee calculation for mobile (matches lib/fees.js logic)
+function calcFees(priceCents) {
+  if (!priceCents || priceCents <= 0) return { stripe: 0, platform: 0, total: 0 };
+  const stripe = Math.round(priceCents * 0.029 + 30); // 2.9% + 30¢
+  const platform = Math.round(priceCents * 0.05); // 5%
+  return { stripe, platform, total: stripe + platform };
+}
+
+// Full content moderation for mobile (matches API logic with OpenAI)
+async function moderateContent(eventData) {
+  const text = `${eventData.title || ''} ${eventData.description || ''}`;
+  
+  // VybeLocal custom scam/self-promo filter (same as API)
+  const scamPromoKeywords = [
+    "link in bio", "check my linktree", "onlyfans", "fansly", "my OF", "DM for rates", 
+    "book me", "inquiries via", "paid collab", "tap the link", "support me via", 
+    "full post here", "bit.ly", "linktr.ee", "bio.site", "beacons.ai",
+    "DM me to join", "who wants to make extra income", "6-figure mindset", 
+    "financial freedom", "boss babe", "hustle culture", "side hustle success",
+    "be your own boss", "invest in yourself", "grind now, shine later",
+    "once-in-a-lifetime opportunity", "limited spots only", "guaranteed return",
+    "this will change your life", "exclusive drop", "act fast", "urgent",
+    "100% legit", "verified vendor", "make money fast",
+    "not a real event", "just vibes", "details in DM", "pull up if you know",
+    "cashapp me to hold your spot", "drop your IG", "add me on snap",
+    "content creator meetup", "social media masterclass", "how to grow your brand",
+    "engagement workshop", "photography collab", "brand building", "just networking"
+  ];
+  
+  const scamPromoRegex = new RegExp(
+    scamPromoKeywords.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join("|"),
+    "i"
+  );
+
+  if (scamPromoRegex.test(text)) {
+    return {
+      approved: false,
+      reason: 'Content violates community guidelines - promotional content detected',
+      aiScore: null
+    };
+  }
+
+  // Call OpenAI Moderation API
+  let mod;
+  try {
+    console.log('Calling OpenAI moderation API from mobile...');
+    const openaiRes = await fetch('https://api.openai.com/v1/moderations', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${Constants?.expoConfig?.extra?.openaiKey || process.env?.EXPO_PUBLIC_OPENAI_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ input: text, model: 'omni-moderation-latest' }),
+    });
+    
+    mod = await openaiRes.json();
+    console.log('OpenAI moderation response:', mod);
+    
+    if (mod.error || !mod.results) {
+      console.error('OpenAI moderation failed:', mod);
+      // Auto-approve when moderation fails (fail open for normal content)
+      return { approved: true, aiScore: null, note: 'Auto-approved due to moderation failure' };
+    }
+  } catch (err) {
+    console.error('OpenAI moderation error:', err);
+    // Auto-approve when moderation fails (fail open for normal content)
+    return { approved: true, aiScore: null, note: 'Auto-approved due to moderation failure' };
+  }
+
+  const maxScore = Math.max(...Object.values(mod.results[0].category_scores));
+  
+  // Additional promo regex check
+  const promoRx = /(instagram|tiktok|onlyfans|linktr\.ee|discord|facebook|mlm|multi[- ]?level|pyramid scheme|cashapp|venmo|paypal|zelle|linktree|beacons\.ai|direct message|dm me|http[s]?:\/\/)/i;
+  const hasPromo = promoRx.test(text);
+
+  // Status decision tree (same as API)
+  let approved = true;
+  let reason = null;
+  
+  if (maxScore >= 0.7 || hasPromo) {
+    approved = false;
+    reason = hasPromo ? 'Content contains promotional links or social media references' : 'Content flagged as inappropriate by AI moderation';
+  } else if (maxScore >= 0.4) {
+    approved = false;
+    reason = 'Content flagged for review by AI moderation';
+  }
+
+  return { approved, reason, aiScore: maxScore };
+}
+
+// Second Strike Modal Component
+function SecondStrikeModal({ open, onConfirm, onCancel, priceCents, capacity }) {
+  if (!open) return null;
+  
+  const price = (priceCents / 100).toFixed(2);
+  const feePer = priceCents ? calcFees(priceCents).stripe : 0;
+  const penalty = capacity && feePer ? ((feePer * capacity) / 100).toFixed(2) : '0.00';
+
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { maxWidth: '90%' }]}>
+          <Text style={styles.modalTitle}>You're about to go live.</Text>
+          <Text style={styles.modalText}>
+            Thanks for putting something out into the world — we back creators who show up.{'\n\n'}
+            Quick heads-up: you've already cancelled one event after people commited to the plan.
+            If you cancel this one too, you'll have to cover Stripe's processing fees on any paid tickets.{'\n\n'}
+            {feePer ? `Each paid RSVP costs $${(feePer/100).toFixed(2)} in non-refundable Stripe fees.\n\n` : ''}
+            Not sure you can follow through? It's okay to hold off.
+            When you post, we assume you're ready.
+          </Text>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity onPress={onCancel} style={styles.modalCancelBtn}>
+              <Text style={styles.modalCancelText}>Never mind</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onConfirm} style={styles.modalConfirmBtn}>
+              <Text style={styles.modalConfirmText}>Publish event</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -352,4 +662,24 @@ const styles = StyleSheet.create({
   timeRow:{ flexDirection:'row', alignItems:'flex-start' },
   thumbRect:{ width:'100%', height:200, borderRadius:16, backgroundColor:'rgba(255,255,255,0.1)', justifyContent:'center', alignItems:'center', marginBottom:16 },
   thumbTxt:{ color:'#888', fontSize:14 },
+  // Toggle styles
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  toggle: { width: 50, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.2)', padding: 2 },
+  toggleActive: { backgroundColor: sage },
+  toggleThumb: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff' },
+  toggleThumbActive: { transform: [{ translateX: 20 }] },
+  // Refund policy styles
+  refundRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  refundBtn: { paddingVertical: 6, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, borderColor: '#fff', marginRight: 6, marginTop: 6 },
+  refundBtnActive: { backgroundColor: '#fff' },
+  refundTxt: { color: '#fff', fontSize: 11, fontWeight: '600' },
+  refundTxtActive: { color: '#000' },
+  // Modal styles
+  modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  modalText: { color: '#ccc', fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  modalCancelBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.2)' },
+  modalCancelText: { color: '#fff', fontSize: 14 },
+  modalConfirmBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: sage },
+  modalConfirmText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 }); 
