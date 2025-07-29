@@ -59,28 +59,31 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
     try {
       Image.getSize(imageUri, async (originalWidth, originalHeight) => {
         try {
-          const scaleX = originalWidth / imageSize.width;
-          const scaleY = originalHeight / imageSize.height;
+          // Calculate the scale factor from displayed image to original image
+          const scaleToOriginal = originalWidth / imageSize.width;
           
-          const cropX = cropRegion.x * scaleX;
-          const cropY = cropRegion.y * scaleY;
-          const cropWidth = CROP_WIDTH * scaleX;
-          const cropHeight = CROP_HEIGHT * scaleY;
+          // Get the crop rectangle coordinates in the original image
+          const cropX = cropRegion.x * scaleToOriginal;
+          const cropY = cropRegion.y * scaleToOriginal;
+          const cropWidth = CROP_WIDTH * scaleToOriginal;
+          const cropHeight = CROP_HEIGHT * scaleToOriginal;
 
-          // Ensure crop doesn't exceed image bounds
-          const finalCropX = Math.max(0, Math.min(cropX, originalWidth - cropWidth));
-          const finalCropY = Math.max(0, Math.min(cropY, originalHeight - cropHeight));
-          const finalCropWidth = Math.min(cropWidth, originalWidth - finalCropX);
-          const finalCropHeight = Math.min(cropHeight, originalHeight - finalCropY);
+          console.log('Crop params:', {
+            scroll: cropRegion,
+            original: { originalWidth, originalHeight },
+            displayed: imageSize,
+            scale: scaleToOriginal,
+            crop: { cropX, cropY, cropWidth, cropHeight }
+          });
 
           const result = await ImageManipulator.manipulateAsync(
             imageUri,
             [{ 
               crop: { 
-                originX: finalCropX, 
-                originY: finalCropY, 
-                width: finalCropWidth, 
-                height: finalCropHeight 
+                originX: Math.round(cropX), 
+                originY: Math.round(cropY), 
+                width: Math.round(cropWidth), 
+                height: Math.round(cropHeight) 
               } 
             }],
             { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
