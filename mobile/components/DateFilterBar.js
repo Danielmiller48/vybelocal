@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 
 const FILTERS = [
@@ -30,6 +31,14 @@ export default function DateFilterBar({ active = 'all', onChange }) {
           );
         })}
       </ScrollView>
+      
+      {/* Fade overlay that extends into event space */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
+        locations={[0, 1]}
+        style={styles.fadeOverlay}
+        pointerEvents="none"
+      />
     </View>
   );
 }
@@ -47,4 +56,14 @@ const styles = StyleSheet.create({
   activePill: { backgroundColor: colors.secondary, shadowColor: colors.secondary, shadowOpacity:0.7, shadowRadius:4, shadowOffset:{ width:0, height:0 }, elevation:4 },
   pillText: { fontSize: 12, color: '#fff' },
   activeText: { color: '#fff', fontWeight: '600' },
+  fadeOverlay: {
+    position: 'absolute',
+    bottom: -20,
+    left: 0,
+    right: 0,
+    height: 20,
+    zIndex: 5,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
 }); 

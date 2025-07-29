@@ -23,6 +23,85 @@ function makeSections(events) {
   return Object.keys(map).sort((a,b)=> new Date(map[a][0].starts_at)-new Date(map[b][0].starts_at)).map(title=>({ title, data: map[title] }));
 }
 
+// Animated Vibe Welcome Banner
+function VibeWelcomeBanner({ activeVibe }) {
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [currentVibe, setCurrentVibe] = useState(activeVibe);
+
+  const getVibeMessage = (vibe) => {
+    switch(vibe) {
+      case 'creative':
+        return {
+          title: '🎨 Creative',
+          subtitle: 'Share something. Make something. Let people see what you\'ve got.'
+        };
+      case 'chill':
+        return {
+          title: '🌿 Chill', 
+          subtitle: 'No pressure. No hype. Just laid-back Vybes and good company.'
+        };
+      case 'hype':
+        return {
+          title: '🔥 Hype',
+          subtitle: 'Bring the energy. These Vybes move fast, stay loud.'
+        };
+      case 'active':
+        return {
+          title: '🏃 Active',
+          subtitle: 'Get moving. These Vybes are about motion, sweat, and play.'
+        };
+      default:
+        return {
+          title: 'Your local scene awaits ✨',
+          subtitle: 'Swipe left/right to explore different vibes, or use the date filter to peek at what\'s happening soon'
+        };
+    }
+  };
+
+  useEffect(() => {
+    if (activeVibe !== currentVibe) {
+      // Fade out
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start(() => {
+        // Update content
+        setCurrentVibe(activeVibe);
+        // Fade in
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }).start();
+      });
+    }
+  }, [activeVibe, currentVibe, fadeAnim]);
+
+  const message = getVibeMessage(currentVibe);
+
+  return (
+    <Animated.View style={{ 
+      paddingHorizontal: 20, 
+      paddingVertical: 12, 
+      backgroundColor: 'rgba(0,0,0,0.7)', 
+      marginHorizontal: 16, 
+      marginBottom: 4, 
+      borderRadius: 12, 
+      borderLeftWidth: 3, 
+      borderLeftColor: colors.secondary,
+      opacity: fadeAnim
+    }}>
+      <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 4 }}>
+        {message.title}
+      </Text>
+      <Text style={{ color: '#ddd', fontSize: 13, fontStyle: 'italic', lineHeight: 18 }}>
+        {message.subtitle}
+      </Text>
+    </Animated.View>
+  );
+}
+
 // VybeLocal Empty State with Personality
 function EmptyStateMessage({ vibe, dateFilter }) {
   const getVibeEmptyMessage = () => {
@@ -247,13 +326,14 @@ export default function DiscoverScreen() {
     loadEvents(activeVibe, dateFilter);
   }, [activeVibe, dateFilter, loadEvents]);
 
-  // Refresh when screen gains focus
+  // Refresh when screen gains focus and reset to 'all' vibe
   const isFocused = useIsFocused();
   useEffect(() => {
     if (isFocused) {
-      loadEvents(activeVibe, dateFilter);
+      setActiveVibe('all');
+      loadEvents('all', dateFilter);
     }
-  }, [isFocused, activeVibe, dateFilter, loadEvents]);
+  }, [isFocused, dateFilter, loadEvents]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -316,14 +396,7 @@ export default function DiscoverScreen() {
         <AppHeader />
         
         {/* VybeLocal Welcome Microcopy */}
-        <View style={{ paddingHorizontal: 20, paddingVertical: 12, backgroundColor: 'rgba(0,0,0,0.7)', marginHorizontal: 16, marginBottom: 4, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: colors.secondary }}>
-          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 4 }}>
-            Your local scene awaits ✨
-          </Text>
-          <Text style={{ color: '#ddd', fontSize: 13, fontStyle: 'italic', lineHeight: 18 }}>
-            Swipe left/right to explore different vibes, or peek at what's happening soon
-          </Text>
-        </View>
+        <VibeWelcomeBanner activeVibe={activeVibe} />
         
         <DateFilterBar active={dateFilter} onChange={(f)=>setDateFilter(f)} />
 
