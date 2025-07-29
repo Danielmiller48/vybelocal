@@ -23,6 +23,90 @@ function makeSections(events) {
   return Object.keys(map).sort((a,b)=> new Date(map[a][0].starts_at)-new Date(map[b][0].starts_at)).map(title=>({ title, data: map[title] }));
 }
 
+// VybeLocal Empty State with Personality
+function EmptyStateMessage({ vibe, dateFilter }) {
+  const getVibeEmptyMessage = () => {
+    switch(vibe) {
+      case 'chill':
+        return {
+          emoji: '🌙',
+          title: 'No chill vibes yet...',
+          subtitle: 'Perfect time to suggest a cozy coffee hangout or sunset picnic. Be the zen your city needs.'
+        };
+      case 'hype':
+        return {
+          emoji: '🎉',
+          title: 'Where\'s the party at?',
+          subtitle: 'No hype events yet, but someone\'s gotta turn up the energy. Maybe that someone is you?'
+        };
+      case 'creative':
+        return {
+          emoji: '🎨',
+          title: 'Creativity is taking a coffee break',
+          subtitle: 'Art happens when we make it happen. Host a paint night, poetry slam, or maker meetup!'
+        };
+      case 'active':
+        return {
+          emoji: '🏃‍♀️',
+          title: 'The active scene is... resting?',
+          subtitle: 'Time to get those endorphins flowing! Organize a hike, pickup game, or morning yoga session.'
+        };
+      default:
+        return {
+          emoji: '🌟',
+          title: 'Your local scene is just getting started',
+          subtitle: 'Every amazing community starts with one person saying "let\'s do something cool together."'
+        };
+    }
+  };
+
+  const getDateFilterMessage = () => {
+    if (dateFilter === 'week') return ' this week';
+    if (dateFilter === 'weekend') return ' this weekend';
+    return '';
+  };
+
+  const message = getVibeEmptyMessage();
+  
+  return (
+    <View style={{ alignItems: 'center', marginTop: 60, paddingHorizontal: 40 }}>
+      <Text style={{ fontSize: 48, marginBottom: 16 }}>{message.emoji}</Text>
+      <Text style={{ 
+        fontSize: 20, 
+        fontWeight: '700', 
+        color: '#333', 
+        textAlign: 'center', 
+        marginBottom: 12,
+        fontFamily: 'SpaceGrotesk'
+      }}>
+        {message.title}{getDateFilterMessage()}
+      </Text>
+      <Text style={{ 
+        fontSize: 15, 
+        color: '#666', 
+        textAlign: 'center', 
+        lineHeight: 22,
+        fontStyle: 'italic',
+        marginBottom: 24
+      }}>
+        {message.subtitle}
+      </Text>
+      <View style={{ 
+        backgroundColor: 'rgba(0,0,0,0.7)', 
+        paddingHorizontal: 20, 
+        paddingVertical: 12, 
+        borderRadius: 25,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.2)'
+      }}>
+        <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>
+          Try switching vibes or check back later! ✨
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function DiscoverScreen() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -230,6 +314,17 @@ export default function DiscoverScreen() {
       >
       <SafeAreaView style={{ flex:1, backgroundColor:'transparent' }} edges={['top','left','right']}>
         <AppHeader />
+        
+        {/* VybeLocal Welcome Microcopy */}
+        <View style={{ paddingHorizontal: 20, paddingVertical: 12, backgroundColor: 'rgba(0,0,0,0.7)', marginHorizontal: 16, marginBottom: 4, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: colors.secondary }}>
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginBottom: 4 }}>
+            Your local scene awaits ✨
+          </Text>
+          <Text style={{ color: '#ddd', fontSize: 13, fontStyle: 'italic', lineHeight: 18 }}>
+            Swipe left/right to explore different vibes, or peek at what's happening soon
+          </Text>
+        </View>
+        
         <DateFilterBar active={dateFilter} onChange={(f)=>setDateFilter(f)} />
 
         <Animated.View style={{ flex:1, transform:[{ translateX: listTranslateX }] }} {...panResponder.panHandlers}>
@@ -245,7 +340,7 @@ export default function DiscoverScreen() {
           contentContainerStyle={{ paddingHorizontal:16, paddingVertical: 16, paddingBottom: 120 }}
           ListEmptyComponent={() => (
             loading ? <View style={{ alignItems:'center', marginTop:40 }}><ActivityIndicator size="large" /></View> :
-            events.length === 0 ? <View style={{ alignItems:'center', marginTop:40 }}><Text>No upcoming events yet. Check back later!</Text></View> : null
+            events.length === 0 ? <EmptyStateMessage vibe={activeVibe} dateFilter={dateFilter} /> : null
           )}
           />
         </Animated.View>

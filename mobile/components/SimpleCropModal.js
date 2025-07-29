@@ -141,20 +141,6 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
           const minCropWidth = Math.max(finalCropWidth, 100);
           const minCropHeight = Math.max(finalCropHeight, 50);
 
-          console.log('Crop params:', {
-            scroll: cropRegion,
-            original: { originalWidth, originalHeight },
-            displayed: imageSize,
-            scale: scaleToOriginal,
-            calculated: { cropX, cropY, cropWidth, cropHeight },
-            final: { 
-              originX: Math.round(finalCropX), 
-              originY: Math.round(finalCropY), 
-              width: Math.round(minCropWidth), 
-              height: Math.round(minCropHeight) 
-            }
-          });
-
           const result = await ImageManipulator.manipulateAsync(
             imageUri,
             [{ 
@@ -167,9 +153,6 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
             }],
             { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
           );
-
-          console.log('✅ CROP COMPLETE - Result URI:', result.uri);
-          console.log('Result dimensions:', result.width, 'x', result.height);
           
           onCrop(result.uri);
         } catch (error) {

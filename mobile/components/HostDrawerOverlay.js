@@ -133,8 +133,6 @@ export default function HostDrawerOverlay({ onCreated }) {
   async function uploadImageMobile(uri){
     if(!uri) return null;
     
-    console.log('Uploading image:', uri);
-    
     try {
       let blob;
       
@@ -144,7 +142,6 @@ export default function HostDrawerOverlay({ onCreated }) {
         blob = await response.blob();
       } else {
         // File URI - use FileSystem for iOS compatibility
-        console.log('Using FileSystem for file URI...');
         
         try {
           // Read file as base64
@@ -160,10 +157,8 @@ export default function HostDrawerOverlay({ onCreated }) {
           }
           const byteArray = new Uint8Array(byteNumbers);
           blob = new Blob([byteArray], { type: 'image/jpeg' });
-          
-          console.log('FileSystem blob created:', blob.size, 'bytes');
         } catch (fsError) {
-          console.log('FileSystem failed, trying fetch fallback:', fsError);
+          // Fallback to fetch if FileSystem fails
           
           // Fallback to fetch
           const response = await fetch(uri);
@@ -184,16 +179,9 @@ export default function HostDrawerOverlay({ onCreated }) {
                   uri.split('.').pop() || 'jpg';
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       
-      console.log('Uploading to Supabase:', filename, 'Size:', blob.size);
-      console.log('Blob details:', {
-        size: blob.size,
-        type: blob.type,
-        blobConstructor: blob.constructor.name
-      });
-      
-      // Double-check the blob before upload
+      // Ensure we have a valid image blob  
       if (blob.size === 0) {
-        throw new Error('Blob size is 0 - upload would fail');
+        throw new Error('Image blob is empty - file may be corrupted or inaccessible');
       }
       
       // Try uploading with different methods
@@ -332,15 +320,8 @@ export default function HostDrawerOverlay({ onCreated }) {
     setBusy(true);
     try {
       let img_path = null;
-      console.log('📝 FORM SUBMIT - vals.image:', vals.image);
-      console.log('📝 FORM SUBMIT - imageUri state:', imageUri);
-      
       if (vals.image) {
-        console.log('🔄 Starting image upload...');
         img_path = await uploadImageMobile(vals.image);
-        console.log('✅ Upload complete, img_path:', img_path);
-      } else {
-        console.log('⚠️ No image to upload');
       }
 
       const baseCents = paid ? Math.round((vals.price_in_cents || 0) * 100) : null;
@@ -395,7 +376,7 @@ export default function HostDrawerOverlay({ onCreated }) {
           updated_at: new Date().toISOString()
         }).eq('id', data.id);
         
-        console.log('✅ Event approved via mobile moderation');
+
       } catch (modError) {
         console.warn('Moderation failed, auto-approving for mobile:', modError);
         // Auto-approve for mobile if moderation fails
@@ -672,7 +653,6 @@ export default function HostDrawerOverlay({ onCreated }) {
         imageUri={cropUri} 
         onClose={() => setCropOpen(false)} 
         onCrop={(uri) => { 
-          console.log('🖼️ CROP MODAL - Received cropped URI:', uri);
           setImageUri(uri); 
           setCropOpen(false); 
         }} 
@@ -822,7 +802,6 @@ async function moderateContent(eventData) {
   const openaiKey = Constants?.expoConfig?.extra?.openaiKey || process.env?.EXPO_PUBLIC_OPENAI_KEY;
   
   if (!openaiKey) {
-    console.log('No OpenAI key configured for mobile - skipping AI moderation, using keyword filters only');
     return { approved: true, aiScore: null, note: 'Approved via keyword filtering (no AI key)' };
   }
 

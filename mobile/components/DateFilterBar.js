@@ -11,7 +11,11 @@ const FILTERS = [
 export default function DateFilterBar({ active = 'all', onChange }) {
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
         {FILTERS.map(f => {
           const isActive = active === f.key;
           return (
@@ -31,13 +35,13 @@ export default function DateFilterBar({ active = 'all', onChange }) {
 }
 
 const styles = StyleSheet.create({
-  container: { paddingVertical: 8, backgroundColor: colors.cardGlass },
+  container: { paddingTop: 0, paddingBottom: 4 },
   scrollContent: { paddingHorizontal: 12, alignItems: 'center', justifyContent:'center', flexGrow:1 },
   pill: {
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: '#ffffff55',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     marginRight: 8,
   },
   activePill: { backgroundColor: colors.secondary, shadowColor: colors.secondary, shadowOpacity:0.7, shadowRadius:4, shadowOffset:{ width:0, height:0 }, elevation:4 },
