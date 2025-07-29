@@ -28,10 +28,12 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
       Image.getSize(imageUri, (width, height) => {
         setImageSize({ width, height });
         
-        // Calculate scale to fit image nicely in crop area (not too zoomed)
+        // Scale image so it's larger than crop area in BOTH dimensions for scrolling
         const scaleToFitWidth = CROP_WIDTH / width;
         const scaleToFitHeight = CROP_HEIGHT / height;
-        const scale = Math.min(scaleToFitWidth, scaleToFitHeight) * 1.2; // Scale to fit + 20% extra for cropping
+        // Use the smaller scale but ensure minimum size for scrolling
+        const baseScale = Math.min(scaleToFitWidth, scaleToFitHeight);
+        const scale = Math.max(baseScale * 1.5, 1); // Ensure image is 50% larger for scrolling room
         const scaledWidth = width * scale;
         const scaledHeight = height * scale;
         
@@ -114,18 +116,14 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
 
         {/* Crop Area */}
         <View style={styles.cropContainer}>
-          {/* Crop Frame Overlay */}
-          <View style={styles.cropFrame} pointerEvents="none">
-            <View style={[styles.cropRect, { width: CROP_WIDTH, height: CROP_HEIGHT }]} />
-          </View>
-
           {/* Scrollable Image */}
-          <ScrollView
+          <View style={styles.scrollContainer}>
+            <ScrollView
             ref={scrollViewRef}
             style={[styles.scrollView, { width: CROP_WIDTH, height: CROP_HEIGHT }]}
             contentContainerStyle={{
-              width: Math.max(CROP_WIDTH, imageSize.width),
-              height: Math.max(CROP_HEIGHT, imageSize.height),
+              width: imageSize.width,
+              height: imageSize.height,
             }}
             minimumZoomScale={0.5}
             maximumZoomScale={2}
@@ -152,8 +150,14 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
               }}
               onLoad={handleImageLoad}
               resizeMode="cover"
-            />
-          </ScrollView>
+                          />
+            </ScrollView>
+            
+            {/* Crop Frame Overlay - positioned over the ScrollView */}
+            <View style={styles.cropFrame} pointerEvents="none">
+              <View style={[styles.cropRect, { width: CROP_WIDTH, height: CROP_HEIGHT }]} />
+            </View>
+          </View>
         </View>
 
         {/* Instructions */}
@@ -198,10 +202,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  scrollContainer: {
+    position: 'relative',
+  },
   cropFrame: {
     position: 'absolute',
-    width: '100%',
-    height: '100%',
+    top: 0,
+    left: 0,
+    width: SCREEN_W * 0.8,
+    height: SCREEN_W * 0.8 * 0.5,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
