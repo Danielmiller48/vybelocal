@@ -57,13 +57,27 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
         
         setImageSize({ width: scaledWidth, height: scaledHeight });
         
-        // Center the image after a brief delay
+        // Reset zoom and center the image after a brief delay
         setTimeout(() => {
           if (scrollViewRef.current) {
+            // Reset zoom to 1 first
+            scrollViewRef.current.setNativeProps({ zoomScale: 1 });
+            
+            // Then center the image
+            const centerX = Math.max(0, (scaledWidth - CROP_WIDTH) / 2);
+            const centerY = Math.max(0, (scaledHeight - CROP_HEIGHT) / 2);
+            
             scrollViewRef.current.scrollTo({
-              x: Math.max(0, (scaledWidth - CROP_WIDTH) / 2),
-              y: Math.max(0, (scaledHeight - CROP_HEIGHT) / 2),
+              x: centerX,
+              y: centerY,
               animated: false
+            });
+            
+            // Reset the crop region state to match
+            setCropRegion({
+              x: centerX,
+              y: centerY,
+              zoom: 1
             });
           }
         }, 100);
