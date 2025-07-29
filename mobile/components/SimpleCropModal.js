@@ -204,6 +204,8 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     position: 'relative',
+    width: SCREEN_W * 0.8,
+    height: SCREEN_W * 0.8 * 0.5,
   },
   cropFrame: {
     position: 'absolute',
