@@ -58,6 +58,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [showDate, setShowDate]   = useState(false);
   const [showStart, setShowStart] = useState(false);
   const [showEnd, setShowEnd]     = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
   const [busy, setBusy]      = useState(false);
   const [canCharge, setCanCharge] = useState(false);
   const [contentH, setContentH] = useState(0);
@@ -559,24 +560,14 @@ export default function HostDrawerOverlay({ onCreated }) {
 
           {/* Address */}
           <Text style={[styles.label,{ marginTop:16 }]}>Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="123 Main St, City"
-            value={address}
-            onChangeText={setAddress}
-            placeholderTextColor="#aaa"
-            autoCorrect={false}
-          />
-          {suggestions.length>0 && (
-            <View style={styles.suggList}>
-              <BlurView style={StyleSheet.absoluteFill} intensity={50} tint="dark" />
-              {suggestions.map(f=> (
-                <TouchableOpacity key={f.id} style={styles.suggItem} onPress={()=>{ setAddress(f.place_name); setSuggestions([]); Keyboard.dismiss(); }}>
-                  <Text style={styles.suggTxt}>{f.place_name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          <TouchableOpacity 
+            style={[styles.input, { justifyContent: 'center' }]} 
+            onPress={() => setShowAddressModal(true)}
+          >
+            <Text style={{ color: address ? '#fff' : '#aaa' }}>
+              {address || '123 Main St, City'}
+            </Text>
+          </TouchableOpacity>
 
           {/* Start Date */}
           <Text style={[styles.label,{ marginTop:16 }]}>Start Date</Text>
@@ -649,6 +640,22 @@ export default function HostDrawerOverlay({ onCreated }) {
           </View>
         </Modal>
       )}
+
+      {/* Address Input Modal */}
+      {showAddressModal && (
+        <AddressInputModal
+          visible={showAddressModal}
+          address={address}
+          onClose={() => setShowAddressModal(false)}
+          onSelectAddress={(selectedAddress) => {
+            setAddress(selectedAddress);
+            setShowAddressModal(false);
+          }}
+          suggestions={suggestions}
+          setSuggestions={setSuggestions}
+          MAPBOX_TOKEN={MAPBOX_TOKEN}
+        />
+      )}
       {/* Second Strike Modal */}
       {confirmOpen && pendingVals && (
         <SecondStrikeModal
@@ -671,6 +678,101 @@ export default function HostDrawerOverlay({ onCreated }) {
         }} 
       />
     </Animated.View>
+  );
+}
+
+// Full-screen Address Input Modal
+function AddressInputModal({ visible, address, onClose, onSelectAddress, suggestions, setSuggestions, MAPBOX_TOKEN }) {
+  const [localAddress, setLocalAddress] = useState(address);
+
+  React.useEffect(() => {
+    if (!localAddress || localAddress.trim().length < 3 || !MAPBOX_TOKEN) {
+      setSuggestions([]);
+      return;
+    }
+    
+    const ctl = new AbortController();
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(localAddress)}.json?autocomplete=true&limit=8&access_token=${MAPBOX_TOKEN}`;
+    
+    fetch(url, { signal: ctl.signal })
+      .then(r => r.json())
+      .then(d => setSuggestions(d.features ?? []))
+      .catch(() => {});
+      
+    return () => ctl.abort();
+  }, [localAddress, MAPBOX_TOKEN, setSuggestions]);
+
+  const handleConfirm = () => {
+    onSelectAddress(localAddress);
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
+      <View style={styles.addressModalContainer}>
+        {/* Header */}
+        <View style={styles.addressModalHeader}>
+          <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Event Address</Text>
+          <TouchableOpacity onPress={handleConfirm} style={styles.headerBtn}>
+            <Text style={styles.doneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* VybeLocal Microcopy */}
+        <View style={styles.microCopyContainer}>
+          <Text style={styles.microCopyTitle}>Where's the vibe? 🌟</Text>
+          <Text style={styles.microCopySubtitle}>
+            Help people find your event with a clear address — no "behind the Starbucks" vibes here
+          </Text>
+        </View>
+
+        {/* Search Input */}
+        <View style={styles.addressInputContainer}>
+          <TextInput
+            style={styles.addressInput}
+            placeholder="123 Main St, Your City..."
+            value={localAddress}
+            onChangeText={setLocalAddress}
+            placeholderTextColor="#666"
+            autoFocus={true}
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={handleConfirm}
+          />
+        </View>
+
+        {/* Suggestions List */}
+        <ScrollView style={styles.suggestionsList} keyboardShouldPersistTaps="handled">
+          {suggestions.map((suggestion) => (
+            <TouchableOpacity
+              key={suggestion.id}
+              style={styles.suggestionItem}
+              onPress={() => onSelectAddress(suggestion.place_name)}
+            >
+              <Ionicons name="location-outline" size={20} color="#666" style={styles.suggestionIcon} />
+              <View style={styles.suggestionText}>
+                <Text style={styles.suggestionTitle} numberOfLines={1}>
+                  {suggestion.text || suggestion.place_name}
+                </Text>
+                <Text style={styles.suggestionSubtitle} numberOfLines={1}>
+                  {suggestion.place_name}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+          
+          {localAddress.length >= 3 && suggestions.length === 0 && (
+            <View style={styles.noResultsContainer}>
+              <Text style={styles.noResultsText}>No addresses found</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -854,4 +956,63 @@ const styles = StyleSheet.create({
   modalCancelText: { color: '#fff', fontSize: 14 },
   modalConfirmBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: sage },
   modalConfirmText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  // Address modal styles
+  addressModalContainer: { flex: 1, backgroundColor: '#000' },
+  addressModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  microCopyContainer: { 
+    paddingHorizontal: 20, 
+    paddingVertical: 15,
+    backgroundColor: '#111',
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: sage,
+  },
+  microCopyTitle: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  microCopySubtitle: { 
+    color: '#ccc', 
+    fontSize: 14, 
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  addressInputContainer: { padding: 20 },
+  addressInput: {
+    backgroundColor: '#111',
+    color: '#fff',
+    padding: 15,
+    borderRadius: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  suggestionsList: { flex: 1, paddingHorizontal: 20 },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  suggestionIcon: { marginRight: 12 },
+  suggestionText: { flex: 1 },
+  suggestionTitle: { color: '#fff', fontSize: 16, fontWeight: '500' },
+  suggestionSubtitle: { color: '#999', fontSize: 14, marginTop: 2 },
+  noResultsContainer: { padding: 40, alignItems: 'center' },
+  noResultsText: { color: '#666', fontSize: 16 },
 }); 
