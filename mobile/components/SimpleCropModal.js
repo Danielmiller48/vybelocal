@@ -19,6 +19,24 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [cropRegion, setCropRegion] = useState({ x: 0, y: 0, zoom: 1 });
 
+  // Helper function to constrain scroll position based on zoom
+  const constrainScrollPosition = (x, y, zoom) => {
+    if (!imageSize.width || !imageSize.height) return { x, y };
+    
+    // Calculate the actual displayed size of the zoomed image
+    const zoomedWidth = imageSize.width * zoom;
+    const zoomedHeight = imageSize.height * zoom;
+    
+    // Calculate max scroll positions to keep crop frame within image bounds
+    const maxX = Math.max(0, zoomedWidth - CROP_WIDTH);
+    const maxY = Math.max(0, zoomedHeight - CROP_HEIGHT);
+    
+    return {
+      x: Math.max(0, Math.min(x, maxX)),
+      y: Math.max(0, Math.min(y, maxY))
+    };
+  };
+
   // EventCard dimensions - 1:2 aspect ratio (width:height)
   const CROP_WIDTH = SCREEN_W * 0.8;
   const CROP_HEIGHT = CROP_WIDTH * 0.5; // 1:2 ratio means height is half of width
@@ -145,6 +163,20 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
                 y: event.nativeEvent.contentOffset.y,
                 zoom: event.nativeEvent.zoomScale || 1
               });
+            }}
+            onScrollEndDrag={(event) => {
+              const { contentOffset, zoomScale } = event.nativeEvent;
+              const zoom = zoomScale || 1;
+              const constrained = constrainScrollPosition(contentOffset.x, contentOffset.y, zoom);
+              
+              // Only adjust if position is out of bounds
+              if (constrained.x !== contentOffset.x || constrained.y !== contentOffset.y) {
+                scrollViewRef.current?.scrollTo({
+                  x: constrained.x,
+                  y: constrained.y,
+                  animated: true
+                });
+              }
             }}
             scrollEventThrottle={16}
           >
