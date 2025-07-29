@@ -18,6 +18,16 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
   const scrollViewRef = useRef(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [cropRegion, setCropRegion] = useState({ x: 0, y: 0, zoom: 1 });
+  const [modalKey, setModalKey] = useState(0);
+
+  // Reset modal completely when it becomes visible
+  React.useEffect(() => {
+    if (visible) {
+      setModalKey(prev => prev + 1); // Force remount of ScrollView
+      setImageSize({ width: 0, height: 0 }); // Reset image size
+      setCropRegion({ x: 0, y: 0, zoom: 1 }); // Reset crop region
+    }
+  }, [visible]);
 
   // Helper function to constrain scroll position based on zoom
   const constrainScrollPosition = (x, y, zoom) => {
@@ -175,6 +185,7 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
           {/* Scrollable Image */}
           <View style={styles.scrollContainer}>
             <ScrollView
+            key={modalKey} // Force remount when modal opens
             ref={scrollViewRef}
             style={[styles.scrollView, { width: CROP_WIDTH, height: CROP_HEIGHT }]}
             contentContainerStyle={{
