@@ -62,11 +62,14 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
           // Calculate the scale factor from displayed image to original image
           const scaleToOriginal = originalWidth / imageSize.width;
           
+          // Account for zoom scale - when zoomed in, we need to adjust our calculations
+          const zoomScale = cropRegion.zoom || 1;
+          
           // Get the crop rectangle coordinates in the original image
-          const cropX = cropRegion.x * scaleToOriginal;
-          const cropY = cropRegion.y * scaleToOriginal;
-          const cropWidth = CROP_WIDTH * scaleToOriginal;
-          const cropHeight = CROP_HEIGHT * scaleToOriginal;
+          const cropX = (cropRegion.x / zoomScale) * scaleToOriginal;
+          const cropY = (cropRegion.y / zoomScale) * scaleToOriginal;
+          const cropWidth = (CROP_WIDTH / zoomScale) * scaleToOriginal;
+          const cropHeight = (CROP_HEIGHT / zoomScale) * scaleToOriginal;
 
           console.log('Crop params:', {
             scroll: cropRegion,
@@ -140,7 +143,7 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
               setCropRegion({
                 x: event.nativeEvent.contentOffset.x,
                 y: event.nativeEvent.contentOffset.y,
-                zoom: 1
+                zoom: event.nativeEvent.zoomScale || 1
               });
             }}
             scrollEventThrottle={16}
