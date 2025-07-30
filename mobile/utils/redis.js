@@ -157,92 +157,14 @@ export const chatUtils = {
   },
   
   // Subscribe to new messages (for real-time updates)
+  // 🚫 DEPRECATED: Old 2-second polling system - REPLACED by real-time long-polling
   subscribeToMessages: async (eventId, event, callback) => {
-    if (!redis) {
-      throw new Error('Redis not configured');
-    }
+    console.warn('⚠️ DEPRECATED: subscribeToMessages() replaced by realTimeChatManager.subscribeToEvent()');
+    console.log('🔄 Use realTimeChatManager for efficient 30-second long-polling instead of 2-second spam');
     
-    // Check if chat is already locked
-    if (chatUtils.isChatLocked(event)) {
-      return () => {}; // Return empty cleanup function
-    }
-    
-    // For React Native, we'll use polling instead of websockets
-    const roomKey = chatUtils.getRoomKey(eventId);
-    let lastTimestamp = Date.now();
-    let knownMessageIds = new Set(); // Track message IDs to prevent duplicates
-    let isActive = true; // Track if polling should continue
-    
-    const pollForMessages = async () => {
-      try {
-        // Stop polling if deactivated or chat is now locked
-        if (!isActive || chatUtils.isChatLocked(event)) {
-          clearInterval(intervalId);
-          return;
-        }
-        
-        // Get all messages and filter by timestamp manually
-        const allMessages = await redis.zrange(roomKey, 0, -1);
-        const newMessages = [];
-        
-        if (allMessages && allMessages.length > 0) {
-           for (const messageStr of allMessages) {
-             let message = null;
-             
-             // Check if it's already an object
-             if (typeof messageStr === 'object' && messageStr !== null) {
-               message = messageStr;
-             } else if (typeof messageStr === 'string') {
-               try {
-                 message = JSON.parse(messageStr);
-               } catch (parseError) {
-                 // Only log parsing errors in dev mode during polling
-                 if (__DEV__) {
-                   console.warn('Polling message parse error:', parseError.message);
-                 }
-                 
-                 // Try different parsing approaches
-                 try {
-                   const unescaped = messageStr.replace(/\\"/g, '"').replace(/^"/, '').replace(/"$/, '');
-                   message = JSON.parse(unescaped);
-                 } catch (secondError) {
-                   // Skip malformed messages silently
-                   continue;
-                 }
-               }
-             }
-             
-             if (message && message.timestamp > lastTimestamp && !knownMessageIds.has(message.id)) {
-               newMessages.push(message);
-               knownMessageIds.add(message.id);
-               lastTimestamp = Math.max(lastTimestamp, message.timestamp);
-             }
-           }
-         }
-        
-        if (newMessages.length > 0) {
-          // Sort new messages by timestamp to maintain chronological order
-          newMessages.sort((a, b) => a.timestamp - b.timestamp);
-          callback(newMessages);
-        }
-      } catch (error) {
-        // Only log polling errors in dev mode to reduce noise
-        if (__DEV__) {
-          console.warn('Chat polling error:', error.message);
-        }
-      }
-    };
-    
-    // Poll every 2 seconds
-    const intervalId = setInterval(pollForMessages, 2000);
-    
-    // Return cleanup function
+    // NO MORE 2-SECOND POLLING! Return empty cleanup function
     return () => {
-      if (__DEV__) {
-        console.log('🛑 Clearing chat polling interval');
-      }
-      isActive = false; // Signal polling to stop
-      clearInterval(intervalId);
+      console.log('🚫 Old 2-second polling cleanup (disabled)');
     };
   },
 };

@@ -54,7 +54,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
     return color;
   };
 
-  // 🔥 REAL-TIME MESSAGE HANDLER
+  // 🔥 REAL-TIME MESSAGE HANDLER (Fixed: No nested state updates)
   const handleRealTimeMessages = (newMessages) => {
     console.log('🔥 HANDLING REAL-TIME MESSAGES:', newMessages.length);
     
@@ -66,25 +66,32 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
         return prevMessages;
       }
 
-      // Update message IDs set
-      setMessageIds(prev => {
-        const newSet = new Set(prev);
-        uniqueNewMessages.forEach(msg => newSet.add(msg.id));
-        return newSet;
-      });
-
       const updatedMessages = [...prevMessages, ...uniqueNewMessages];
       updatedMessages.sort((a, b) => a.timestamp - b.timestamp);
       
       console.log('🔥 ADDED', uniqueNewMessages.length, 'NEW MESSAGES');
       
-      // Auto-scroll to bottom
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-
       return updatedMessages;
     });
+
+    // 🔧 SEPARATE STATE UPDATE: Update message IDs separately to avoid nesting
+    setMessageIds(prev => {
+      const existingIds = new Set(prev);
+      const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg.id));
+      
+      if (uniqueNewMessages.length === 0) {
+        return prev;
+      }
+
+      const newSet = new Set(prev);
+      uniqueNewMessages.forEach(msg => newSet.add(msg.id));
+      return newSet;
+    });
+
+    // 🔄 AUTO-SCROLL: Non-blocking, outside state updates
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
   // 🔥 SETUP REAL-TIME CONNECTION
@@ -171,31 +178,62 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
 
   // 🔥 SEND MESSAGE - REAL-TIME
   const handleSendMessage = async () => {
-    if (!messageText.trim() || loading || !user?.full_name) {
+    // Validation checks
+    const trimmedText = messageText.trim();
+    if (!trimmedText || loading) {
+      console.log('🚫 Send blocked:', { 
+        hasText: !!trimmedText, 
+        loading, 
+        connected: isConnected 
+      });
       return;
     }
 
-    const trimmedText = messageText.trim();
-    setMessageText('');
+    // Check user data with flexible name handling
+    if (!user?.id) {
+      console.error('❌ Missing user ID:', user);
+      return;
+    }
+
+    // Get user name from any available field
+    const userName = user.full_name || user.name || user.email?.split('@')[0] || 'User';
+    
+    console.log('✅ User data validated:', { 
+      userId: user.id, 
+      userName,
+      availableFields: Object.keys(user || {})
+    });
+
+    // Prevent duplicate sends
     setLoading(true);
+    setMessageText(''); // Clear immediately to prevent duplicate typing
 
     try {
-      console.log('🔥 SENDING REAL-TIME MESSAGE');
+      console.log('🔥 SENDING REAL-TIME MESSAGE:', {
+        eventId: event.id,
+        userId: user.id,
+        userName,
+        messageLength: trimmedText.length,
+        connected: isConnected
+      });
 
-      await realTimeChatManager.sendMessage(
+      const result = await realTimeChatManager.sendMessage(
         event.id,
         user.id,
-        user.full_name,
+        userName,
         event.title || 'Event',
         trimmedText
       );
 
-      console.log('🔥 MESSAGE SENT SUCCESSFULLY');
+      console.log('🔥 MESSAGE SENT SUCCESSFULLY:', result);
 
     } catch (error) {
       console.error('❌ Error sending message:', error);
       // Put the message back if it failed
       setMessageText(trimmedText);
+      
+      // Show user-friendly error
+      alert(`Failed to send message: ${error.message || 'Network error'}`);
     } finally {
       setLoading(false);
     }
@@ -302,26 +340,9 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
     setChatLocked(isLocked);
     
     if (!isLocked) {
-      // 🔥 FALLBACK AUTO-SUBSCRIPTION FOR LEGACY EVENTS
-      // Check if user is already subscribed, if not, auto-subscribe them
-      try {
-        if (!realTimeChatManager.isConnectedToEvent(event.id)) {
-          console.log('🔥 FALLBACK: Auto-subscribing to chat for legacy event:', event.id);
-          await realTimeChatManager.subscribeToEvent(
-            event.id,
-            user.id,
-            () => {}, // No callback needed for background subscription
-            () => {}  // No unread callback needed for background subscription
-          );
-          console.log('🔥 FALLBACK: Successfully subscribed to legacy event chat');
-        } else {
-          console.log('✅ Already subscribed to chat for event:', event.id);
-        }
-      } catch (chatError) {
-        console.error('❌ Failed to auto-subscribe to legacy event chat:', chatError);
-        // Don't fail chat entry if subscription fails
-      }
-      
+      // ✅ CONNECTION ALREADY ESTABLISHED
+      // Real-time connection is already set up when modal opens
+      console.log('✅ Using existing real-time connection for event:', event.id);
       setShowChat(true);
     }
   };
@@ -367,30 +388,50 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
     const isOwnMessage = message.userId === user?.id;
     const userColor = getUserColor(message.userId);
     
-    return (
-      <View key={message.id} style={[
-        styles.messageContainer,
-        isOwnMessage ? styles.ownMessage : styles.otherMessage
-      ]}>
-        <View style={[
-          styles.messageBubble,
-          isOwnMessage ? styles.ownBubble : styles.otherBubble
+    // 🐛 DEBUG: Log message data to catch blank message issues
+    if (!message.text || !message.userName) {
+      console.warn('⚠️ Message missing data:', {
+        id: message.id,
+        text: message.text ? `"${message.text}"` : 'MISSING',
+        userName: message.userName ? `"${message.userName}"` : 'MISSING',
+        userId: message.userId,
+        timestamp: message.timestamp,
+        isOwnMessage
+      });
+    }
+    
+          return (
+        <View key={message.id} style={[
+          styles.messageContainer,
+          isOwnMessage ? styles.ownMessage : styles.otherMessage
         ]}>
-          {!isOwnMessage && (
-            <Text style={[styles.senderName, { color: userColor }]}>
-              {message.userName}
+          <View style={[
+            styles.messageBubble,
+            isOwnMessage ? styles.ownBubble : styles.otherBubble
+          ]}>
+            {!isOwnMessage && (
+              <Text style={[styles.senderName, { color: userColor }]}>
+                {message.userName || 'Unknown User'}
+              </Text>
+            )}
+            <Text style={[
+              styles.messageText, 
+              { color: isOwnMessage ? 'white' : colors.textPrimary }
+            ]}>
+              {message.text || '(Message content missing)'}
             </Text>
-          )}
-          <Text style={styles.messageText}>{message.text}</Text>
-          <Text style={styles.messageTime}>
-            {new Date(message.timestamp).toLocaleTimeString([], { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })}
-          </Text>
+            <Text style={[
+              styles.messageTime,
+              { color: isOwnMessage ? 'rgba(255, 255, 255, 0.8)' : colors.textMuted }
+            ]}>
+              {new Date(message.timestamp).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}
+            </Text>
+          </View>
         </View>
-      </View>
-    );
+      );
   };
 
   if (!visible) return null;
@@ -502,20 +543,20 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
                 style={styles.textInput}
                 value={messageText}
                 onChangeText={setMessageText}
-                placeholder={isConnected ? "Send a real-time message..." : "Connecting..."}
+                placeholder={isConnected ? "Send a real-time message..." : "Type a message... (will send when connected)"}
                 multiline
                 maxLength={500}
-                editable={isConnected && !loading}
+                editable={!loading}
               />
               <TouchableOpacity
-                style={[styles.sendButton, (!messageText.trim() || loading || !isConnected) && styles.sendButtonDisabled]}
+                style={[styles.sendButton, (!messageText.trim() || loading) && styles.sendButtonDisabled]}
                 onPress={handleSendMessage}
-                disabled={!messageText.trim() || loading || !isConnected}
+                disabled={!messageText.trim() || loading}
               >
                 <Ionicons 
                   name="send" 
                   size={20} 
-                  color={messageText.trim() && isConnected && !loading ? colors.primary : '#ccc'} 
+                  color={messageText.trim() && !loading ? colors.primary : '#ccc'} 
                 />
               </TouchableOpacity>
             </View>
@@ -714,13 +755,13 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     lineHeight: 20,
-    color: 'white',
+    // Color will be set dynamically based on message type
   },
   messageTime: {
     fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 4,
     alignSelf: 'flex-end',
+    // Color will be set dynamically based on message type
   },
   inputContainer: {
     flexDirection: 'row',
