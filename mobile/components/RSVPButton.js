@@ -4,6 +4,7 @@ import { TouchableOpacity, Text, ActivityIndicator, Alert, StyleSheet } from 're
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
+import realTimeChatManager from '../utils/realTimeChat';
 import colors from '../theme/colors';
 
 export default function RSVPButton({ event, onCountChange, compact = false }) {
@@ -79,6 +80,21 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
         const newCount = rsvpCount + 1;
         setRsvpCount(newCount);
         if (typeof onCountChange === 'function') onCountChange(newCount);
+
+        // 🔥 AUTO-SUBSCRIBE TO REAL-TIME CHAT
+        try {
+          console.log('🔥 AUTO-SUBSCRIBING to chat for event:', event.id);
+          await realTimeChatManager.subscribeToEvent(
+            event.id,
+            user.id,
+            () => {}, // No callback needed for background subscription
+            () => {}  // No unread callback needed for background subscription
+          );
+          console.log('🔥 AUTO-SUBSCRIBED to chat successfully');
+        } catch (chatError) {
+          console.error('❌ Failed to auto-subscribe to chat:', chatError);
+          // Don't fail the RSVP if chat subscription fails
+        }
       }
       setBusy(false);
     } else {
@@ -102,6 +118,16 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
               const newCount = rsvpCount - 1;
               setRsvpCount(newCount);
               if (typeof onCountChange === 'function') onCountChange(newCount);
+
+              // 🔥 AUTO-UNSUBSCRIBE FROM REAL-TIME CHAT
+              try {
+                console.log('🔥 AUTO-UNSUBSCRIBING from chat for event:', event.id);
+                await realTimeChatManager.unsubscribeFromEvent(event.id, user.id);
+                console.log('🔥 AUTO-UNSUBSCRIBED from chat successfully');
+              } catch (chatError) {
+                console.error('❌ Failed to auto-unsubscribe from chat:', chatError);
+                // Don't fail the RSVP cancel if chat unsubscription fails
+              }
             }
             setBusy(false);
           },
