@@ -27,31 +27,12 @@ class RealTimeChatManager {
       this.unreadCallbacks.set(eventId, onUnreadCountChanged);
     }
 
-    // Subscribe to backend
-    const subscribeResponse = await fetch(`${this.baseUrl}/api/chat/realtime`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        eventId,
-        userId,
-        action: 'subscribe',
-        lastTimestamp: Date.now()
-      })
-    });
-
-    if (!subscribeResponse.ok) {
-      throw new Error(`Subscription failed: ${subscribeResponse.status}`);
-    }
-
-    const { pollUrl } = await subscribeResponse.json();
-    
-    // Store connection info
+    // Store connection info (skip subscription POST call for now)
     const connection = {
       eventId,
       userId,
       isActive: true,
-      lastTimestamp: Date.now(),
-      pollUrl
+      lastTimestamp: Date.now()
     };
     
     this.connections.set(eventId, connection);
@@ -194,20 +175,7 @@ class RealTimeChatManager {
     this.messageCallbacks.delete(eventId);
     this.unreadCallbacks.delete(eventId);
 
-    // Notify backend
-    try {
-      await fetch(`${this.baseUrl}/api/chat/realtime`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId,
-          userId,
-          action: 'unsubscribe'
-        })
-      });
-    } catch (error) {
-      console.error('❌ Failed to notify backend of unsubscribe:', error);
-    }
+    // Backend notification skipped (subscription tracking not needed for basic functionality)
 
     console.log('🔥 DISCONNECTED from event:', eventId);
   }

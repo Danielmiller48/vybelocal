@@ -253,14 +253,15 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
       }
 
       // Then get the host profile
-      const { data: hostData, error: hostError } = await supabase
+      const { data: hostProfiles, error: hostError } = await supabase
         .from('profiles')
         .select('name')
-        .eq('id', eventData.host_id)
-        .single();
+        .eq('id', eventData.host_id);
 
       if (hostError) throw hostError;
 
+      // Handle case where host profile doesn't exist
+      const hostData = hostProfiles && hostProfiles.length > 0 ? hostProfiles[0] : null;
       setHostName(hostData?.name || 'Host');
     } catch (error) {
       console.error('Error loading host info:', error);
