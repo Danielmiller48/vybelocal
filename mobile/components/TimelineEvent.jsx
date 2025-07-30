@@ -1,26 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Switch, Alert, ScrollView, LayoutAnimation, UIManager, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Switch, Alert, ScrollView, LayoutAnimation, Platform, Animated } from 'react-native';
 import { format, differenceInMinutes } from 'date-fns';
 import colors from '../theme/colors';
 import RSVPButton from './RSVPButton';
 import { supabase } from '../utils/supabase';
 import ProfileModal from './ProfileModal';
 import EventChatModal from './EventChatModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function TimelineEvent({ event, onCancel }) {
   const minutesAway = differenceInMinutes(new Date(event.starts_at), new Date());
   const countdown = minutesAway <= 0 ? null : minutesAway < 60 ? `Starts in ${minutesAway}m` : `Starts in ${Math.round(minutesAway/60)}h`;
   const [remind, setRemind] = useState(true);
   const [avatars, setAvatars] = useState([]);
-  if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-  }
+  
+  // Layout animations enabled
 
   const [expanded, setExpanded] = useState(false);
   const [attendees, setAttendees] = useState([]); // full list
   const fadeAnim = useState(new Animated.Value(0))[0];
   const [profileModal, setProfileModal] = useState({ visible:false, profile:null, stats:{} });
   const [chatModalVisible, setChatModalVisible] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // helper to resolve avatar path to signed URL
   const resolveAvatarUrl = async (path) => {
@@ -112,6 +113,24 @@ export default function TimelineEvent({ event, onCancel }) {
     }
   }, [expanded, attendees.length]);
 
+  // Load unread count from storage
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(`unread_${event.id}`);
+        if (saved) {
+          setUnreadCount(parseInt(saved, 10) || 0);
+        }
+      } catch (error) {
+        console.warn('Failed to load unread count:', error);
+      }
+    };
+    
+    if (event?.id) {
+      loadUnreadCount();
+    }
+  }, [event?.id]);
+
   const handleCancel = () => {
     Alert.alert('Cancel RSVP', 'Are you sure you want to cancel? Fees may apply.', [
       { text:'No' },
@@ -129,7 +148,18 @@ export default function TimelineEvent({ event, onCancel }) {
   };
 
   const openChatModal = () => {
+    setUnreadCount(0); // Reset unread count when opening chat
+    AsyncStorage.setItem(`unread_${event.id}`, '0'); // Persist reset
     setChatModalVisible(true);
+  };
+
+  const handleNewMessage = async () => {
+    // Only increment if chat modal is not visible
+    if (!chatModalVisible) {
+      const newCount = unreadCount + 1;
+      setUnreadCount(newCount);
+      await AsyncStorage.setItem(`unread_${event.id}`, newCount.toString());
+    }
   };
 
   const openProfile = async (uuid) => {
@@ -166,6 +196,13 @@ export default function TimelineEvent({ event, onCancel }) {
           </View>
           <TouchableOpacity onPress={openChatModal} style={styles.chatBubble}>
             <Text style={styles.chatBubbleEmoji}>💬</Text>
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadText}>
+                  {unreadCount > 99 ? '99+' : unreadCount.toString()}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -238,6 +275,7 @@ export default function TimelineEvent({ event, onCancel }) {
         visible={chatModalVisible}
         onClose={() => setChatModalVisible(false)}
         event={event}
+        onNewMessage={handleNewMessage}
       />
     </TouchableOpacity>
   );
@@ -298,6 +336,26 @@ const styles = StyleSheet.create({
   chatBubbleEmoji: {
     fontSize: 20,
     color: '#fff',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF3B30',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    zIndex: 999,
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    paddingHorizontal: 6,
   },
   shareButton: {
     backgroundColor: colors.primary,

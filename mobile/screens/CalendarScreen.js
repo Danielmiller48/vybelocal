@@ -1,6 +1,6 @@
 // mobile/screens/CalendarScreen.js
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation, UIManager, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, LayoutAnimation, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
 import HomeDrawerOverlay from '../components/HomeDrawerOverlay';
@@ -9,10 +9,6 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from '../auth/AuthProvider';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 export default function CalendarScreen() {
   const { user } = useAuth();
