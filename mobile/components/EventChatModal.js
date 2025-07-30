@@ -204,50 +204,67 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
   // Load attendees
   const loadAttendees = async () => {
     try {
+      // First get the RSVP user IDs
       const { data: rsvpData, error: rsvpError } = await supabase
         .from('rsvps')
-        .select(`
-          user_id,
-          public_user_cards (
-            id,
-            full_name,
-            profile_picture_url
-          )
-        `)
+        .select('user_id')
         .eq('event_id', event.id)
         .eq('status', 'attending');
 
       if (rsvpError) throw rsvpError;
 
-      const attendeeList = rsvpData
-        .map(rsvp => rsvp.public_user_cards)
-        .filter(Boolean);
+      if (!rsvpData || rsvpData.length === 0) {
+        setAttendees([]);
+        return;
+      }
 
-      setAttendees(attendeeList);
+      const userIds = rsvpData.map(rsvp => rsvp.user_id);
+
+      // Then get the user profiles
+      const { data: profileData, error: profileError } = await supabase
+        .from('public_user_cards')
+        .select('id, full_name, profile_picture_url')
+        .in('id', userIds);
+
+      if (profileError) throw profileError;
+
+      setAttendees(profileData || []);
     } catch (error) {
       console.error('Error loading attendees:', error);
+      setAttendees([]); // Set empty array on error
     }
   };
 
   // Load host info
   const loadHostInfo = async () => {
     try {
-      const { data: eventData, error } = await supabase
+      // First get the event host_id
+      const { data: eventData, error: eventError } = await supabase
         .from('events')
-        .select(`
-          host_id,
-          public_user_cards (
-            full_name
-          )
-        `)
+        .select('host_id')
         .eq('id', event.id)
         .single();
 
-      if (error) throw error;
+      if (eventError) throw eventError;
 
-      setHostName(eventData?.public_user_cards?.full_name || 'Host');
+      if (!eventData?.host_id) {
+        setHostName('Host');
+        return;
+      }
+
+      // Then get the host profile
+      const { data: hostData, error: hostError } = await supabase
+        .from('public_user_cards')
+        .select('full_name')
+        .eq('id', eventData.host_id)
+        .single();
+
+      if (hostError) throw hostError;
+
+      setHostName(hostData?.full_name || 'Host');
     } catch (error) {
       console.error('Error loading host info:', error);
+      setHostName('Host'); // Set default on error
     }
   };
 
@@ -279,11 +296,31 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
   }, []);
 
   // Handle join chat
-  const handleJoinChat = () => {
+  const handleJoinChat = async () => {
     const isLocked = checkChatLock();
     setChatLocked(isLocked);
     
     if (!isLocked) {
+      // 🔥 FALLBACK AUTO-SUBSCRIPTION FOR LEGACY EVENTS
+      // Check if user is already subscribed, if not, auto-subscribe them
+      try {
+        if (!realTimeChatManager.isConnectedToEvent(event.id)) {
+          console.log('🔥 FALLBACK: Auto-subscribing to chat for legacy event:', event.id);
+          await realTimeChatManager.subscribeToEvent(
+            event.id,
+            user.id,
+            () => {}, // No callback needed for background subscription
+            () => {}  // No unread callback needed for background subscription
+          );
+          console.log('🔥 FALLBACK: Successfully subscribed to legacy event chat');
+        } else {
+          console.log('✅ Already subscribed to chat for event:', event.id);
+        }
+      } catch (chatError) {
+        console.error('❌ Failed to auto-subscribe to legacy event chat:', chatError);
+        // Don't fail chat entry if subscription fails
+      }
+      
       setShowChat(true);
     }
   };
@@ -363,7 +400,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color={colors.text.primary} />
+            <Ionicons name="close" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title} numberOfLines={1}>
             {event?.title || 'Event Chat'}
@@ -491,7 +528,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background.primary,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -500,7 +537,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
+    borderBottomColor: colors.border,
   },
   closeButton: {
     width: 40,
@@ -512,7 +549,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text.primary,
+    color: colors.textPrimary,
     textAlign: 'center',
     marginHorizontal: 10,
   },
@@ -528,7 +565,7 @@ const styles = StyleSheet.create({
   guidelinesTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: colors.text.primary,
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -539,7 +576,7 @@ const styles = StyleSheet.create({
   guidelinesText: {
     fontSize: 16,
     lineHeight: 24,
-    color: colors.text.secondary,
+    color: colors.textMuted,
     textAlign: 'left',
   },
   attendeesPreview: {
@@ -548,7 +585,7 @@ const styles = StyleSheet.create({
   attendeesTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text.primary,
+    color: colors.textPrimary,
     marginBottom: 10,
   },
   attendeesScroll: {
@@ -559,20 +596,20 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     marginRight: 8,
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.card,
   },
   moreAttendees: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   moreAttendeesText: {
     fontSize: 12,
     fontWeight: '600',
-    color: colors.text.secondary,
+    color: colors.textMuted,
   },
   joinButton: {
     backgroundColor: colors.primary,
@@ -586,10 +623,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   lockedButton: {
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.card,
   },
   lockedButtonText: {
-    color: colors.text.secondary,
+    color: colors.textMuted,
   },
 
   // Real-Time Chat Screen
@@ -599,7 +636,7 @@ const styles = StyleSheet.create({
   statusBar: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.card,
     alignItems: 'center',
   },
   connectedBar: {
@@ -611,11 +648,11 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 12,
     fontWeight: '500',
-    color: colors.text.secondary,
+    color: colors.textMuted,
   },
   messagesContainer: {
     flex: 1,
-    backgroundColor: colors.background.primary,
+    backgroundColor: colors.background,
   },
   messagesContent: {
     padding: 16,
@@ -629,7 +666,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: colors.text.secondary,
+    color: colors.textMuted,
   },
   emptyContainer: {
     flex: 1,
@@ -640,12 +677,12 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text.primary,
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
-    color: colors.text.secondary,
+    color: colors.textMuted,
   },
   messageContainer: {
     marginBottom: 12,
@@ -666,7 +703,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   otherBubble: {
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.card,
   },
   senderName: {
     fontSize: 12,
@@ -689,28 +726,28 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: colors.background.primary,
+    backgroundColor: colors.background,
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
+    borderTopColor: colors.border,
   },
   textInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: colors.border.light,
+    borderColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 12,
     maxHeight: 100,
     fontSize: 16,
-    color: colors.text.primary,
-    backgroundColor: colors.background.secondary,
+    color: colors.textPrimary,
+    backgroundColor: colors.card,
   },
   sendButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.background.secondary,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
