@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "VybeLocal",
+    "slug": "vybelocal-mobile-danielmiller48",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,17 +13,25 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vybelocal.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.vybelocal.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#ffffff",
+      "androidMode": "default",
+      "androidCollapsedTitle": "#{unread_notifications} new messages"
     },
     "extra": {
       "EXPO_PUBLIC_SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
@@ -31,7 +39,11 @@
       "EXPO_PUBLIC_EVENT_BUCKET": "event-images",
       "EXPO_PUBLIC_MAPBOX_TOKEN": "YOUR_MAPBOX_TOKEN",
       "UPSTASH_REDIS_REST_URL": "https://enough-quagga-52942.upstash.io",
-      "UPSTASH_REDIS_REST_TOKEN": "Ac7OAAIjcDExMDYwMTg1NTg0ZTI0ODgyOTA5YjgzNjg1ZmZlMzFhYXAxMA"
-    }
+      "UPSTASH_REDIS_REST_TOKEN": "Ac7OAAIjcDExMDYwMTg1NTg0ZTI0ODgyOTA5YjgzNjg1ZmZlMzFhYXAxMA",
+      "eas": {
+        "projectId": "59cf4ed4-af4b-44c4-9b10-ae5626ef2f05"
+      }
+    },
+    "owner": "danielmiller48"
   }
 }

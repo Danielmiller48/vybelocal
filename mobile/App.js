@@ -1,3 +1,5 @@
+import 'react-native-get-random-values';
+import 'event-target-polyfill';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -19,6 +21,12 @@ import { AuthProvider, useAuth } from './auth/AuthProvider';
 import HostCreateScreen from './screens/HostCreateScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import GuidelinesScreen from './screens/GuidelinesScreen';
+import PushNotificationService from './utils/pushNotifications';
+
+// Make PushNotificationService available globally for testing
+if (__DEV__) {
+  global.PushNotificationService = PushNotificationService;
+}
 
 console.log('ENV check →', {
   url: process.env.EXPO_PUBLIC_SUPABASE_URL,
@@ -76,6 +84,35 @@ function Login() {
 
 function RootNavigator() {
   const { user } = useAuth();
+  
+  // Set up push notifications when user is authenticated
+  React.useEffect(() => {
+    if (user) {
+      // Initialize push notifications
+      PushNotificationService.setupNotificationListeners();
+      
+      // Register for push notifications and save token
+      PushNotificationService.registerForPushNotificationsAsync()
+        .then((token) => {
+          if (token && user.id) {
+            // Save token to database
+            PushNotificationService.savePushTokenToDatabase(user.id, token);
+          }
+        })
+        .catch((error) => {
+          console.log('Push notification registration failed:', error);
+        });
+    } else {
+      // Clean up notification listeners when user logs out
+      PushNotificationService.removeNotificationListeners();
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      PushNotificationService.removeNotificationListeners();
+    };
+  }, [user]);
+  
   return (
     <Stack.Navigator screenOptions={{ headerShown:false }}>
       {user ? (

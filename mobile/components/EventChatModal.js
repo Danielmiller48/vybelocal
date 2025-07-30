@@ -18,8 +18,10 @@ import colors from '../theme/colors';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
 import { chatUtils } from '../utils/redis';
+import { chatNotifications } from '../utils/chatNotifications';
+import PushNotificationService from '../utils/pushNotifications';
 
-export default function EventChatModal({ visible, onClose, event }) {
+export default function EventChatModal({ visible, onClose, event, onNewMessage }) {
   const { user } = useAuth();
   const [attendees, setAttendees] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -68,7 +70,7 @@ export default function EventChatModal({ visible, onClose, event }) {
       // Clean up polling when modal closes or leaving chat
       if (pollingCleanup) {
         if (__DEV__) {
-          console.log('🧹 Cleaning up chat polling', { visible, showChat });
+          console.log('🛑 POLLING STOPPED', { visible, showChat, reason: !visible ? 'modal_closed' : 'left_chat' });
         }
         pollingCleanup();
         setPollingCleanup(null);
@@ -101,7 +103,7 @@ export default function EventChatModal({ visible, onClose, event }) {
         // Pause polling when app goes to background
         if (pollingCleanup) {
           if (__DEV__) {
-            console.log('📱 App backgrounded - pausing chat polling');
+            console.log('🛑 POLLING PAUSED - App backgrounded');
           }
           pollingCleanup();
           setPollingCleanup(null);
@@ -109,7 +111,7 @@ export default function EventChatModal({ visible, onClose, event }) {
       } else if (nextAppState === 'active' && showChat && visible && !pollingCleanup) {
         // Resume polling when app comes back to foreground
         if (__DEV__) {
-          console.log('📱 App foregrounded - resuming chat polling');
+          console.log('🚀 POLLING RESUMED - App foregrounded');
         }
         startMessagePolling().then(cleanup => {
           setPollingCleanup(cleanup);
@@ -214,6 +216,11 @@ export default function EventChatModal({ visible, onClose, event }) {
       return;
     }
     
+    // Reset message count when user opens the chat
+    if (user?.id && event?.id) {
+      await chatNotifications.resetEventMessageCount(event.id, user.id);
+    }
+    
     setShowChat(true);
     await loadMessages();
     const cleanup = await startMessagePolling();
@@ -246,6 +253,9 @@ export default function EventChatModal({ visible, onClose, event }) {
   };
 
   const startMessagePolling = async () => {
+    if (__DEV__) {
+      console.log('🚀 POLLING STARTED for event:', event.id);
+    }
     try {
       const cleanup = await chatUtils.subscribeToMessages(event.id, event, (newMessages) => {
         setMessages(prev => {
@@ -256,6 +266,11 @@ export default function EventChatModal({ visible, onClose, event }) {
           
           if (newUniqueMessages.length === 0) {
             return prev; // No new messages
+          }
+
+          // If modal is not visible, trigger unread count increment
+          if (!visible && onNewMessage) {
+            newUniqueMessages.forEach(() => onNewMessage());
           }
           
           // Update message IDs set
@@ -291,13 +306,33 @@ export default function EventChatModal({ visible, onClose, event }) {
         .eq('uuid', user.id)
         .single();
       
-      const message = {
-        text: messageText.trim(),
-        userId: user.id,
-        userName: profile?.name || 'Anonymous',
-      };
+      const userName = profile?.name || 'Anonymous';
       
-      const sentMessage = await chatUtils.sendMessage(event.id, message, event);
+      // Call new backend API that handles both Redis storage AND push notifications
+      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://vybelocal.com';
+      const response = await fetch(`${baseUrl}/api/chat/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventId: event.id,
+          eventTitle: event.title,
+          message: {
+            text: messageText.trim()
+          },
+          userId: user.id,
+          userName: userName
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send message');
+      }
+      
+      const result = await response.json();
+      const sentMessage = result.message;
       
       // Add to local messages immediately for better UX (if not already there)
       if (!messageIds.has(sentMessage.id)) {
