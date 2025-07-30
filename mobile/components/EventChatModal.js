@@ -222,8 +222,8 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
 
       // Then get the user profiles
       const { data: profileData, error: profileError } = await supabase
-        .from('public_user_cards')
-        .select('id, full_name, profile_picture_url')
+        .from('profiles')
+        .select('id, name, avatar_url')
         .in('id', userIds);
 
       if (profileError) throw profileError;
@@ -254,14 +254,14 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
 
       // Then get the host profile
       const { data: hostData, error: hostError } = await supabase
-        .from('public_user_cards')
-        .select('full_name')
+        .from('profiles')
+        .select('name')
         .eq('id', eventData.host_id)
         .single();
 
       if (hostError) throw hostError;
 
-      setHostName(hostData?.full_name || 'Host');
+      setHostName(hostData?.name || 'Host');
     } catch (error) {
       console.error('Error loading host info:', error);
       setHostName('Host'); // Set default on error
@@ -440,7 +440,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
                     <Image
                       key={attendee.id}
                       source={{ 
-                        uri: attendee.profile_picture_url || 'https://via.placeholder.com/40x40?text=?' 
+                        uri: attendee.avatar_url || 'https://via.placeholder.com/40x40?text=?' 
                       }}
                       style={styles.attendeeAvatar}
                     />
