@@ -17,9 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
-import { chatUtils } from '../utils/redis';
-import { chatNotifications } from '../utils/chatNotifications';
-import PushNotificationService from '../utils/pushNotifications';
+import realTimeChatManager from '../utils/realTimeChat';
 
 export default function EventChatModal({ visible, onClose, event, onNewMessage }) {
   const { user } = useAuth();
@@ -30,466 +28,456 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
   const [hostName, setHostName] = useState('');
   const [loading, setLoading] = useState(false);
   const [chatLocked, setChatLocked] = useState(false);
-  const [pollingCleanup, setPollingCleanup] = useState(null);
-  const [messageIds, setMessageIds] = useState(new Set()); // Track message IDs to prevent duplicates
-  const [userColors, setUserColors] = useState(new Map()); // Track colors for each user
+  const [messageIds, setMessageIds] = useState(new Set());
+  const [userColors, setUserColors] = useState(new Map());
   const scrollViewRef = useRef(null);
+
+  // 🔥 REAL-TIME STATE
+  const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
 
   // Color palette for chat users - all colors tested for readability on white
   const chatColors = [
-    '#E74C3C', // Dark Red
-    '#16A085', // Dark Teal  
-    '#3498DB', // Dark Blue
-    '#27AE60', // Dark Green
-    '#F39C12', // Dark Orange
-    '#9B59B6', // Dark Purple
-    '#E67E22', // Dark Orange-Red
-    '#8E44AD', // Dark Violet
-    '#2980B9', // Dark Blue
-    '#D35400', // Dark Orange
-    '#C0392B', // Dark Red-Brown
-    '#7F8C8D', // Dark Gray
+    '#E74C3C', '#16A085', '#3498DB', '#27AE60', '#F39C12', '#9B59B6',
+    '#E67E22', '#8E44AD', '#2980B9', '#D35400', '#C0392B', '#1ABC9C',
+    '#34495E', '#9B59B6', '#F1C40F', '#E67E22'
   ];
 
-  // Load attendees and host info when modal opens
-  useEffect(() => {
-    if (!visible || !event?.id) return;
-    loadAttendees();
-    loadHostInfo();
-    
-    // Reset chat state when modal opens
-    if (!showChat) {
-      setMessages([]);
-      setChatLocked(false);
-    }
-  }, [visible, event?.id]);
-
-  // Cleanup polling when modal closes OR when leaving chat view
-  useEffect(() => {
-    if (!visible || !showChat) {
-      // Clean up polling when modal closes or leaving chat
-      if (pollingCleanup) {
-        if (__DEV__) {
-          console.log('🛑 POLLING STOPPED', { visible, showChat, reason: !visible ? 'modal_closed' : 'left_chat' });
-        }
-        pollingCleanup();
-        setPollingCleanup(null);
-      }
-      
-      // Reset state when modal closes (but not when just leaving chat)
-      if (!visible) {
-        setShowChat(false);
-        setMessages([]);
-        setMessageText('');
-        setMessageIds(new Set()); // Reset message ID tracking
-        setUserColors(new Map()); // Reset user colors
-      }
-    }
-  }, [visible, showChat, pollingCleanup]);
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    if (scrollViewRef.current && messages.length > 0 && showChat) {
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages, showChat]);
-
-  // Handle app state changes (pause polling when app goes to background)
-  useEffect(() => {
-    const handleAppStateChange = (nextAppState) => {
-      if (nextAppState === 'background' || nextAppState === 'inactive') {
-        // Pause polling when app goes to background
-        if (pollingCleanup) {
-          if (__DEV__) {
-            console.log('🛑 POLLING PAUSED - App backgrounded');
-          }
-          pollingCleanup();
-          setPollingCleanup(null);
-        }
-      } else if (nextAppState === 'active' && showChat && visible && !pollingCleanup) {
-        // Resume polling when app comes back to foreground
-        if (__DEV__) {
-          console.log('🚀 POLLING RESUMED - App foregrounded');
-        }
-        startMessagePolling().then(cleanup => {
-          setPollingCleanup(cleanup);
-        });
-      }
-    };
-
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-    
-    return () => subscription?.remove();
-  }, [showChat, visible, pollingCleanup]);
-
-  // Get or assign a color for a user
+  // Get or assign color for a user
   const getUserColor = (userId) => {
     if (userColors.has(userId)) {
       return userColors.get(userId);
     }
-    
-    // Assign a new color based on user ID hash
-    const colorIndex = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % chatColors.length;
+    const colorIndex = Array.from(userColors.keys()).length % chatColors.length;
     const color = chatColors[colorIndex];
-    
     setUserColors(prev => new Map(prev).set(userId, color));
     return color;
   };
 
-  const loadAttendees = async () => {
-    try {
-      const { data: rsvpRows } = await supabase
-        .from('rsvps')
-        .select('user_id')
-        .eq('event_id', event.id);
+  // 🔥 REAL-TIME MESSAGE HANDLER
+  const handleRealTimeMessages = (newMessages) => {
+    console.log('🔥 HANDLING REAL-TIME MESSAGES:', newMessages.length);
+    
+    setMessages(prevMessages => {
+      const existingIds = new Set(prevMessages.map(msg => msg.id));
+      const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg.id));
       
-      const userIds = (rsvpRows || []).map(r => r.user_id);
-      if (!userIds.length) return;
+      if (uniqueNewMessages.length === 0) {
+        return prevMessages;
+      }
 
-      const { data: profiles } = await supabase
-        .from('public_user_cards')
-        .select('uuid, name, avatar_url')
-        .in('uuid', userIds);
+      // Update message IDs set
+      setMessageIds(prev => {
+        const newSet = new Set(prev);
+        uniqueNewMessages.forEach(msg => newSet.add(msg.id));
+        return newSet;
+      });
 
-      const attendeesWithAvatars = await Promise.all(
-        (profiles || []).map(async (profile) => ({
-          ...profile,
-          avatarUrl: await resolveAvatarUrl(profile.avatar_url)
-        }))
+      const updatedMessages = [...prevMessages, ...uniqueNewMessages];
+      updatedMessages.sort((a, b) => a.timestamp - b.timestamp);
+      
+      console.log('🔥 ADDED', uniqueNewMessages.length, 'NEW MESSAGES');
+      
+      // Auto-scroll to bottom
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+
+      return updatedMessages;
+    });
+  };
+
+  // 🔥 SETUP REAL-TIME CONNECTION
+  useEffect(() => {
+    if (!visible || !showChat || !event?.id || !user?.id) {
+      return;
+    }
+
+    const setupRealTimeConnection = async () => {
+      try {
+        console.log('🔥 SETTING UP REAL-TIME CONNECTION for event:', event.id);
+        setConnectionStatus('connecting');
+
+        await realTimeChatManager.subscribeToEvent(
+          event.id,
+          user.id,
+          handleRealTimeMessages
+        );
+
+        setIsConnected(true);
+        setConnectionStatus('connected');
+        console.log('🔥 REAL-TIME CONNECTION ESTABLISHED');
+
+      } catch (error) {
+        console.error('❌ Failed to setup real-time connection:', error);
+        setConnectionStatus('error');
+      }
+    };
+
+    setupRealTimeConnection();
+
+    // Cleanup on unmount or when modal closes
+    return () => {
+      if (event?.id && user?.id) {
+        console.log('🔥 CLEANING UP REAL-TIME CONNECTION');
+        realTimeChatManager.unsubscribeFromEvent(event.id, user.id);
+        setIsConnected(false);
+        setConnectionStatus('disconnected');
+      }
+    };
+  }, [visible, showChat, event?.id, user?.id]);
+
+  // 🔥 LOAD INITIAL MESSAGES AND DATA
+  useEffect(() => {
+    if (!visible || !showChat || !event?.id) {
+      return;
+    }
+
+    const loadInitialData = async () => {
+      setLoading(true);
+      try {
+        // Load initial messages
+        const initialMessages = await realTimeChatManager.getInitialMessages(event.id);
+        setMessages(initialMessages);
+        
+        const ids = new Set(initialMessages.map(msg => msg.id));
+        setMessageIds(ids);
+
+        console.log('🔥 LOADED', initialMessages.length, 'INITIAL MESSAGES');
+
+        // Reset unread count when opening chat
+        await realTimeChatManager.resetUnreadCount(event.id, user.id);
+
+        // Load attendees and host info
+        await Promise.all([
+          loadAttendees(),
+          loadHostInfo()
+        ]);
+
+        // Auto-scroll to bottom
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: false });
+        }, 500);
+
+      } catch (error) {
+        console.error('❌ Failed to load initial data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, [visible, showChat, event?.id]);
+
+  // 🔥 SEND MESSAGE - REAL-TIME
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || loading || !user?.full_name) {
+      return;
+    }
+
+    const trimmedText = messageText.trim();
+    setMessageText('');
+    setLoading(true);
+
+    try {
+      console.log('🔥 SENDING REAL-TIME MESSAGE');
+
+      await realTimeChatManager.sendMessage(
+        event.id,
+        user.id,
+        user.full_name,
+        event.title || 'Event',
+        trimmedText
       );
 
-      setAttendees(attendeesWithAvatars.filter(a => a.avatarUrl));
+      console.log('🔥 MESSAGE SENT SUCCESSFULLY');
+
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
+      // Put the message back if it failed
+      setMessageText(trimmedText);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load attendees
+  const loadAttendees = async () => {
+    try {
+      const { data: rsvpData, error: rsvpError } = await supabase
+        .from('rsvps')
+        .select(`
+          user_id,
+          public_user_cards (
+            id,
+            full_name,
+            profile_picture_url
+          )
+        `)
+        .eq('event_id', event.id)
+        .eq('status', 'attending');
+
+      if (rsvpError) throw rsvpError;
+
+      const attendeeList = rsvpData
+        .map(rsvp => rsvp.public_user_cards)
+        .filter(Boolean);
+
+      setAttendees(attendeeList);
     } catch (error) {
       console.error('Error loading attendees:', error);
     }
   };
 
-  const resolveAvatarUrl = async (path) => {
-    if (!path) return null;
-    if (path.startsWith('http')) return path;
-    try {
-      const { data } = await supabase.storage
-        .from('profile-images')
-        .createSignedUrl(path, 3600, {
-          transform: { width: 64, height: 64, resize: 'cover', quality: 60 },
-        });
-      return data?.signedUrl || null;
-    } catch {
-      return null;
-    }
-  };
-
+  // Load host info
   const loadHostInfo = async () => {
     try {
-      const { data: hostProfile } = await supabase
-        .from('public_user_cards')
-        .select('name')
-        .eq('uuid', event.host_id)
+      const { data: eventData, error } = await supabase
+        .from('events')
+        .select(`
+          host_id,
+          public_user_cards (
+            full_name
+          )
+        `)
+        .eq('id', event.id)
         .single();
-      
-      if (hostProfile?.name) {
-        setHostName(hostProfile.name);
-      }
+
+      if (error) throw error;
+
+      setHostName(eventData?.public_user_cards?.full_name || 'Host');
     } catch (error) {
       console.error('Error loading host info:', error);
     }
   };
 
-  const handleJoinChat = async () => {
-    // Prevent multiple polling sessions
-    if (pollingCleanup) {
-      if (__DEV__) {
-        console.log('🛑 Cleaning up existing polling before starting new one');
-      }
-      pollingCleanup();
-      setPollingCleanup(null);
-    }
+  // Check if chat is locked
+  const checkChatLock = () => {
+    if (!event?.ends_at) return false;
     
-    // Check if chat is locked before entering
-    const isLocked = chatUtils.isChatLocked(event);
+    const eventEndTime = new Date(event.ends_at);
+    const lockoutTime = new Date(eventEndTime.getTime() + (60 * 60 * 1000)); // 1 hour after
+    const now = new Date();
+    
+    return now > lockoutTime;
+  };
+
+  // 🔥 APP STATE MANAGEMENT
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === 'background') {
+        console.log('⏸️ APP BACKGROUNDED - pausing real-time connections');
+        realTimeChatManager.pause();
+      } else if (nextAppState === 'active') {
+        console.log('▶️ APP FOREGROUNDED - resuming real-time connections');
+        realTimeChatManager.resume();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, []);
+
+  // Handle join chat
+  const handleJoinChat = () => {
+    const isLocked = checkChatLock();
     setChatLocked(isLocked);
     
-    if (isLocked) {
-      alert('This chat has expired - the event ended over an hour ago.');
-      return;
-    }
-    
-    // Reset message count when user opens the chat
-    if (user?.id && event?.id) {
-      await chatNotifications.resetEventMessageCount(event.id, user.id);
-    }
-    
-    setShowChat(true);
-    await loadMessages();
-    const cleanup = await startMessagePolling();
-    setPollingCleanup(cleanup); // Store the cleanup function directly, not wrapped
-  };
-
-  const loadMessages = async () => {
-    try {
-      setLoading(true);
-      const chatMessages = await chatUtils.getMessages(event.id, event);
-      
-      // Filter out any duplicates and track IDs
-      const uniqueMessages = [];
-      const newMessageIds = new Set();
-      
-      for (const msg of chatMessages) {
-        if (msg.id && !newMessageIds.has(msg.id)) {
-          uniqueMessages.push(msg);
-          newMessageIds.add(msg.id);
-        }
-      }
-      
-      setMessages(uniqueMessages);
-      setMessageIds(newMessageIds);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    } finally {
-      setLoading(false);
+    if (!isLocked) {
+      setShowChat(true);
     }
   };
 
-  const startMessagePolling = async () => {
-    if (__DEV__) {
-      console.log('🚀 POLLING STARTED for event:', event.id);
-    }
-    try {
-      const cleanup = await chatUtils.subscribeToMessages(event.id, event, (newMessages) => {
-        setMessages(prev => {
-          // Filter out any messages we already have
-          const newUniqueMessages = newMessages.filter(msg => 
-            msg.id && !messageIds.has(msg.id)
-          );
-          
-          if (newUniqueMessages.length === 0) {
-            return prev; // No new messages
-          }
-
-          // If modal is not visible, trigger unread count increment
-          if (!visible && onNewMessage) {
-            newUniqueMessages.forEach(() => onNewMessage());
-          }
-          
-          // Update message IDs set
-          setMessageIds(prevIds => {
-            const newIds = new Set(prevIds);
-            newUniqueMessages.forEach(msg => newIds.add(msg.id));
-            return newIds;
-          });
-          
-          const combined = [...prev, ...newUniqueMessages];
-          // Sort by timestamp to maintain chronological order
-          return combined.sort((a, b) => a.timestamp - b.timestamp);
-        });
-      });
-      
-      // Store cleanup function to call when modal closes
-      return cleanup;
-    } catch (error) {
-      console.error('Error starting message polling:', error);
-    }
+  // Handle close modal
+  const handleClose = () => {
+    console.log('🔥 CLOSING CHAT MODAL');
+    setShowChat(false);
+    setMessages([]);
+    setMessageIds(new Set());
+    setUserColors(new Map());
+    setConnectionStatus('disconnected');
+    setIsConnected(false);
+    onClose();
   };
 
-  const handleSendMessage = async () => {
-    if (!messageText.trim() || loading) return;
-    
-    try {
-      setLoading(true);
-      
-      // Get user profile for userName
-      const { data: profile } = await supabase
-        .from('public_user_cards')
-        .select('name')
-        .eq('uuid', user.id)
-        .single();
-      
-      const userName = profile?.name || 'Anonymous';
-      
-      // Call new backend API that handles both Redis storage AND push notifications
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://vybelocal.com';
-      const response = await fetch(`${baseUrl}/api/chat/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventId: event.id,
-          eventTitle: event.title,
-          message: {
-            text: messageText.trim()
-          },
-          userId: user.id,
-          userName: userName
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to send message');
-      }
-      
-      const result = await response.json();
-      const sentMessage = result.message;
-      
-      // Add to local messages immediately for better UX (if not already there)
-      if (!messageIds.has(sentMessage.id)) {
-        setMessages(prev => [...prev, sentMessage]);
-        setMessageIds(prev => new Set([...prev, sentMessage.id]));
-      }
-      
-      setMessageText('');
-      
-    } catch (error) {
-      console.error('Error sending message:', error);
-      if (error.message.includes('locked')) {
-        setChatLocked(true);
-        alert('Chat has expired - the event ended over an hour ago.');
-      } else {
-        alert('Failed to send message. Please try again.');
-      }
-    } finally {
-      setLoading(false);
+  // Render connection status
+  const renderConnectionStatus = () => {
+    if (connectionStatus === 'connecting') {
+      return (
+        <View style={styles.statusBar}>
+          <Text style={styles.statusText}>🔄 Connecting to real-time chat...</Text>
+        </View>
+      );
+    } else if (connectionStatus === 'error') {
+      return (
+        <View style={[styles.statusBar, styles.errorBar]}>
+          <Text style={styles.statusText}>❌ Connection error - retrying...</Text>
+        </View>
+      );
+    } else if (connectionStatus === 'connected') {
+      return (
+        <View style={[styles.statusBar, styles.connectedBar]}>
+          <Text style={styles.statusText}>🔥 Real-time chat active</Text>
+        </View>
+      );
     }
+    return null;
+  };
+
+  // Render message item
+  const renderMessage = (message) => {
+    const isOwnMessage = message.userId === user?.id;
+    const userColor = getUserColor(message.userId);
+    
+    return (
+      <View key={message.id} style={[
+        styles.messageContainer,
+        isOwnMessage ? styles.ownMessage : styles.otherMessage
+      ]}>
+        <View style={[
+          styles.messageBubble,
+          isOwnMessage ? styles.ownBubble : styles.otherBubble
+        ]}>
+          {!isOwnMessage && (
+            <Text style={[styles.senderName, { color: userColor }]}>
+              {message.userName}
+            </Text>
+          )}
+          <Text style={styles.messageText}>{message.text}</Text>
+          <Text style={styles.messageTime}>
+            {new Date(message.timestamp).toLocaleTimeString([], { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+          </Text>
+        </View>
+      </View>
+    );
   };
 
   if (!visible) return null;
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
       <SafeAreaView style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {showChat ? event?.title : 'Community Guidelines'}
-          </Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#333" />
+          <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+            <Ionicons name="close" size={24} color={colors.text.primary} />
           </TouchableOpacity>
+          <Text style={styles.title} numberOfLines={1}>
+            {event?.title || 'Event Chat'}
+          </Text>
+          <View style={styles.placeholder} />
         </View>
 
         {!showChat ? (
-          // Community Guidelines view
-          <View style={styles.content}>
-            <Text style={styles.eventTitle}>{event?.title}</Text>
-            
-            {/* Guidelines */}
-            <ScrollView style={styles.guidelinesContainer}>
-              <View style={styles.guidelineItem}>
-                <Text style={styles.guidelineEmoji}>🌟</Text>
-                <Text style={styles.guidelineText}>
-                  <Text style={styles.guidelineBold}>Be welcoming.</Text> This is about making new friends and building community.
-                </Text>
-              </View>
-              
-              <View style={styles.guidelineItem}>
-                <Text style={styles.guidelineEmoji}>💬</Text>
-                <Text style={styles.guidelineText}>
-                  <Text style={styles.guidelineBold}>Stay on topic.</Text> Keep conversations related to the event and getting to know each other.
-                </Text>
-              </View>
-              
-              <View style={styles.guidelineItem}>
-                <Text style={styles.guidelineEmoji}>🤝</Text>
-                <Text style={styles.guidelineText}>
-                  <Text style={styles.guidelineBold}>Be respectful.</Text> No harassment, spam, or inappropriate content.
-                </Text>
-              </View>
-              
-              <View style={styles.guidelineItem}>
-                <Text style={styles.guidelineEmoji}>📱</Text>
-                <Text style={styles.guidelineText}>
-                  <Text style={styles.guidelineBold}>Keep it local.</Text> Focus on connecting with people you'll actually meet at the event.
-                </Text>
-              </View>
+          /* Guidelines Screen */
+          <View style={styles.guidelinesContainer}>
+            <Text style={styles.guidelinesTitle}>Community Guidelines</Text>
+            <ScrollView style={styles.guidelinesScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.guidelinesText}>
+                Welcome to the event chat! Please follow these guidelines:
+                {'\n\n'}
+                🤝 Be respectful and kind to all participants
+                {'\n\n'}
+                💬 Keep conversations relevant to the event
+                {'\n\n'}
+                🚫 No spam, harassment, or inappropriate content
+                {'\n\n'}
+                📱 No sharing personal contact information
+                {'\n\n'}
+                🎉 Have fun and connect with fellow attendees!
+                {'\n\n'}
+                Chat will automatically close 1 hour after the event ends.
+              </Text>
             </ScrollView>
 
-            {/* Join Chat CTA */}
+            {attendees.length > 0 && (
+              <View style={styles.attendeesPreview}>
+                <Text style={styles.attendeesTitle}>
+                  {attendees.length} attending • Hosted by {hostName}
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attendeesScroll}>
+                  {attendees.slice(0, 10).map((attendee, index) => (
+                    <Image
+                      key={attendee.id}
+                      source={{ 
+                        uri: attendee.profile_picture_url || 'https://via.placeholder.com/40x40?text=?' 
+                      }}
+                      style={styles.attendeeAvatar}
+                    />
+                  ))}
+                  {attendees.length > 10 && (
+                    <View style={styles.moreAttendees}>
+                      <Text style={styles.moreAttendeesText}>+{attendees.length - 10}</Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
             <TouchableOpacity 
-              style={styles.joinChatButton} 
+              style={[styles.joinButton, chatLocked && styles.lockedButton]} 
               onPress={handleJoinChat}
+              disabled={chatLocked}
             >
-              <Text style={styles.joinChatText}>
-                Got it, let's chat! 💬
+              <Text style={[styles.joinButtonText, chatLocked && styles.lockedButtonText]}>
+                {chatLocked ? '🔒 Chat Locked (Event Ended)' : '🔥 Start Real-Time Chat!'}
               </Text>
             </TouchableOpacity>
           </View>
         ) : (
-          // Chat view
+          /* Real-Time Chat Screen */
           <KeyboardAvoidingView 
             style={styles.chatContainer}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
-            {/* Messages area */}
-            <ScrollView 
+            {renderConnectionStatus()}
+
+            {/* Messages */}
+            <ScrollView
               ref={scrollViewRef}
               style={styles.messagesContainer}
+              contentContainerStyle={styles.messagesContent}
+              showsVerticalScrollIndicator={false}
+              onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
-              {loading && messages.length === 0 && (
-                <View style={styles.emptyChat}>
-                  <Text style={styles.emptyChatText}>Loading messages...</Text>
+              {loading && messages.length === 0 ? (
+                <View style={styles.loadingContainer}>
+                  <Text style={styles.loadingText}>🔥 Loading real-time chat...</Text>
                 </View>
-              )}
-              {!loading && messages.length === 0 && (
-                <View style={styles.emptyChat}>
-                  <Text style={styles.emptyChatText}>
-                    Be the first to say hi! 🎉
-                  </Text>
+              ) : messages.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>🔥 Real-time chat is ready!</Text>
+                  <Text style={styles.emptySubtext}>Be the first to say something</Text>
                 </View>
-              )}
-              {messages.map((message, index) => (
-                <View key={`${message.id}-${message.timestamp}-${index}`} style={styles.messageItem}>
-                  <View style={styles.messageHeader}>
-                    <Text style={[styles.messageSender, { color: getUserColor(message.userId) }]}>
-                      {message.userName}
-                    </Text>
-                    <Text style={styles.messageTime}>
-                      {new Date(message.timestamp).toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </Text>
-                  </View>
-                  <Text style={styles.messageText}>{message.text}</Text>
-                </View>
-              ))}
-              {chatLocked && (
-                <View style={styles.lockedMessage}>
-                  <Text style={styles.lockedMessageText}>
-                    💬 Chat has ended - this event finished over an hour ago
-                  </Text>
-                </View>
+              ) : (
+                messages.map(renderMessage)
               )}
             </ScrollView>
 
-            {/* Message input */}
-            <View style={styles.messageInputContainer}>
+            {/* Input */}
+            <View style={styles.inputContainer}>
               <TextInput
-                style={styles.messageInput}
-                placeholder="Say something nice..."
-                placeholderTextColor="#999"
+                style={styles.textInput}
                 value={messageText}
                 onChangeText={setMessageText}
+                placeholder={isConnected ? "Send a real-time message..." : "Connecting..."}
                 multiline
-                maxLength={200}
+                maxLength={500}
+                editable={isConnected && !loading}
               />
-              <TouchableOpacity 
-                style={[styles.sendButton, (!messageText.trim() || loading || chatLocked) && styles.sendButtonDisabled]}
+              <TouchableOpacity
+                style={[styles.sendButton, (!messageText.trim() || loading || !isConnected) && styles.sendButtonDisabled]}
                 onPress={handleSendMessage}
-                disabled={!messageText.trim() || loading || chatLocked}
+                disabled={!messageText.trim() || loading || !isConnected}
               >
                 <Ionicons 
                   name="send" 
                   size={20} 
-                  color={(messageText.trim() && !loading && !chatLocked) ? colors.secondary : '#ccc'} 
+                  color={messageText.trim() && isConnected && !loading ? colors.primary : '#ccc'} 
                 />
               </TouchableOpacity>
             </View>
@@ -503,162 +491,230 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.background.primary,
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#e1e5e9',
-    backgroundColor: '#fff',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
-    marginRight: 16,
+    borderBottomColor: colors.border.light,
   },
   closeButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  content: {
+  title: {
     flex: 1,
-    padding: 16,
-  },
-  eventTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#666',
-    marginBottom: 20,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text.primary,
     textAlign: 'center',
+    marginHorizontal: 10,
   },
+  placeholder: {
+    width: 40,
+  },
+  
+  // Guidelines Screen
   guidelinesContainer: {
     flex: 1,
-    paddingVertical: 8,
+    padding: 20,
   },
-  guidelineItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-    paddingHorizontal: 8,
-  },
-  guidelineEmoji: {
+  guidelinesTitle: {
     fontSize: 24,
-    marginRight: 16,
-    marginTop: 2,
+    fontWeight: 'bold',
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: 20,
   },
-  guidelineText: {
+  guidelinesScroll: {
     flex: 1,
+    marginBottom: 20,
+  },
+  guidelinesText: {
     fontSize: 16,
-    color: '#444',
-    lineHeight: 22,
+    lineHeight: 24,
+    color: colors.text.secondary,
+    textAlign: 'left',
   },
-  guidelineBold: {
+  attendeesPreview: {
+    marginBottom: 20,
+  },
+  attendeesTitle: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.text.primary,
+    marginBottom: 10,
   },
-  joinChatButton: {
-    backgroundColor: colors.secondary,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 25,
+  attendeesScroll: {
+    flexDirection: 'row',
+  },
+  attendeeAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 8,
+    backgroundColor: colors.background.secondary,
+  },
+  moreAttendees: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.background.secondary,
     alignItems: 'center',
-    marginTop: 20,
-    shadowColor: colors.secondary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    justifyContent: 'center',
   },
-  joinChatText: {
-    color: '#fff',
+  moreAttendeesText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text.secondary,
+  },
+  joinButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  joinButtonText: {
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
+  lockedButton: {
+    backgroundColor: colors.background.secondary,
+  },
+  lockedButtonText: {
+    color: colors.text.secondary,
+  },
+
+  // Real-Time Chat Screen
   chatContainer: {
     flex: 1,
   },
+  statusBar: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: colors.background.secondary,
+    alignItems: 'center',
+  },
+  connectedBar: {
+    backgroundColor: '#d4edda',
+  },
+  errorBar: {
+    backgroundColor: '#f8d7da',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.text.secondary,
+  },
   messagesContainer: {
     flex: 1,
-    padding: 16,
+    backgroundColor: colors.background.primary,
   },
-  emptyChat: {
+  messagesContent: {
+    padding: 16,
+    paddingBottom: 20,
+  },
+  loadingContainer: {
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 40,
   },
-  emptyChatText: {
+  loadingText: {
     fontSize: 16,
-    color: '#999',
-    fontStyle: 'italic',
+    color: colors.text.secondary,
   },
-  messageInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e1e5e9',
-  },
-  messageInput: {
+  emptyContainer: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#e1e5e9',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-    maxHeight: 100,
-    fontSize: 16,
-  },
-  sendButton: {
-    padding: 12,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-  },
-  sendButtonDisabled: {
-    opacity: 0.5,
-  },
-  messageItem: {
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  messageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    paddingVertical: 40,
   },
-  messageSender: {
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text.primary,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
+  messageContainer: {
+    marginBottom: 12,
+  },
+  ownMessage: {
+    alignItems: 'flex-end',
+  },
+  otherMessage: {
+    alignItems: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '80%',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  ownBubble: {
+    backgroundColor: colors.primary,
+  },
+  otherBubble: {
+    backgroundColor: colors.background.secondary,
+  },
+  senderName: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  messageTime: {
-    fontSize: 10,
-    color: '#999',
+    marginBottom: 2,
   },
   messageText: {
     fontSize: 16,
-    color: '#333',
     lineHeight: 20,
+    color: 'white',
   },
-  lockedMessage: {
-    backgroundColor: '#fff3cd',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: '#ffc107',
+  messageTime: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 4,
+    alignSelf: 'flex-end',
   },
-  lockedMessageText: {
-    fontSize: 14,
-    color: '#856404',
-    textAlign: 'center',
-    fontStyle: 'italic',
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.background.primary,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+  },
+  textInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 12,
+    maxHeight: 100,
+    fontSize: 16,
+    color: colors.text.primary,
+    backgroundColor: colors.background.secondary,
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.background.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.5,
   },
 }); 
