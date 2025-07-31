@@ -22,21 +22,25 @@ export const notificationUtils = {
   getUnreadCounts: async (userId) => {
     try {
       const { data, error } = await supabase
-        .rpc('get_user_unread_counts', {
-          target_user_id: userId
-        });
+        .from('notifications')
+        .select('id,type,reference_id,reference_table,batch_count')
+        .eq('user_id', userId)
+        .eq('is_dismissed', false);
 
       if (error) {
         console.error('Error getting unread counts:', error);
         return {};
       }
 
-      // Convert array to object for easy lookup: { eventId: count }
-      const unreadCounts = {};
-      data.forEach(item => {
-        if (item.type === 'chat_message' && item.event_id) {
-          unreadCounts[item.event_id] = item.count;
+      const unreadCounts = { total: 0 };
+      (data || []).forEach(row => {
+        const msgCount = row.batch_count || 1;
+        // Keep per-event count (using reference_id) so chat screens know how many
+        if (row.type === 'chat_message' && row.reference_id) {
+          unreadCounts[row.reference_id] = msgCount;
         }
+        // For the bell badge we count rows, not individual messages
+        unreadCounts.total += 1;
       });
 
       return unreadCounts;

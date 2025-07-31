@@ -26,6 +26,37 @@ export default function NotificationsMenu() {
     })();
   }, [userId]);
 
+  /* ───────── realtime updates ───────── */
+  useEffect(() => {
+    if (!userId) return;
+    // Listen for INSERT / UPDATE / DELETE events for this user's notifications
+    const channel = sb
+      .channel('client_notifications')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        payload => {
+          setItems(prev => {
+            switch (payload.eventType) {
+              case 'INSERT':
+                return [payload.new, ...prev];
+              case 'UPDATE':
+                return prev.map(n => (n.id === payload.new.id ? payload.new : n));
+              case 'DELETE':
+                return prev.filter(n => n.id !== payload.old.id);
+              default:
+                return prev;
+            }
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+  }, [userId]);
+
   async function clearNotif(id) {
     await sb.from('notifications').delete().eq('id', id);
     setItems(prev => prev.filter(n => n.id !== id));
@@ -37,7 +68,11 @@ export default function NotificationsMenu() {
     setItems([]);
   }
 
-  const unread = items.filter(n => !n.is_dismissed).length;
+  // Determine unread count (support both legacy `is_dismissed` and new `is_read` flags)
+  const unread = items.filter(n => {
+    if (typeof n.is_read === 'boolean') return !n.is_read;
+    return !n.is_dismissed;
+  }).length;
 
   return (
     <div className="relative">
