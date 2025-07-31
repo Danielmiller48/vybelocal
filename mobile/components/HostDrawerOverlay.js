@@ -357,20 +357,7 @@ export default function HostDrawerOverlay({ onCreated }) {
           paid: payload.price_in_cents ? true : false,
         });
 
-        // 🔥 AUTO-SUBSCRIBE HOST TO REAL-TIME CHAT
-        try {
-  
-          await realTimeChatManager.subscribeToEvent(
-            data.id,
-            user.id,
-            () => {}, // No callback needed for background subscription
-            () => {}  // No unread callback needed for background subscription
-          );
-          
-        } catch (chatError) {
-          console.error('❌ Failed to auto-subscribe host to chat:', chatError);
-          // Don't fail the event creation if chat subscription fails
-        }
+        // Removed background auto-subscribe for host chat to conserve resources
       } catch (rsvpErr) {
         console.warn('Auto-RSVP failed:', rsvpErr);
       }

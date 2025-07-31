@@ -92,8 +92,7 @@ export const notificationUtils = {
           batch_count,
           data,
           created_at,
-          expires_at,
-          events!notifications_reference_id_fkey(title, starts_at)
+          expires_at
         `)
         .eq('user_id', userId)
         .eq('is_dismissed', false) // Use existing is_dismissed field

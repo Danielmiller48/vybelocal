@@ -81,20 +81,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
         setRsvpCount(newCount);
         if (typeof onCountChange === 'function') onCountChange(newCount);
 
-        // 🔥 AUTO-SUBSCRIBE TO REAL-TIME CHAT
-        try {
-  
-          await realTimeChatManager.subscribeToEvent(
-            event.id,
-            user.id,
-            () => {}, // No callback needed for background subscription
-            () => {}  // No unread callback needed for background subscription
-          );
-          
-        } catch (chatError) {
-          console.error('❌ Failed to auto-subscribe to chat:', chatError);
-          // Don't fail the RSVP if chat subscription fails
-        }
+        // Removed background auto-subscribe to conserve resources
       }
       setBusy(false);
     } else {
@@ -119,15 +106,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
               setRsvpCount(newCount);
               if (typeof onCountChange === 'function') onCountChange(newCount);
 
-              // 🔥 AUTO-UNSUBSCRIBE FROM REAL-TIME CHAT
-              try {
-      
-                await realTimeChatManager.unsubscribeFromEvent(event.id, user.id);
-                
-              } catch (chatError) {
-                console.error('❌ Failed to auto-unsubscribe from chat:', chatError);
-                // Don't fail the RSVP cancel if chat unsubscription fails
-              }
+              // Removed background auto-unsubscribe (connection no longer created)
             }
             setBusy(false);
           },
