@@ -114,15 +114,15 @@ export default function EventChatModal({ visible, onClose, event }) {
     }, 100);
   };
 
-  // 🔥 SETUP REAL-TIME CONNECTION
+  // 🔥 SETUP REAL-TIME CONNECTION (Fixed: Don't re-run on modal visibility changes)
   useEffect(() => {
-    if (!visible || !showChat || !event?.id || !user?.id) {
+    // Only setup if we have event and user
+    if (!event?.id || !user?.id) {
       return;
     }
 
     const setupRealTimeConnection = async () => {
       try {
-  
         setConnectionStatus('connecting');
 
         await realTimeChatManager.subscribeToEvent(
@@ -133,7 +133,6 @@ export default function EventChatModal({ visible, onClose, event }) {
 
         setIsConnected(true);
         setConnectionStatus('connected');
-        
 
       } catch (error) {
         console.error('❌ Failed to setup real-time connection:', error);
@@ -143,16 +142,15 @@ export default function EventChatModal({ visible, onClose, event }) {
 
     setupRealTimeConnection();
 
-    // Cleanup on unmount or when modal closes
+    // Cleanup when component unmounts or event/user changes
     return () => {
       if (event?.id && user?.id) {
-  
         realTimeChatManager.unsubscribeFromEvent(event.id, user.id);
         setIsConnected(false);
         setConnectionStatus('disconnected');
       }
     };
-  }, [visible, showChat, event?.id, user?.id]);
+  }, [event?.id, user?.id]); // Only re-run if event or user changes, not modal visibility
 
   // 🔥 LOAD INITIAL MESSAGES AND DATA
   useEffect(() => {
