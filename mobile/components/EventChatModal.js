@@ -26,6 +26,7 @@ export default function EventChatModal({ visible, onClose, event }) {
   const [showChat, setShowChat] = useState(false);
   // Removed attendees and hostName state for performance
   const [loading, setLoading] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(true);
   const [chatLocked, setChatLocked] = useState(false);
   const [messageIds, setMessageIds] = useState(new Set());
   const [userColors, setUserColors] = useState(new Map());
@@ -153,44 +154,45 @@ export default function EventChatModal({ visible, onClose, event }) {
 
   // 🔥 LOAD INITIAL MESSAGES AND DATA
   useEffect(() => {
-    if (!visible || !showChat || !event?.id) {
+    if (!event?.id) {
       return;
     }
 
     const loadInitialData = async () => {
-      setLoading(true);
+      // 🚀 PRIORITY 1: Show chat UI immediately (no loading state)
+      setLoading(false); // Chat is ready to use immediately
+      
       try {
-        // Load initial messages
-        const initialMessages = await realTimeChatManager.getInitialMessages(event.id);
-        setMessages(initialMessages);
-        
-        const ids = new Set(initialMessages.map(msg => msg.id));
-        setMessageIds(ids);
+        // 🚀 PRIORITY 2: Load messages asynchronously and update when ready
+        realTimeChatManager.getInitialMessages(event.id)
+          .then(initialMessages => {
+            setMessages(initialMessages);
+            const ids = new Set(initialMessages.map(msg => msg.id));
+            setMessageIds(ids);
+            setMessagesLoading(false); // Messages loaded
+            
+            // Auto-scroll when messages load
+            setTimeout(() => {
+              scrollViewRef.current?.scrollToEnd({ animated: false });
+            }, 100);
+          })
+          .catch(error => {
+            console.error('❌ Error loading messages:', error);
+            setMessages([]); // Show empty chat on error
+            setMessagesLoading(false); // Stop loading even on error
+          });
 
-
-
-        // Reset unread count when opening chat
-        await realTimeChatManager.resetUnreadCount(event.id, user.id);
-
-        // Skip heavy attendee/host loading for faster chat loading
-        // Only load if really needed for display
-        // loadAttendees().catch(console.error);
-        // loadHostInfo().catch(console.error);
-
-        // Auto-scroll to bottom
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: false });
-        }, 500);
+        // 🔄 BACKGROUND: Reset unread count (non-blocking)
+        realTimeChatManager.resetUnreadCount(event.id, user.id).catch(console.error);
 
       } catch (error) {
-        console.error('❌ Failed to load initial data:', error);
-      } finally {
-        setLoading(false);
+        console.error('❌ Error in initial setup:', error);
+        setLoading(false); // Ensure chat shows even on error
       }
     };
 
     loadInitialData();
-  }, [visible, showChat, event?.id]);
+  }, [event?.id]); // Only reload when event changes, not on modal visibility
 
   // 🔥 SEND MESSAGE - INSTANT DISPLAY
   const handleSendMessage = async () => {
@@ -541,9 +543,9 @@ export default function EventChatModal({ visible, onClose, event }) {
               showsVerticalScrollIndicator={false}
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
             >
-              {loading && messages.length === 0 ? (
+              {messagesLoading ? (
                 <View style={styles.loadingContainer}>
-                  <Text style={styles.loadingText}>🔥 Loading real-time chat...</Text>
+                  <Text style={styles.loadingText}>💬 Loading messages...</Text>
                 </View>
               ) : messages.length === 0 ? (
                 <View style={styles.emptyContainer}>
