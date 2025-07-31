@@ -5,7 +5,7 @@ class RealTimeChatManager {
     this.connections = new Map(); // eventId -> connection info
     this.messageCallbacks = new Map(); // eventId -> callback function
     this.unreadCallbacks = new Map(); // eventId -> unread count callback
-    this.baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://vybelocal.com';
+    this.baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
     this.isActive = true;
     
     // 📊 REQUEST TRACKING FOR DEBUGGING

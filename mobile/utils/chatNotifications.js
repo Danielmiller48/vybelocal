@@ -70,7 +70,7 @@ export const chatNotifications = {
       };
 
       // Get the base URL for your backend API
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://vybelocal.com';
+      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
       
       const response = await fetch(`${baseUrl}/api/notifications/send-chat`, {
         method: 'POST',
