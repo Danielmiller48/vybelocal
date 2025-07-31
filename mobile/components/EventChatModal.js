@@ -27,6 +27,7 @@ export default function EventChatModal({ visible, onClose, event }) {
   // Removed attendees and hostName state for performance
   const [loading, setLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(true);
+  const initialLoadRef = useRef(null); // track loaded eventId
   const [chatLocked, setChatLocked] = useState(false);
   const [messageIds, setMessageIds] = useState(new Set());
   const [userColors, setUserColors] = useState(new Map());
@@ -116,8 +117,8 @@ export default function EventChatModal({ visible, onClose, event }) {
 
   // 🔥 SETUP REAL-TIME CONNECTION (Fixed: Don't re-run on modal visibility changes)
   useEffect(() => {
-    // Only setup if we have event and user
-    if (!event?.id || !user?.id) {
+    // Only setup when modal is visible AND user has joined chat
+    if (!visible || !showChat || !event?.id || !user?.id) {
       return;
     }
 
@@ -150,49 +151,61 @@ export default function EventChatModal({ visible, onClose, event }) {
         setConnectionStatus('disconnected');
       }
     };
-  }, [event?.id, user?.id]); // Only re-run if event or user changes, not modal visibility
+  }, [visible, showChat, event?.id, user?.id]); // Re-run when modal opens/closes for this event
 
-  // 🔥 LOAD INITIAL MESSAGES AND DATA
+  // 🔥 LOAD INITIAL MESSAGES AND DATA (Only once per event, when modal opens)
   useEffect(() => {
-    if (!event?.id) {
+    if (!visible || !showChat || !event?.id) {
+      // Reset when modal is closed
+      setMessagesLoading(true);
+      setMessages([]);
+      initialLoadRef.current = null;
       return;
     }
 
+    // Prevent duplicate initial loads for same event
+    if (initialLoadRef.current === event.id) return;
+    initialLoadRef.current = event.id;
+
     const loadInitialData = async () => {
-      // 🚀 PRIORITY 1: Show chat UI immediately (no loading state)
-      setLoading(false); // Chat is ready to use immediately
+      // 🚀 Show input immediately, but messages load async
+      setLoading(false); // Chat input is ready immediately
+      setMessagesLoading(true); // Messages still loading
       
       try {
-        // 🚀 PRIORITY 2: Load messages asynchronously and update when ready
-        realTimeChatManager.getInitialMessages(event.id)
-          .then(initialMessages => {
+        // 🚀 Load messages in background - non-blocking
+        const loadMessages = async () => {
+          try {
+            const initialMessages = await realTimeChatManager.getInitialMessages(event.id);
             setMessages(initialMessages);
             const ids = new Set(initialMessages.map(msg => msg.id));
             setMessageIds(ids);
-            setMessagesLoading(false); // Messages loaded
+            setMessagesLoading(false);
             
             // Auto-scroll when messages load
             setTimeout(() => {
               scrollViewRef.current?.scrollToEnd({ animated: false });
             }, 100);
-          })
-          .catch(error => {
+          } catch (error) {
             console.error('❌ Error loading messages:', error);
-            setMessages([]); // Show empty chat on error
-            setMessagesLoading(false); // Stop loading even on error
-          });
+            setMessages([]);
+            setMessagesLoading(false);
+          }
+        };
 
-        // 🔄 BACKGROUND: Reset unread count (non-blocking)
+        // 🔄 Load messages and reset unread count in parallel (both non-blocking)
+        loadMessages();
         realTimeChatManager.resetUnreadCount(event.id, user.id).catch(console.error);
 
       } catch (error) {
         console.error('❌ Error in initial setup:', error);
-        setLoading(false); // Ensure chat shows even on error
+        setLoading(false);
+        setMessagesLoading(false);
       }
     };
 
     loadInitialData();
-  }, [event?.id]); // Only reload when event changes, not on modal visibility
+  }, [visible, showChat, event?.id]); // Runs only when modal opens for a new event
 
   // 🔥 SEND MESSAGE - INSTANT DISPLAY
   const handleSendMessage = async () => {

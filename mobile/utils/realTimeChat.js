@@ -19,11 +19,14 @@ class RealTimeChatManager {
    * Completely replaces the old polling bullshit
    */
   async subscribeToEvent(eventId, userId, onMessageReceived, onUnreadCountChanged) {
-    // 🛑 EMERGENCY: Kill all other connections first
-    if (this.connections.size > 0) {
-      console.log('🛑 KILLING ALL EXISTING CONNECTIONS before new subscription');
-      this.connections.forEach((connection, existingEventId) => {
-        connection.isActive = false;
+    // If there's already a live connection for **another** event, close it to conserve resources.
+    if (this.connections.size > 0 && !this.connections.has(eventId)) {
+      this.connections.forEach((conn, existingEventId) => {
+        conn.isActive = false;
+        // Abort any in-flight fetch for that connection
+        if (conn.abortController) {
+          try { conn.abortController.abort(); } catch(e){}
+        }
       });
       this.connections.clear();
       this.messageCallbacks.clear();
@@ -62,12 +65,14 @@ class RealTimeChatManager {
       lastTimestamp: Date.now(),
       startTime: Date.now(),
       errorCount: 0,
-      lastErrorTime: 0
+      lastErrorTime: 0,
+      abortController: null, // track current fetch controller to allow clean abort
+      isPolling: false // prevent duplicate loops
     };
     
     this.connections.set(eventId, connection);
 
-    // Start real-time polling loop
+    // Start real-time polling loop (only if not already running)
     this.startRealTimeLoop(eventId, connection);
 
     
@@ -103,6 +108,10 @@ class RealTimeChatManager {
     
     this.connections.forEach((connection, eventId) => {
       connection.isActive = false;
+      // Abort any in-flight fetch for that connection
+      if (connection.abortController) {
+        try { connection.abortController.abort(); } catch(e){}
+      }
       console.log('🛑 Stopped connection for event:', eventId);
     });
     
@@ -138,6 +147,12 @@ class RealTimeChatManager {
    * The server holds the connection for 30 seconds and only responds when there are new messages
    */
   async startRealTimeLoop(eventId, connection) {
+    // Prevent spawning multiple loops for the same connection
+    if (connection.isPolling) {
+      return; // already running
+    }
+    connection.isPolling = true;
+
     while (connection.isActive && this.isActive && this.connections.has(eventId)) {
       try {
         const pollStartTime = Date.now();
@@ -169,6 +184,8 @@ class RealTimeChatManager {
 
 
         const controller = new AbortController();
+        // Store so we can cancel if user navigates away or a new event is opened
+        connection.abortController = controller;
         const timeoutId = setTimeout(() => {
           console.log('⏰ Long-poll timeout after 35 seconds for event:', eventId);
           controller.abort();
@@ -270,6 +287,9 @@ class RealTimeChatManager {
     this.connections.delete(eventId);
     this.messageCallbacks.delete(eventId);
     this.unreadCallbacks.delete(eventId);
+
+    // Mark polling stopped
+    connection.isPolling = false;
   }
 
   /**
@@ -354,6 +374,11 @@ class RealTimeChatManager {
 
     // Stop the connection
     connection.isActive = false;
+    // Abort any fetch currently in-flight for this connection
+    if (connection.abortController) {
+      try { connection.abortController.abort(); }
+      catch(e){}
+    }
     this.connections.delete(eventId);
     this.messageCallbacks.delete(eventId);
     this.unreadCallbacks.delete(eventId);
@@ -436,6 +461,10 @@ class RealTimeChatManager {
     
     for (const [eventId, connection] of this.connections) {
       connection.isActive = false;
+      // Abort any in-flight fetch for that connection
+      if (connection.abortController) {
+        try { connection.abortController.abort(); } catch(e){}
+      }
       try {
         await this.unsubscribeFromEvent(eventId, connection.userId);
       } catch (error) {
@@ -474,7 +503,7 @@ class RealTimeChatManager {
     
     // Restart all connections
     for (const [eventId, connection] of this.connections) {
-      if (connection.isActive) {
+      if (connection.isActive && !connection.isPolling) {
         this.startRealTimeLoop(eventId, connection);
       }
     }
