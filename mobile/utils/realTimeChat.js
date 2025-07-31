@@ -22,12 +22,7 @@ class RealTimeChatManager {
     // 🔒 STRICT DUPLICATE PREVENTION
     if (this.connections.has(eventId)) {
       const existing = this.connections.get(eventId);
-      console.log('🔌 REUSING EXISTING CONNECTION for event:', eventId, {
-        isActive: existing.isActive,
-        errorCount: existing.errorCount,
-        age: ((Date.now() - existing.startTime) / 1000).toFixed(1) + 's',
-        requests: this.requestCounts.get(eventId) || 0
-      });
+
       
       // Update callbacks if new ones provided
       if (onMessageReceived) {
@@ -160,7 +155,7 @@ class RealTimeChatManager {
         // 📊 GLOBAL API TRACKING
         this.totalApiCalls++;
         
-        console.log('🔄 Starting long-poll for event:', eventId, 'request #' + (currentCount + 1), 'TOTAL API CALLS:', this.totalApiCalls, 'since:', connection.lastTimestamp, 'at:', new Date().toISOString());
+
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => {
@@ -235,7 +230,7 @@ class RealTimeChatManager {
         const pollDuration = ((Date.now() - pollStartTime) / 1000).toFixed(1);
         
         if (error.name === 'AbortError') {
-          console.log('⏰ Long-poll timed out normally for event:', eventId, 'after:', pollDuration + 's');
+
           // Don't log as error - this is expected after 35 seconds
         } else {
           connection.errorCount++;
@@ -253,7 +248,7 @@ class RealTimeChatManager {
           if (connection.isActive && this.connections.has(eventId)) {
             // Exponential backoff for errors
             const delayMs = Math.min(5000 * Math.pow(2, connection.errorCount - 1), 60000);
-            console.log('🔄 Retrying connection in', delayMs/1000, 'seconds...');
+
             await this.delay(delayMs);
           }
         }
@@ -261,7 +256,6 @@ class RealTimeChatManager {
     }
 
     // 🧹 CLEANUP DEAD CONNECTION
-    console.log('🔌 Real-time loop ended for event:', eventId, '- cleaning up');
     this.connections.delete(eventId);
     this.messageCallbacks.delete(eventId);
     this.unreadCallbacks.delete(eventId);
