@@ -215,8 +215,9 @@ export default function EventChatModal({ visible, onClose, event }) {
       return;
     }
 
-    // Get user name from any available field
-    const userName = user.full_name || user.name || user.email?.split('@')[0] || 'User';
+    // Get user name from any available field and capitalize first letter
+    const rawUserName = user.full_name || user.name || user.email?.split('@')[0] || 'User';
+    const userName = rawUserName.charAt(0).toUpperCase() + rawUserName.slice(1).toLowerCase();
     
 
 

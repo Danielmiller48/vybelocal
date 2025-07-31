@@ -43,16 +43,13 @@ BEGIN
     
     new_count := jsonb_array_length(current_contributors);
     
-    -- Create proper title and message for multiple contributors
+    -- Create proper title and message with capitalized name
     IF new_count = 1 THEN
-      notification_title := sender_name || ' posted in ' || event_title;
+      notification_title := INITCAP(sender_name) || ' posted in ' || event_title || '!';
       notification_message := LEFT(message_text, 100) || CASE WHEN LENGTH(message_text) > 100 THEN '...' ELSE '' END;
-    ELSIF new_count = 2 THEN
-      notification_title := sender_name || ' and 1 other posted in ' || event_title;
-      notification_message := new_count::TEXT || ' new messages';
     ELSE
-      notification_title := sender_name || ' and ' || (new_count - 1)::TEXT || ' others posted in ' || event_title;
-      notification_message := new_count::TEXT || ' new messages';
+      notification_title := new_count::TEXT || ' new messages in ' || event_title || '!';
+      notification_message := 'Latest from ' || INITCAP(sender_name);
     END IF;
     
     UPDATE notifications SET
@@ -72,8 +69,8 @@ BEGIN
     WHERE id = notification_record.id
     RETURNING * INTO notification_record;
   ELSE
-    -- Create new notification with proper format
-    notification_title := sender_name || ' posted in ' || event_title;
+    -- Create new notification with proper format and capitalized name
+    notification_title := INITCAP(sender_name) || ' posted in ' || event_title || '!';
     notification_message := LEFT(message_text, 100) || CASE WHEN LENGTH(message_text) > 100 THEN '...' ELSE '' END;
     
     INSERT INTO notifications (
