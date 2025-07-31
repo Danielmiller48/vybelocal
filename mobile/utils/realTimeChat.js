@@ -37,7 +37,7 @@ class RealTimeChatManager {
     // 🔒 STRICT DUPLICATE PREVENTION
     if (this.connections.has(eventId)) {
       const existing = this.connections.get(eventId);
-      
+
       // Update callbacks if new ones provided
       if (onMessageReceived) {
         this.messageCallbacks.set(eventId, onMessageReceived);
@@ -45,8 +45,13 @@ class RealTimeChatManager {
       if (onUnreadCountChanged) {
         this.unreadCallbacks.set(eventId, onUnreadCountChanged);
       }
-      
-      return;
+
+      // If a polling loop is already active, do NOT create another one
+      if (existing.isPolling) {
+        return; // prevents duplicate loops and request spam
+      }
+
+      // If previous connection exists but isn't polling (disconnected), let it continue below
     }
 
 
@@ -162,21 +167,22 @@ class RealTimeChatManager {
         this.requestCounts.set(eventId, currentCount + 1);
         
         // 🚨 SPAM DETECTION: Alert if too many requests too quickly
-        if (currentCount > 5) {
-          const timeSinceStart = Date.now() - connection.startTime;
-          const requestRate = currentCount / (timeSinceStart / 60000); // requests per minute
+        // Removed noisy spam warning log (kept internal tracking only)
+        // if (currentCount > 5) {
+        //   const timeSinceStart = Date.now() - connection.startTime;
+        //   const requestRate = currentCount / (timeSinceStart / 60000); // requests per minute
           
-          if (requestRate > 10) { // More than 10 requests/minute = SPAM
-            console.error('🚨 REQUEST SPAM DETECTED!', {
-              eventId,
-              totalRequests: currentCount + 1,
-              timeElapsed: (timeSinceStart / 1000).toFixed(1) + 's',
-              requestRate: requestRate.toFixed(1) + ' req/min',
-              connectionAge: ((Date.now() - connection.startTime) / 1000).toFixed(1) + 's',
-              errorCount: connection.errorCount
-            });
-          }
-        }
+        //   if (requestRate > 10) { // More than 10 requests/minute = SPAM
+        //     console.error('🚨 REQUEST SPAM DETECTED!', {
+        //       eventId,
+        //       totalRequests: currentCount + 1,
+        //       timeElapsed: (timeSinceStart / 1000).toFixed(1) + 's',
+        //       requestRate: requestRate.toFixed(1) + ' req/min',
+        //       connectionAge: ((Date.now() - connection.startTime) / 1000).toFixed(1) + 's',
+        //       errorCount: connection.errorCount
+        //     });
+        //   }
+        // }
         
         // 📊 GLOBAL API TRACKING
         this.totalApiCalls++;

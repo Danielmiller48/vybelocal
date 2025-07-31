@@ -7,6 +7,7 @@ import { supabase } from '../utils/supabase';
 import ProfileModal from './ProfileModal';
 import EventChatModal from './EventChatModal';
 import { notificationUtils } from '../utils/notifications';
+import { notifBus } from '../utils/notifications';
 import { useAuth } from '../auth/AuthProvider';
 
 export default function TimelineEvent({ event, onCancel }) {
@@ -123,26 +124,14 @@ export default function TimelineEvent({ event, onCancel }) {
     }
   }, [event?.id, user?.id]);
 
-  // Subscribe to real-time notification changes
+  // Listen to global unread update events
   useEffect(() => {
-    if (!user?.id) return;
-
-    const subscription = notificationUtils.subscribeToNotifications(
-      user.id,
-      (payload) => {
-        // Reload unread count when notifications change
-        if (payload.new?.event_id === event.id || payload.old?.event_id === event.id) {
-          loadUnreadCount();
-        }
-      }
-    );
-
-    setNotificationSubscription(subscription);
-
-    return () => {
-      notificationUtils.unsubscribeFromNotifications(subscription);
+    const handler = ({ eventId, count }) => {
+      if (eventId === event.id) setUnreadCount(count);
     };
-  }, [user?.id, event?.id]);
+    notifBus.on('chat_unread', handler);
+    return () => notifBus.off('chat_unread', handler);
+  }, [event.id]);
 
   const handleCancel = () => {
     Alert.alert('Cancel RSVP', 'Are you sure you want to cancel? Fees may apply.', [

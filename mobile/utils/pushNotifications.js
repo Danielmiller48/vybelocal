@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import Constants from 'expo-constants';
+// (Reverted EventEmitter patch)
 
 // Configure how notifications are displayed
 Notifications.setNotificationHandler({
@@ -187,7 +188,12 @@ class PushNotificationService {
     // Listener for when notification is received while app is foregrounded
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification received:', notification);
-      // You can handle the notification here (e.g., update unread counts)
+      // (Reverted DB fetch patch – keep simple log)
+      // Example: notificationUtils.getEventUnreadCount(data.target_user_id || null, data.eventId)
+      // .then(count => {
+      //   notifEventBus.emit('unread_update', { eventId: data.eventId, count });
+      // })
+      // .catch(() => {});
     });
 
     // Listener for when user taps on notification
