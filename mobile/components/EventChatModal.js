@@ -19,7 +19,7 @@ import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
 import realTimeChatManager from '../utils/realTimeChat';
 
-export default function EventChatModal({ visible, onClose, event, onNewMessage }) {
+export default function EventChatModal({ visible, onClose, event }) {
   const { user } = useAuth();
   const [attendees, setAttendees] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -54,7 +54,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
     return color;
   };
 
-  // 🔥 REAL-TIME MESSAGE HANDLER (Fixed: No nested state updates)
+  // 🔥 REAL-TIME MESSAGE HANDLER (Fixed: No nested state updates + Instant message handling)
   const handleRealTimeMessages = (newMessages) => {
     console.log('🔥 HANDLING REAL-TIME MESSAGES:', newMessages.length);
     
@@ -66,10 +66,30 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
         return prevMessages;
       }
 
-      const updatedMessages = [...prevMessages, ...uniqueNewMessages];
+      let updatedMessages = [...prevMessages];
+      
+      // 🚀 REPLACE INSTANT MESSAGES: Match by text, user, and close timestamp
+      for (const newMsg of uniqueNewMessages) {
+        const instantIndex = updatedMessages.findIndex(msg => 
+          msg.id.startsWith('instant-') && 
+          msg.text === newMsg.text && 
+          msg.userId === newMsg.userId &&
+          Math.abs(msg.timestamp - newMsg.timestamp) < 30000 // Within 30 seconds
+        );
+        
+        if (instantIndex !== -1) {
+          // Replace instant message with server message
+          updatedMessages[instantIndex] = newMsg;
+          console.log('🔄 REPLACED INSTANT MESSAGE with server message');
+        } else {
+          // Add new message normally (from other users or no instant match)
+          updatedMessages.push(newMsg);
+        }
+      }
+      
       updatedMessages.sort((a, b) => a.timestamp - b.timestamp);
       
-      console.log('🔥 ADDED', uniqueNewMessages.length, 'NEW MESSAGES');
+      console.log('🔥 PROCESSED', uniqueNewMessages.length, 'NEW MESSAGES (with instant handling)');
       
       return updatedMessages;
     });
@@ -176,7 +196,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
     loadInitialData();
   }, [visible, showChat, event?.id]);
 
-  // 🔥 SEND MESSAGE - REAL-TIME
+  // 🔥 SEND MESSAGE - INSTANT DISPLAY
   const handleSendMessage = async () => {
     // Validation checks
     const trimmedText = messageText.trim();
@@ -204,12 +224,28 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
       availableFields: Object.keys(user || {})
     });
 
+    // 🚀 INSTANT DISPLAY: Add message to UI immediately (simple approach)
+    const instantMessage = {
+      id: `instant-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      text: trimmedText,
+      userId: user.id,
+      userName,
+      timestamp: Date.now()
+    };
+
+    // Add to messages instantly
+    setMessages(prevMessages => {
+      const newMessages = [...prevMessages, instantMessage];
+      newMessages.sort((a, b) => a.timestamp - b.timestamp);
+      return newMessages;
+    });
+
     // Prevent duplicate sends
     setLoading(true);
     setMessageText(''); // Clear immediately to prevent duplicate typing
 
     try {
-      console.log('🔥 SENDING REAL-TIME MESSAGE:', {
+      console.log('🔥 SENDING REAL-TIME MESSAGE (shown instantly):', {
         eventId: event.id,
         userId: user.id,
         userName,
@@ -229,6 +265,12 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
 
     } catch (error) {
       console.error('❌ Error sending message:', error);
+      
+      // Remove the instant message if send failed
+      setMessages(prevMessages => {
+        return prevMessages.filter(msg => msg.id !== instantMessage.id);
+      });
+      
       // Put the message back if it failed
       setMessageText(trimmedText);
       
@@ -511,9 +553,16 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
           <KeyboardAvoidingView 
             style={styles.chatContainer}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 20}
           >
             {renderConnectionStatus()}
+
+            {/* Chat Expiry Notice */}
+            <View style={styles.expiryNotice}>
+              <Text style={styles.expiryText}>
+                💬 Messages auto-delete after 1 hour
+              </Text>
+            </View>
 
             {/* Messages */}
             <ScrollView
@@ -530,7 +579,7 @@ export default function EventChatModal({ visible, onClose, event, onNewMessage }
               ) : messages.length === 0 ? (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyText}>🔥 Real-time chat is ready!</Text>
-                  <Text style={styles.emptySubtext}>Be the first to say something</Text>
+                  <Text style={styles.emptySubtext}>Start the conversation</Text>
                 </View>
               ) : (
                 messages.map(renderMessage)
@@ -675,6 +724,20 @@ const styles = StyleSheet.create({
   chatContainer: {
     flex: 1,
   },
+  expiryNotice: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  expiryText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
   statusBar: {
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -768,6 +831,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingBottom: Platform.OS === 'ios' ? 16 : 12,
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,

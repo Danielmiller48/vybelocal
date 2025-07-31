@@ -6,10 +6,15 @@ import colors from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
+import { notificationUtils } from '../utils/notifications';
+import NotificationModal from './NotificationModal';
 
 export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () => {}, onAvatarPress = () => {} }) {
   const { user } = useAuth();
   const [avatar, setAvatar] = useState(null);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationSubscription, setNotificationSubscription] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +50,43 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
     return () => { cancelled = true; };
   }, [user?.id]);
 
+  // Load unread notifications count
+  useEffect(() => {
+    if (!user?.id) {
+      setUnreadCount(0);
+      return;
+    }
+
+    loadUnreadCount();
+    
+    // Subscribe to real-time notification changes
+    const subscription = notificationUtils.subscribeToNotifications(user.id, () => {
+      loadUnreadCount();
+    });
+    setNotificationSubscription(subscription);
+
+    return () => {
+      if (subscription) {
+        notificationUtils.unsubscribeFromNotifications(subscription);
+      }
+    };
+  }, [user?.id]);
+
+  const loadUnreadCount = async () => {
+    try {
+      const counts = await notificationUtils.getUnreadCounts(user.id);
+      setUnreadCount(counts.total || 0);
+    } catch (error) {
+      console.error('Error loading unread count:', error);
+      setUnreadCount(0);
+    }
+  };
+
+  const handleNotificationPress = () => {
+    onNotifPress(); // Call the prop function if provided
+    setShowNotificationModal(true);
+  };
+
   const { signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -61,8 +103,31 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
 
       <View style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingTop: insets.top, paddingBottom:12 }}>
         <Text style={{ fontSize:20, fontWeight:'700', flex:1, color:'#fff' }}>VybeLocal</Text>
-        <TouchableOpacity onPress={onNotifPress} style={{ marginRight:16 }} accessibilityLabel="Notifications">
+        <TouchableOpacity onPress={handleNotificationPress} style={{ marginRight:16, position: 'relative' }} accessibilityLabel="Notifications">
           <Ionicons name="notifications-outline" size={24} color="#fff" />
+          {unreadCount > 0 && (
+            <View style={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              backgroundColor: '#dc2626',
+              borderRadius: 10,
+              minWidth: 20,
+              height: 20,
+              justifyContent: 'center',
+              alignItems: 'center',
+              paddingHorizontal: 6
+            }}>
+              <Text style={{
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: '600',
+                lineHeight: 20
+              }}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
         {avatar && (
           <TouchableOpacity onPress={onAvatarPress} style={{ marginRight:16 }} accessibilityLabel="Profile">
@@ -82,6 +147,12 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
           </View>
         </Pressable>
       )}
+
+      {/* Notification Modal */}
+      <NotificationModal 
+        visible={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+      />
     </View>
   );
 } 

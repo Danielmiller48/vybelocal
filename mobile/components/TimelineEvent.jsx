@@ -6,9 +6,11 @@ import RSVPButton from './RSVPButton';
 import { supabase } from '../utils/supabase';
 import ProfileModal from './ProfileModal';
 import EventChatModal from './EventChatModal';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { notificationUtils } from '../utils/notifications';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function TimelineEvent({ event, onCancel }) {
+  const { user } = useAuth();
   const minutesAway = differenceInMinutes(new Date(event.starts_at), new Date());
   const countdown = minutesAway <= 0 ? null : minutesAway < 60 ? `Starts in ${minutesAway}m` : `Starts in ${Math.round(minutesAway/60)}h`;
   const [remind, setRemind] = useState(true);
@@ -22,6 +24,7 @@ export default function TimelineEvent({ event, onCancel }) {
   const [profileModal, setProfileModal] = useState({ visible:false, profile:null, stats:{} });
   const [chatModalVisible, setChatModalVisible] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationSubscription, setNotificationSubscription] = useState(null);
 
   // helper to resolve avatar path to signed URL
   const resolveAvatarUrl = async (path) => {
@@ -113,23 +116,33 @@ export default function TimelineEvent({ event, onCancel }) {
     }
   }, [expanded, attendees.length]);
 
-  // Load unread count from storage
+  // Load unread count from Supabase notifications
   useEffect(() => {
-    const loadUnreadCount = async () => {
-      try {
-        const saved = await AsyncStorage.getItem(`unread_${event.id}`);
-        if (saved) {
-          setUnreadCount(parseInt(saved, 10) || 0);
-        }
-      } catch (error) {
-        console.warn('Failed to load unread count:', error);
-      }
-    };
-    
-    if (event?.id) {
+    if (event?.id && user?.id) {
       loadUnreadCount();
     }
-  }, [event?.id]);
+  }, [event?.id, user?.id]);
+
+  // Subscribe to real-time notification changes
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const subscription = notificationUtils.subscribeToNotifications(
+      user.id,
+      (payload) => {
+        // Reload unread count when notifications change
+        if (payload.new?.event_id === event.id || payload.old?.event_id === event.id) {
+          loadUnreadCount();
+        }
+      }
+    );
+
+    setNotificationSubscription(subscription);
+
+    return () => {
+      notificationUtils.unsubscribeFromNotifications(subscription);
+    };
+  }, [user?.id, event?.id]);
 
   const handleCancel = () => {
     Alert.alert('Cancel RSVP', 'Are you sure you want to cancel? Fees may apply.', [
@@ -147,18 +160,23 @@ export default function TimelineEvent({ event, onCancel }) {
     }
   };
 
-  const openChatModal = () => {
-    setUnreadCount(0); // Reset unread count when opening chat
-    AsyncStorage.setItem(`unread_${event.id}`, '0'); // Persist reset
+  const openChatModal = async () => {
+    // Mark notifications as read in Supabase when opening chat
+    if (user?.id) {
+      await notificationUtils.markChatNotificationsRead(user.id, event.id);
+    }
+    setUnreadCount(0); // Reset local count
     setChatModalVisible(true);
   };
 
-  const handleNewMessage = async () => {
-    // Only increment if chat modal is not visible
-    if (!chatModalVisible) {
-      const newCount = unreadCount + 1;
-      setUnreadCount(newCount);
-      await AsyncStorage.setItem(`unread_${event.id}`, newCount.toString());
+  const loadUnreadCount = async () => {
+    if (!user?.id) return;
+    
+    try {
+      const count = await notificationUtils.getEventUnreadCount(user.id, event.id);
+      setUnreadCount(count);
+    } catch (error) {
+      console.error('Error loading unread count:', error);
     }
   };
 
@@ -275,7 +293,6 @@ export default function TimelineEvent({ event, onCancel }) {
         visible={chatModalVisible}
         onClose={() => setChatModalVisible(false)}
         event={event}
-        onNewMessage={handleNewMessage}
       />
     </TouchableOpacity>
   );
