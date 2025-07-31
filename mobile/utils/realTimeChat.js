@@ -19,10 +19,21 @@ class RealTimeChatManager {
    * Completely replaces the old polling bullshit
    */
   async subscribeToEvent(eventId, userId, onMessageReceived, onUnreadCountChanged) {
+    // 🛑 EMERGENCY: Kill all other connections first
+    if (this.connections.size > 0) {
+      console.log('🛑 KILLING ALL EXISTING CONNECTIONS before new subscription');
+      this.connections.forEach((connection, existingEventId) => {
+        connection.isActive = false;
+      });
+      this.connections.clear();
+      this.messageCallbacks.clear();
+      this.unreadCallbacks.clear();
+      this.requestCounts.clear();
+    }
+
     // 🔒 STRICT DUPLICATE PREVENTION
     if (this.connections.has(eventId)) {
       const existing = this.connections.get(eventId);
-
       
       // Update callbacks if new ones provided
       if (onMessageReceived) {

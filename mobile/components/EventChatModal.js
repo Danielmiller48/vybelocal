@@ -21,11 +21,10 @@ import realTimeChatManager from '../utils/realTimeChat';
 
 export default function EventChatModal({ visible, onClose, event }) {
   const { user } = useAuth();
-  const [attendees, setAttendees] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState('');
   const [showChat, setShowChat] = useState(false);
-  const [hostName, setHostName] = useState('');
+  // Removed attendees and hostName state for performance
   const [loading, setLoading] = useState(false);
   const [chatLocked, setChatLocked] = useState(false);
   const [messageIds, setMessageIds] = useState(new Set());
@@ -173,11 +172,10 @@ export default function EventChatModal({ visible, onClose, event }) {
         // Reset unread count when opening chat
         await realTimeChatManager.resetUnreadCount(event.id, user.id);
 
-        // Load attendees and host info
-        await Promise.all([
-          loadAttendees(),
-          loadHostInfo()
-        ]);
+        // Skip heavy attendee/host loading for faster chat loading
+        // Only load if really needed for display
+        // loadAttendees().catch(console.error);
+        // loadHostInfo().catch(console.error);
 
         // Auto-scroll to bottom
         setTimeout(() => {
@@ -503,29 +501,11 @@ export default function EventChatModal({ visible, onClose, event }) {
               </Text>
             </ScrollView>
 
-            {attendees.length > 0 && (
-              <View style={styles.attendeesPreview}>
-                <Text style={styles.attendeesTitle}>
-                  {attendees.length} attending • Hosted by {hostName}
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attendeesScroll}>
-                  {attendees.slice(0, 10).map((attendee, index) => (
-                    <Image
-                      key={attendee.id}
-                      source={{ 
-                        uri: attendee.avatar_url || 'https://via.placeholder.com/40x40?text=?' 
-                      }}
-                      style={styles.attendeeAvatar}
-                    />
-                  ))}
-                  {attendees.length > 10 && (
-                    <View style={styles.moreAttendees}>
-                      <Text style={styles.moreAttendeesText}>+{attendees.length - 10}</Text>
-                    </View>
-                  )}
-                </ScrollView>
-              </View>
-            )}
+            <View style={styles.attendeesPreview}>
+              <Text style={styles.attendeesTitle}>
+                {event.title} Chat
+              </Text>
+            </View>
 
             <TouchableOpacity 
               style={[styles.joinButton, chatLocked && styles.lockedButton]} 
