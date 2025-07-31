@@ -359,14 +359,14 @@ export default function HostDrawerOverlay({ onCreated }) {
 
         // 🔥 AUTO-SUBSCRIBE HOST TO REAL-TIME CHAT
         try {
-          console.log('🔥 AUTO-SUBSCRIBING host to chat for new event:', data.id);
+  
           await realTimeChatManager.subscribeToEvent(
             data.id,
             user.id,
             () => {}, // No callback needed for background subscription
             () => {}  // No unread callback needed for background subscription
           );
-          console.log('🔥 HOST AUTO-SUBSCRIBED to chat successfully');
+          
         } catch (chatError) {
           console.error('❌ Failed to auto-subscribe host to chat:', chatError);
           // Don't fail the event creation if chat subscription fails

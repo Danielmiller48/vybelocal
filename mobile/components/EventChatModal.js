@@ -56,7 +56,7 @@ export default function EventChatModal({ visible, onClose, event }) {
 
   // 🔥 REAL-TIME MESSAGE HANDLER (Fixed: No nested state updates + Instant message handling)
   const handleRealTimeMessages = (newMessages) => {
-    console.log('🔥 HANDLING REAL-TIME MESSAGES:', newMessages.length);
+
     
     setMessages(prevMessages => {
       const existingIds = new Set(prevMessages.map(msg => msg.id));
@@ -89,7 +89,7 @@ export default function EventChatModal({ visible, onClose, event }) {
       
       updatedMessages.sort((a, b) => a.timestamp - b.timestamp);
       
-      console.log('🔥 PROCESSED', uniqueNewMessages.length, 'NEW MESSAGES (with instant handling)');
+      
       
       return updatedMessages;
     });
@@ -122,7 +122,7 @@ export default function EventChatModal({ visible, onClose, event }) {
 
     const setupRealTimeConnection = async () => {
       try {
-        console.log('🔥 SETTING UP REAL-TIME CONNECTION for event:', event.id);
+  
         setConnectionStatus('connecting');
 
         await realTimeChatManager.subscribeToEvent(
@@ -133,7 +133,7 @@ export default function EventChatModal({ visible, onClose, event }) {
 
         setIsConnected(true);
         setConnectionStatus('connected');
-        console.log('🔥 REAL-TIME CONNECTION ESTABLISHED');
+        
 
       } catch (error) {
         console.error('❌ Failed to setup real-time connection:', error);
@@ -146,7 +146,7 @@ export default function EventChatModal({ visible, onClose, event }) {
     // Cleanup on unmount or when modal closes
     return () => {
       if (event?.id && user?.id) {
-        console.log('🔥 CLEANING UP REAL-TIME CONNECTION');
+  
         realTimeChatManager.unsubscribeFromEvent(event.id, user.id);
         setIsConnected(false);
         setConnectionStatus('disconnected');
@@ -170,7 +170,7 @@ export default function EventChatModal({ visible, onClose, event }) {
         const ids = new Set(initialMessages.map(msg => msg.id));
         setMessageIds(ids);
 
-        console.log('🔥 LOADED', initialMessages.length, 'INITIAL MESSAGES');
+
 
         // Reset unread count when opening chat
         await realTimeChatManager.resetUnreadCount(event.id, user.id);
@@ -218,11 +218,7 @@ export default function EventChatModal({ visible, onClose, event }) {
     // Get user name from any available field
     const userName = user.full_name || user.name || user.email?.split('@')[0] || 'User';
     
-    console.log('✅ User data validated:', { 
-      userId: user.id, 
-      userName,
-      availableFields: Object.keys(user || {})
-    });
+
 
     // 🚀 INSTANT DISPLAY: Add message to UI immediately (simple approach)
     const instantMessage = {
@@ -245,13 +241,7 @@ export default function EventChatModal({ visible, onClose, event }) {
     setMessageText(''); // Clear immediately to prevent duplicate typing
 
     try {
-      console.log('🔥 SENDING REAL-TIME MESSAGE (shown instantly):', {
-        eventId: event.id,
-        userId: user.id,
-        userName,
-        messageLength: trimmedText.length,
-        connected: isConnected
-      });
+
 
       const result = await realTimeChatManager.sendMessage(
         event.id,
@@ -261,7 +251,7 @@ export default function EventChatModal({ visible, onClose, event }) {
         trimmedText
       );
 
-      console.log('🔥 MESSAGE SENT SUCCESSFULLY:', result);
+
 
     } catch (error) {
       console.error('❌ Error sending message:', error);
@@ -384,14 +374,14 @@ export default function EventChatModal({ visible, onClose, event }) {
     if (!isLocked) {
       // ✅ CONNECTION ALREADY ESTABLISHED
       // Real-time connection is already set up when modal opens
-      console.log('✅ Using existing real-time connection for event:', event.id);
+      
       setShowChat(true);
     }
   };
 
   // Handle close modal
   const handleClose = () => {
-    console.log('🔥 CLOSING CHAT MODAL');
+
     setShowChat(false);
     setMessages([]);
     setMessageIds(new Set());

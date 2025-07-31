@@ -40,10 +40,7 @@ class RealTimeChatManager {
       return;
     }
 
-    console.log('🔥 CREATING NEW REAL-TIME CONNECTION for event:', eventId, {
-      totalConnections: this.connections.size,
-      existingEvents: Array.from(this.connections.keys())
-    });
+
 
     // Store callbacks
     this.messageCallbacks.set(eventId, onMessageReceived || (() => {}));
@@ -67,7 +64,7 @@ class RealTimeChatManager {
     // Start real-time polling loop
     this.startRealTimeLoop(eventId, connection);
 
-    console.log('🔥 REAL-TIME CONNECTION ESTABLISHED for event:', eventId);
+    
     this.logActiveConnections();
   }
 
@@ -81,7 +78,7 @@ class RealTimeChatManager {
       age: ((Date.now() - conn.startTime) / 1000).toFixed(1) + 's'
     }));
     
-    console.log('📊 ACTIVE CONNECTIONS:', activeConnections.length, activeConnections);
+
     
     // 🚨 EMERGENCY: Show total requests across all connections
     const totalRequests = Array.from(this.requestCounts.values()).reduce((sum, count) => sum + count, 0);
@@ -183,7 +180,7 @@ class RealTimeChatManager {
         clearTimeout(timeoutId);
         
         const pollDuration = ((Date.now() - pollStartTime) / 1000).toFixed(1);
-        console.log('✅ Long-poll completed for event:', eventId, 'duration:', pollDuration + 's');
+
 
         if (!response.ok) {
           connection.errorCount++;
@@ -211,7 +208,7 @@ class RealTimeChatManager {
         const data = await response.json();
         
         if (data.type === 'messages' && data.messages && data.messages.length > 0) {
-          console.log('🔥 RECEIVED REAL-TIME MESSAGES:', data.messages.length);
+
           
           // Update last timestamp
           const latestMessage = data.messages[data.messages.length - 1];
@@ -231,7 +228,6 @@ class RealTimeChatManager {
           }
           
         } else if (data.type === 'heartbeat') {
-          console.log('💓 Heartbeat for event:', eventId);
           // Just keep the connection alive
         }
 
@@ -278,7 +274,7 @@ class RealTimeChatManager {
     // 📊 GLOBAL API TRACKING
     this.totalApiCalls++;
     
-    console.log('🔥 SENDING REAL-TIME MESSAGE to event:', eventId, 'TOTAL API CALLS:', this.totalApiCalls);
+
 
     const response = await fetch(`${this.baseUrl}/api/chat/send`, {
       method: 'POST',
@@ -298,7 +294,7 @@ class RealTimeChatManager {
     }
 
     const result = await response.json();
-    console.log('🔥 MESSAGE SENT SUCCESSFULLY:', result);
+    
     
     return result;
   }
@@ -316,7 +312,7 @@ class RealTimeChatManager {
     // 📊 GLOBAL API TRACKING
     this.totalApiCalls++;
     
-    console.log('🔥 LOADING INITIAL MESSAGES for event:', eventId, 'call #' + (currentCount + 1), 'TOTAL API CALLS:', this.totalApiCalls);
+
     
     // 🚨 DETECT EXCESSIVE INITIAL MESSAGE CALLS
     if (currentCount > 3) {
@@ -333,7 +329,7 @@ class RealTimeChatManager {
     }
 
     const { messages } = await response.json();
-    console.log('🔥 LOADED', messages.length, 'INITIAL MESSAGES for call #' + (currentCount + 1));
+    
     
     return messages || [];
   }
@@ -349,7 +345,7 @@ class RealTimeChatManager {
       return;
     }
 
-    console.log('🔥 DISCONNECTING from event:', eventId);
+
 
     // Stop the connection
     connection.isActive = false;
@@ -359,7 +355,7 @@ class RealTimeChatManager {
 
     // Backend notification skipped (subscription tracking not needed for basic functionality)
 
-    console.log('🔥 DISCONNECTED from event:', eventId);
+
   }
 
   /**
@@ -373,7 +369,7 @@ class RealTimeChatManager {
       const count = parseInt(current || '0') + messageCount;
       
       await AsyncStorage.setItem(key, count.toString());
-      console.log('📊 Incremented unread count for event:', eventId, 'by:', messageCount, 'total:', count);
+
       
       // Notify callback once with final count
       const callback = this.unreadCallbacks.get(eventId);
@@ -402,7 +398,7 @@ class RealTimeChatManager {
     try {
       const key = `chat_unread_${eventId}_${userId}`;
       await AsyncStorage.setItem(key, '0');
-      console.log('📊 Reset unread count for event:', eventId);
+  
       
       // Notify callback
       const callback = this.unreadCallbacks.get(eventId);
@@ -429,7 +425,7 @@ class RealTimeChatManager {
    * 🧹 CLEANUP ALL CONNECTIONS
    */
   async cleanup() {
-    console.log('🔥 CLEANING UP ALL REAL-TIME CONNECTIONS');
+
     
     this.isActive = false;
     
@@ -489,9 +485,9 @@ if (__DEV__) {
   global.chatDebug = {
     stats: () => realTimeChatManager.logActiveConnections(),
     stop: () => realTimeChatManager.emergencyStop(),
-    requests: () => console.log('📊 Total API calls:', realTimeChatManager.totalApiCalls)
+    requests: () => realTimeChatManager.totalApiCalls
   };
-  console.log('🔧 DEBUG TOOLS AVAILABLE: chatDebug.stats(), chatDebug.stop(), chatDebug.requests()');
+  
 }
 
 export default realTimeChatManager; 
