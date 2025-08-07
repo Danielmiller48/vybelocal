@@ -74,11 +74,14 @@ export default function MiniCalendar({ events = [], onSelectEvent }){
                 <Text style={{ fontSize:11, fontWeight:'600', color: isToday ? '#2563eb' : '#374151' }}>
                   {cell.getDate()}
                 </Text>
-                {dayEvents.slice(0,2).map((ev, i)=> (
-                  <TouchableOpacity key={i} onPress={()=>onSelectEvent?.(ev)} style={{ marginTop:4, backgroundColor:'#eef2ff', borderRadius:6, paddingHorizontal:6, paddingVertical:3 }}>
-                    <Text numberOfLines={1} style={{ fontSize:10, color:'#4f46e5', fontWeight:'600' }}>{ev.title || 'Event'}</Text>
-                  </TouchableOpacity>
-                ))}
+                {dayEvents.slice(0,2).map((ev, i)=> {
+                  const isPast = !!ev._isPast;
+                  return (
+                    <TouchableOpacity key={i} onPress={()=>onSelectEvent?.(ev)} style={{ marginTop:4, backgroundColor: isPast ? '#f3f4f6' : '#eef2ff', borderRadius:6, paddingHorizontal:6, paddingVertical:3 }}>
+                      <Text numberOfLines={1} style={{ fontSize:10, color: isPast ? '#9ca3af' : '#4f46e5', fontWeight:'600' }}>{ev.title || 'Event'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
                 {dayEvents.length>2 && (
                   <Text style={{ marginTop:2, fontSize:10, color:'#6b7280' }}>+{dayEvents.length-2} more</Text>
                 )}

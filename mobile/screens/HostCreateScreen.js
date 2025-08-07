@@ -973,7 +973,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     
     const totalRsvps = data.reduce((sum, item) => sum + item.value, 0);
     const description = totalRsvps > 0 
-      ? `Analysis of ${totalRsvps} RSVPs across your events showing when guests typically book. This helps optimize your promotion timing and marketing strategy.`
+      ? "This chart breaks down when guests usually RSVP for your events, showing the most common booking windows. Each bar represents how many RSVPs came in during that timeframe. Knowing your peak RSVP timing helps you plan promos, reminders, and hype drops to hit people when they're most likely to commit."
       : 'No RSVP timing data available yet. Host more events to see booking patterns.';
     
     return { 
@@ -1491,7 +1491,7 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
           marginBottom: 16,
           lineHeight: 18 
         }}>
-          This shows how full your events get based on VybeLocal RSVPs vs. your set capacity. Each bar represents how many events fall into that fill rate range. Note: If you advertise events outside VybeLocal, your actual attendance may be higher.
+          This chart breaks down how packed your events have been, using VybeLocal RSVPs against the capacity you set. Each bar shows how many events landed in each fill-rate range. If you draw a crowd outside VybeLocal, your real turnout might be higher.
         </Text>
       )}
       
@@ -1513,7 +1513,7 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
           marginBottom: 16,
           lineHeight: 18 
         }}>
-          This shows the events that generated the most VybeLocal revenue in the selected period. Each bar represents total ticket revenue for that event.
+          This chart highlights the events that brought in the most VybeLocal revenue during the selected period. Each bar shows the total ticket revenue for that specific event.
         </Text>
       )}
 
@@ -1524,7 +1524,7 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
           marginBottom: 16,
           lineHeight: 18 
         }}>
-          This shows your cumulative VybeLocal revenue growth over time. Each point represents when revenue was earned, building up your total earnings across all paid events.
+          This timeline tracks every dollar your Vybes have earned, showing how your total revenue has grown over time. Each point on the line marks a moment the crowd showed up, tickets were sold, and you added to your running total.
         </Text>
       )}
 
@@ -1535,7 +1535,7 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
           marginBottom: 16,
           lineHeight: 18 
         }}>
-          This shows how often the same people attend your events. Each category represents guests who have attended a certain number of your events. Higher repeat attendance indicates stronger community building and loyalty.
+          This chart shows how often the same guests come back to your events. Each category counts the number of attendees who've hit that many events. Higher repeat attendance means you're not just pulling a crowd — you're building loyalty, community, and a reason for people to keep showing up.
         </Text>
       )}
       
@@ -2192,6 +2192,7 @@ export default function HostCreateScreen() {
     monthlyRevenue: 0
   });
   const [calendarModal, setCalendarModal] = useState({ open:false, event:null });
+  const [pastPage, setPastPage] = useState(1);
 
   useEffect(() => {
     if (user) {
@@ -2457,10 +2458,13 @@ export default function HostCreateScreen() {
                           <EventCard key={event.id} event={event} />
                         ))
                       ) : (
-                        <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-                          <Ionicons name="calendar-outline" size={48} color="#d1d5db" />
-                          <Text style={{ color: '#6b7280', marginTop: 12 }}>Calendar view coming soon...</Text>
-                        </View>
+                        <MiniCalendar
+                          events={[...events, ...pastEvents].map(ev=>({
+                            ...ev,
+                            _isPast: new Date(ev.starts_at) < new Date()
+                          }))}
+                          onSelectEvent={(ev)=> setCalendarModal({ open:true, event: ev })}
+                        />
                       )}
                     </View>
                   ) : (
@@ -2472,7 +2476,7 @@ export default function HostCreateScreen() {
                         marginTop: 12,
                         textAlign: 'center'
                       }}>
-                        No upcoming events. Create your first event to get started!
+                        No upcoming events yet. Tap the green + to host a Vybe and put something on the calendar.
                       </Text>
                     </View>
                   )}
@@ -2493,7 +2497,7 @@ export default function HostCreateScreen() {
                         ✅ Past Events ({pastEvents.length})
                       </Text>
                       
-                      <SortToggle sortBy={pastSortBy} onToggle={setPastSortBy} />
+                      <SortToggle sortBy={pastSortBy} onToggle={(val)=>{ setPastSortBy(val); setPastPage(1); }} />
                       
                       {(() => {
                         const sortedPast = [...pastEvents].sort((a, b) => {
@@ -2502,10 +2506,49 @@ export default function HostCreateScreen() {
                           }
                           return new Date(b.starts_at) - new Date(a.starts_at);
                         });
+                        const pageSize = 5;
+                        const totalPages = Math.max(1, Math.ceil(sortedPast.length / pageSize));
+                        const safePage = Math.min(Math.max(1, pastPage), totalPages);
+                        if (safePage !== pastPage) {
+                          // Defer state correction to next tick to avoid setting state during render
+                          setTimeout(()=> setPastPage(safePage), 0);
+                        }
+                        const start = (safePage - 1) * pageSize;
+                        const pageItems = sortedPast.slice(start, start + pageSize);
                         
-                        return sortedPast.map(event => (
-                          <EventCard key={event.id} event={event} isPast={true} />
-                        ));
+                        return (
+                          <>
+                            {pageItems.map(event => (
+                              <EventCard key={event.id} event={event} isPast={true} />
+                            ))}
+                            {/* Pagination Controls */}
+                            <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 }}>
+                              <TouchableOpacity
+                                onPress={()=> setPastPage(Math.max(1, safePage - 1))}
+                                disabled={safePage <= 1}
+                                style={{
+                                  paddingHorizontal:12, paddingVertical:8, borderRadius:8,
+                                  backgroundColor: safePage<=1 ? '#f3f4f6' : '#eef2ff',
+                                  borderWidth:1, borderColor: '#e5e7eb'
+                                }}
+                              >
+                                <Text style={{ color: safePage<=1 ? '#9ca3af' : '#4f46e5', fontWeight:'600' }}>Prev</Text>
+                              </TouchableOpacity>
+                              <Text style={{ fontSize:12, color:'#6b7280' }}>Page {safePage} of {totalPages}</Text>
+                              <TouchableOpacity
+                                onPress={()=> setPastPage(Math.min(totalPages, safePage + 1))}
+                                disabled={safePage >= totalPages}
+                                style={{
+                                  paddingHorizontal:12, paddingVertical:8, borderRadius:8,
+                                  backgroundColor: safePage>=totalPages ? '#f3f4f6' : '#eef2ff',
+                                  borderWidth:1, borderColor: '#e5e7eb'
+                                }}
+                              >
+                                <Text style={{ color: safePage>=totalPages ? '#9ca3af' : '#4f46e5', fontWeight:'600' }}>Next</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        );
                       })()}
                     </View>
                   ) : (
