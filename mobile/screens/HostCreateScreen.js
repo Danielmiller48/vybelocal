@@ -590,6 +590,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
 
   // Generate chart data based on metric and time period
   const generateChartData = (metricType, period, paidOnly=false, joinDateParam=null, pastEventsParam=null) => {
+
     const now = new Date();
     let startDate;
     
@@ -617,6 +618,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
     const baseEvents = paidOnly ? allEvents.filter(e => e.price_in_cents > 0) : allEvents;
     const filteredEvents = baseEvents.filter(e => new Date(e.starts_at) >= startDate);
     
+
+    
     switch(metricType) {
       case 'rsvps':
         const rsvpChart = generateRSVPLineChart(filteredEvents, period);
@@ -639,7 +642,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
         return chart;
       case 'revenueTimeline':
         const revEvents = paidOnly ? filteredEvents.filter(e=>e.price_in_cents>0) : filteredEvents;
-        return generateRevenueTimelineChart(revEvents,startDate,period);
+        return generateRevenueTimelineChart(revEvents,period);
       case 'topEarning':
         const topEvents = paidOnly ? filteredEvents.filter(e=>e.price_in_cents>0) : filteredEvents;
         return generateRevenueChart(topEvents);
@@ -816,23 +819,60 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
   };
 
   // Generate cumulative revenue timeline with milestones
-  const generateRevenueTimelineChart = (events, startDate, period='all') => {
-    // Sort events by date ascending
-    const sorted = [...events].sort((a,b)=> new Date(a.starts_at)-new Date(b.starts_at));
-    // insert baseline point at period start
-    const data = [];
-    if(startDate){
-      data.push({ label: startDate.toLocaleDateString('en-US', period==='month'? { month:'short', day:'numeric'}:{month:'short',year:'2-digit'}), value:0 });
+  const generateRevenueTimelineChart = (events, period='all') => {
+    // Rewritten revenue timeline using RSVP logic
+    const now = new Date();
+    let startDate = new Date();
+    switch(period){
+      case 'month':
+        startDate.setDate(startDate.getDate()-30);
+        break;
+      case '6months':
+        startDate.setMonth(startDate.getMonth()-5);
+        startDate.setDate(1);
+        break;
+      case 'ytd':
+        startDate = new Date(now.getFullYear(),0,1);
+        break;
+      default:
+        startDate = new Date(now.getFullYear()-5,0,1);
     }
-    let cumulative = 0;
-    sorted.forEach(ev=>{
-      cumulative += ((ev.price_in_cents||0)*(ev.rsvp_count||0))/100;
-      data.push({ label: new Date(ev.starts_at).toLocaleDateString('en-US', period==='month'? { month:'short', day:'numeric'}:{month:'short',year:'2-digit'}), value: cumulative });
-    });
+    const relevant = events.filter(e=> new Date(e.starts_at) >= startDate && e.price_in_cents>0 && e.rsvp_count>0);
+    const dataPoints = [];
+    let cumulative=0;
+    if(period==='month'){
+      const dailyMap={};
+      for(let i=30;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const key=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});dailyMap[key]=0;}
+      relevant.forEach(ev=>{const d=new Date(ev.starts_at);const key=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});if(d>=startDate){dailyMap[key]+=((ev.price_in_cents||0)*(ev.rsvp_count||0))/100;}});
+      Object.keys(dailyMap).forEach(k=>{cumulative+=dailyMap[k];dataPoints.push({label:k,value:cumulative});});
+    } else {
+      const monthKeys=[];let iter=new Date(startDate);while(iter<=now){monthKeys.push(iter.toLocaleDateString('en-US',{month:'short',year:'2-digit'}));iter.setMonth(iter.getMonth()+1);}const monthlyMap={};relevant.forEach(ev=>{const key=new Date(ev.starts_at).toLocaleDateString('en-US',{month:'short',year:'2-digit'});monthlyMap[key]=(monthlyMap[key]||0)+((ev.price_in_cents||0)*(ev.rsvp_count||0))/100;});monthKeys.forEach(k=>{if(monthlyMap[k]) cumulative+=monthlyMap[k];dataPoints.push({label:k,value:cumulative});});}
+    if(dataPoints.length===1){dataPoints.unshift({label:dataPoints[0].label,value:0});}
+    const milestones=[0,500,1000,2500,5000,7500,10000,15000];
+    const achievedMilestones=milestones.filter(m=>cumulative>=m);
+    const nextMilestone=milestones.find(m=>cumulative<m);
+    const milestoneData=[
+      { amount: 0, emoji: "🎯", title: "The Beginning", description: "Every journey starts somewhere" },
+      { amount: 500, emoji: "💪", title: "Half a Stack", description: "500 bucks from your own community? Respect." },
+      { amount: 1000, emoji: "💸", title: "$1K Club", description: "A grand earned from hosting. You built that." },
+      { amount: 2500, emoji: "🚀", title: "Making Moves", description: "You're starting to make real noise. People are vibing." },
+      { amount: 5000, emoji: "🏆", title: "Five Racks Deep", description: "$5K earned from your events — that's legacy in progress." },
+      { amount: 7500, emoji: "🧠", title: "Growth Minded", description: "You're not just earning — you're scaling." },
+      { amount: 10000, emoji: "👑", title: "10K Milestone", description: "Ten. Thousand. Dollars. Made from moments. You're that host." },
+      { amount: 15000, emoji: "🔱", title: "Local Legend", description: "You're in rare air. VybeLocal's never seen someone like you." }
+    ];
+    
 
-    const milestones = [100,250,500,750,1000,2500,5000,7500,10000,15000];
-    const milestoneData = milestones.filter(m=> cumulative>=m).map(th=>({threshold:th}))
-    return { data, type:'line', title:'Total Revenue Timeline', totalRevenue:cumulative, milestones: milestoneData };
+
+    return { 
+      data: dataPoints, 
+      type:'line', 
+      title:'Total Revenue Timeline', 
+      totalRevenue: cumulative, 
+      achievedMilestones,
+      nextMilestone,
+      milestones: milestoneData
+    };
   };
 
   const generateRevenueChart = (events) => {
