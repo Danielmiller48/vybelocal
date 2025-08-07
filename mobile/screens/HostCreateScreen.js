@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Animated, Modal, Switch } from 'react-native';
+import Slider from '@react-native-community/slider';
+
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
@@ -8,7 +10,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import HostDrawerOverlay from '../components/HostDrawerOverlay';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
-import Svg, { Polyline, Circle } from 'react-native-svg';
+
+import AIInsightCard from '../components/analytics/AIInsightCard';
+import AnalyticsDrawerInsights from '../components/analytics/AnalyticsDrawerInsights';
 
 // Collapsible Section Component
 function HostSection({ title, children, defaultOpen = false, icon, headerRight=null }) {
@@ -425,10 +429,11 @@ function PlaceholderContent({ icon, title, description }) {
 
 // Analytics Content Component
 
-function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
+function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRate, setTaxRate }) {
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [timePeriod, setTimePeriod] = useState('ytd'); // 'all', 'ytd', '6months', 'month'
+
   
   const last30Days = new Date();
   last30Days.setDate(last30Days.getDate() - 30);
@@ -583,6 +588,10 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
     // Net revenue is the same as total revenue for hosts (fees charged to users)
     analytics.netRevenue = analytics.totalRevenue;
 
+    // Calculate estimated after-tax earnings using user-selected tax rate
+    analytics.estimatedTaxRate = taxRate;
+    analytics.afterTaxRevenue = analytics.totalRevenue * (1 - taxRate);
+
     return analytics;
   };
 
@@ -654,6 +663,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
         return generatePeakTimingChart(filteredEvents);
       case 'refund':
         return generateRefundChart(filteredEvents);
+      case 'afterTax':
+        return generateAfterTaxChart(filteredEvents);
       default:
         return { data: [], type: 'line' };
     }
@@ -955,20 +966,109 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
       value: count 
     }));
     
-    return { data, type: 'bar', title: 'When People Book Events' };
+    const totalRsvps = data.reduce((sum, item) => sum + item.value, 0);
+    const description = totalRsvps > 0 
+      ? `Analysis of ${totalRsvps} RSVPs across your events showing when guests typically book. This helps optimize your promotion timing and marketing strategy.`
+      : 'No RSVP timing data available yet. Host more events to see booking patterns.';
+    
+    return { 
+      data, 
+      type: 'bar', 
+      title: 'Peak RSVP Timing Patterns',
+      description 
+    };
   };
 
   const generateRefundChart = (events) => {
     const advancedData = global.hostAnalyticsData || { paymentData: [] };
     const refunded = advancedData.paymentData.filter(p => p.refunded).length;
     const completed = advancedData.paymentData.length - refunded;
+    const total = advancedData.paymentData.length;
+    
+    // Calculate refund rate for milestone messaging
+    const refundRate = total > 0 ? (refunded / total) : 0;
+    let milestoneMessage = '';
+    
+    if (total === 0) {
+      milestoneMessage = "No payments yet — your record is spotless by default. Start hosting to build your track record.";
+    } else if (refundRate <= 0.05) {
+      milestoneMessage = "🏆 Excellent record — your attendees trust you.";
+    } else if (refundRate <= 0.10) {
+      milestoneMessage = "👍 Solid record. Keep aiming for fewer refunds.";
+    } else {
+      milestoneMessage = "⚠ Higher than average refunds — check your event details and communication to keep attendees confident.";
+    }
     
     const data = [
-      { label: 'Completed', value: completed },
-      { label: 'Refunded', value: refunded }
+      { 
+        label: '✅ Completed', 
+        value: completed,
+        subtitle: 'Payments that went through without a hitch.'
+      },
+      { 
+        label: '↩ Refunded', 
+        value: refunded,
+        subtitle: 'Payments returned to attendees. Keep this low to boost your rep.'
+      }
     ];
     
-    return { data, type: 'pie', title: 'Payment Status' };
+    const description = `Your Completion Record\n\nEvery completed payment builds trust with your attendees. Refunds happen — but keeping them low means confidence stays high.\n\n${milestoneMessage}`;
+    
+    return { 
+      data, 
+      type: 'pie', 
+      title: 'Refund Rate\nDetailed Analytics – Your track record in numbers.',
+      description,
+      refundRate // Add this so AI insights can access it
+    };
+  };
+
+  const generateAfterTaxChart = (events) => {
+    const paidEvents = events.filter(e => e.price_in_cents > 0);
+    if (paidEvents.length === 0) {
+      return { data: [], type: 'pie', title: 'Tax Breakdown', description: 'No paid events yet to calculate tax estimates.' };
+    }
+
+    const totalRevenue = paidEvents.reduce((sum, event) => {
+      return sum + ((event.price_in_cents || 0) * (event.rsvp_count || 0)) / 100;
+    }, 0);
+
+    // Use the user-selected tax rate from the slider
+    const estimatedTaxRate = taxRate;
+
+    const taxAmount = totalRevenue * estimatedTaxRate;
+    const afterTaxAmount = totalRevenue - taxAmount;
+    const keepPercentage = ((afterTaxAmount / totalRevenue) * 100).toFixed(0);
+
+    // Celebratory microcopy
+    let celebratoryMessage = '';
+    if (afterTaxAmount >= 10000) {
+      celebratoryMessage = "🎉 You've passed the $10K kept milestone — keep stacking!";
+    } else if (afterTaxAmount >= 5000) {
+      celebratoryMessage = "🎯 Over $5K kept — you're building something real here.";
+    }
+
+    const data = [
+      { 
+        label: `You Keep: $${Math.round(afterTaxAmount)}`, 
+        value: Math.round(afterTaxAmount),
+        subtitle: `Nice work. That's ${keepPercentage}% of what you earned, still in your pocket.`
+      },
+      { 
+        label: `Taxes: $${Math.round(taxAmount)}`, 
+        value: Math.round(taxAmount),
+        subtitle: `The part Uncle Sam insists on. Plan ahead and you keep control.`
+      }
+    ];
+
+    const description = `Where Your Money's Going\n\nBased on your chosen tax rate, here's what you're keeping vs. what's likely headed to the IRS. Numbers are estimates – actual taxes can change depending on deductions, other income, and new laws.${celebratoryMessage ? '\n\n' + celebratoryMessage : ''}`;
+
+    return { 
+      data, 
+      type: 'pie', 
+      title: 'Your Money, On Your Terms',
+      description 
+    };
   };
 
   const MetricCard = ({ title, value, subtitle, icon, color = '#3b82f6', metricType }) => (
@@ -1129,6 +1229,15 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
         metricType="revenueTimeline"
       />
 
+      <MetricCard
+        title="Est. After-Tax Earnings"
+        value={`$${analytics.afterTaxRevenue.toFixed(2)}`}
+        subtitle={`Assuming ${(analytics.estimatedTaxRate * 100).toFixed(0)}% effective tax rate`}
+        icon="calculator"
+        color="#059669"
+        metricType="afterTax"
+      />
+
 
 
       <MetricCard
@@ -1169,78 +1278,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
         AI Insights & Recommendations
       </Text>
 
-      {/* Advanced AI insights based on real data */}
-      {analytics.avgSellOutSpeed > 0 && analytics.avgSellOutSpeed < 24 && (
-        <InsightCard
-          insight={`Your events sell out in an average of ${analytics.avgSellOutSpeed.toFixed(1)} hours. This shows strong demand!`}
-          recommendation="Consider raising prices by $2-3 or booking larger venues to capture more revenue."
-          type="success"
-        />
-      )}
-
-      {analytics.avgSellOutSpeed > 168 && (
-        <InsightCard
-          insight={`Your events take ${(analytics.avgSellOutSpeed / 24).toFixed(1)} days to sell out on average.`}
-          recommendation="Try promoting earlier or adjusting your marketing strategy to create more urgency."
-          type="info"
-        />
-      )}
-
-      {analytics.repeatGuestRate > 0.3 && (
-        <InsightCard
-          insight={`${(analytics.repeatGuestRate * 100).toFixed(1)}% of your guests are repeat attendees - you're building a community!`}
-          recommendation="Consider launching a loyalty program or member perks to reward your regulars."
-          type="success"
-        />
-      )}
-
-      {analytics.repeatGuestRate < 0.15 && analytics.totalEvents > 3 && (
-        <InsightCard
-          insight={`Only ${(analytics.repeatGuestRate * 100).toFixed(1)}% repeat guests - mostly first-timers attending.`}
-          recommendation="Focus on post-event follow-up and building relationships to encourage return visits."
-          type="warning"
-        />
-      )}
-
-      {analytics.refundRate > 0.15 && (
-        <InsightCard
-          insight={`${(analytics.refundRate * 100).toFixed(1)}% refund rate is high - this might indicate booking issues.`}
-          recommendation="Consider tightening your refund window to 24-48 hours or improving event descriptions."
-          type="warning"
-        />
-      )}
-
-      {analytics.peakRsvpDay.includes('day before') && (
-        <InsightCard
-          insight={`Most RSVPs happen ${analytics.peakRsvpDay} - people are booking last-minute!`}
-          recommendation="Post promotional content 2-3 days earlier to capture bookings during peak interest."
-          type="info"
-        />
-      )}
-
-      {analytics.revenuePerAttendee < 10 && analytics.revenuePerAttendee > 0 && (
-        <InsightCard
-          insight={`Revenue per attendee is $${analytics.revenuePerAttendee.toFixed(2)} - room for growth.`}
-          recommendation="Consider adding merchandise, upgrades, or premium tiers to increase per-person value."
-          type="info"
-        />
-      )}
-
-      {analytics.capacityFillRate < 0.4 && analytics.capacityFillRate > 0 && (
-        <InsightCard
-          insight="Your capacity fill rate is below 40% - you might be booking spaces that are too large."
-          recommendation="Try smaller, more intimate venues to create better atmosphere and reduce costs."
-          type="warning"
-        />
-      )}
-
-      {analytics.totalEvents < 3 && (
-        <InsightCard
-          insight="You're just getting started! More events will unlock deeper insights."
-          recommendation="Host 2-3 more events to see meaningful performance trends and patterns."
-          type="info"
-        />
-      )}
+      {/* AI-powered insights based on real data */}
+      <AnalyticsDrawerInsights analytics={analytics} />
 
 
 
@@ -1311,11 +1350,52 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
             </View>
           </View>
 
+          {/* Tax Rate Slider - Only for After-Tax Chart */}
+          {selectedMetric?.metricType === 'afterTax' && (
+            <View style={{ padding: 16, backgroundColor: 'white', marginBottom: 16 }}>
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#1f2937', marginBottom: 4 }}>
+                  Adjust Your Reality
+                </Text>
+                <Text style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>
+                  Slide to match your state's taxes. (Default assumes Texas rates – no state income tax.)
+                </Text>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#059669', textAlign: 'center' }}>
+                  {(taxRate * 100).toFixed(0)}%
+                </Text>
+              </View>
+              
+              <Slider
+                style={{ width: '100%', height: 40 }}
+                minimumValue={0.05}
+                maximumValue={0.50}
+                value={taxRate}
+                onValueChange={setTaxRate}
+                minimumTrackTintColor="#059669"
+                maximumTrackTintColor="#d1d5db"
+                thumbStyle={{ backgroundColor: '#059669', width: 24, height: 24 }}
+                trackStyle={{ height: 6, borderRadius: 3 }}
+                step={0.01}
+              />
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4, marginBottom: 12 }}>
+                <Text style={{ fontSize: 11, color: '#6b7280' }}>5%</Text>
+                <Text style={{ fontSize: 11, color: '#6b7280' }}>50%</Text>
+              </View>
+              
+              <Text style={{ fontSize: 10, color: '#9ca3af', textAlign: 'center', fontStyle: 'italic' }}>
+                This is an estimate only. Consult a tax professional for accurate planning.
+              </Text>
 
-
+            </View>
+          )}
 
           {/* Chart Container */}
-          <ScrollView style={{ flex: 1, padding: 16 }}>
+          <ScrollView 
+            style={{ flex: 1, padding: 16 }}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
+            showsVerticalScrollIndicator={true}
+          >
             <ChartContainer 
               chartData={selectedMetric ? generateChartData(selectedMetric.metricType, timePeriod, paidOnly, joinDate, pastEvents) : null}
               color={selectedMetric?.color}
@@ -1351,10 +1431,22 @@ const ChartContainer = ({ chartData, color }) => {
   const maxValue = Math.max(...chartData.data.map(d => d.value));
   
   return (
-    <View style={{ backgroundColor: 'white', borderRadius: 12, padding: 16 }}>
+    <View style={{ backgroundColor: 'white', borderRadius: 12, padding: 16, minHeight: 'auto' }}>
       <Text style={{ fontSize: 18, fontWeight: '600', color: '#1f2937', marginBottom: 8 }}>
         {chartData.title}
       </Text>
+      
+      {/* Chart Description */}
+      {chartData.description && (
+        <Text style={{ 
+          fontSize: 13, 
+          color: '#6b7280', 
+          marginBottom: 16,
+          lineHeight: 18 
+        }}>
+          {chartData.description}
+        </Text>
+      )}
       
       {/* Chart Explanations */}
       {chartData.type === 'bar' && chartData.title.includes('Fill Rate') && (
@@ -1389,6 +1481,28 @@ const ChartContainer = ({ chartData, color }) => {
           This shows the events that generated the most VybeLocal revenue in the selected period. Each bar represents total ticket revenue for that event.
         </Text>
       )}
+
+      {chartData.type === 'line' && chartData.title.includes('Total Revenue Timeline') && (
+        <Text style={{ 
+          fontSize: 13, 
+          color: '#6b7280', 
+          marginBottom: 16,
+          lineHeight: 18 
+        }}>
+          This shows your cumulative VybeLocal revenue growth over time. Each point represents when revenue was earned, building up your total earnings across all paid events.
+        </Text>
+      )}
+
+      {chartData.type === 'doughnut' && chartData.title.includes('Guest Attendance Frequency') && (
+        <Text style={{ 
+          fontSize: 13, 
+          color: '#6b7280', 
+          marginBottom: 16,
+          lineHeight: 18 
+        }}>
+          This shows how often the same people attend your events. Each category represents guests who have attended a certain number of your events. Higher repeat attendance indicates stronger community building and loyalty.
+        </Text>
+      )}
       
 
       
@@ -1416,176 +1530,89 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insights */}
-      {chartData.type === 'bar' && chartData.title.includes('Fill Rate') && chartData.avg !== undefined && (
-        <View style={{
-          backgroundColor: 'white',
-          borderRadius: 12,
-          padding: 16,
-          marginTop: 16,
-          borderLeftWidth: 4,
-          borderLeftColor: chartData.avg > 0.7 ? '#10b981' : chartData.avg > 0.4 ? '#f59e0b' : '#3b82f6',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <Ionicons 
-              name={chartData.avg > 0.7 ? 'checkmark-circle' : chartData.avg > 0.4 ? 'bulb' : 'trending-up'} 
-              size={20} 
-              color={chartData.avg > 0.7 ? '#10b981' : chartData.avg > 0.4 ? '#f59e0b' : '#3b82f6'} 
-              style={{ marginRight: 12, marginTop: 2 }} 
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={{ 
-                fontSize: 14, 
-                color: '#1f2937', 
-                marginBottom: 8,
-                lineHeight: 20 
-              }}>
-                {chartData.avg > 0.8 ? 
-                  `Your VybeLocal RSVPs fill ${(chartData.avg * 100).toFixed(0)}% of capacity on average - strong performance on the platform!` :
-                  chartData.avg > 0.6 ?
-                  `Your VybeLocal RSVPs average ${(chartData.avg * 100).toFixed(0)}% of capacity - solid platform engagement.` :
-                  chartData.avg > 0.3 ?
-                  `VybeLocal RSVPs average ${(chartData.avg * 100).toFixed(0)}% of capacity - there's room to grow your audience here.` :
-                  `VybeLocal RSVPs average ${(chartData.avg * 100).toFixed(0)}% of capacity - focus on building your platform presence.`
-                }
-              </Text>
-              <Text style={{ 
-                fontSize: 13, 
-                color: chartData.avg > 0.7 ? '#10b981' : chartData.avg > 0.4 ? '#f59e0b' : '#3b82f6', 
-                fontWeight: '500',
-                lineHeight: 18 
-              }}>
-                💡 {chartData.avg > 0.8 ? 
-                  'Great VybeLocal engagement! Consider featuring more events on the platform or adjusting capacity sizing.' :
-                  chartData.avg > 0.6 ?
-                  'Try promoting events earlier on VybeLocal or creating more compelling event descriptions.' :
-                  chartData.avg > 0.3 ?
-                  'Focus on building your VybeLocal following through consistent posting and community engagement.' :
-                  'Start with smaller capacity events to build momentum and grow your VybeLocal audience organically.'
-                }
-              </Text>
-            </View>
-          </View>
+      {chartData.type === 'bar' && chartData.title.includes('Fill Rate') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="capacity"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
         </View>
       )}
 
       {/* AI Insight for Top Revenue Chart */}
-      {chartData.type === 'bar' && chartData.title.includes('Top-Earning') && chartData.totalRevenue !== undefined && (
-        <View style={{
-          backgroundColor: 'white',
-          borderRadius: 12,
-          padding: 16,
-          marginTop: 16,
-          borderLeftWidth: 4,
-          borderLeftColor: chartData.totalRevenue > 1000 ? '#10b981' : chartData.totalRevenue > 200 ? '#f59e0b' : '#3b82f6',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <Ionicons 
-              name={chartData.totalRevenue > 1000 ? 'trending-up' : chartData.totalRevenue > 200 ? 'bulb' : 'cash'} 
-              size={20} 
-              color={chartData.totalRevenue > 1000 ? '#10b981' : chartData.totalRevenue > 200 ? '#f59e0b' : '#3b82f6'} 
-              style={{ marginRight: 12, marginTop: 2 }} 
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={{ 
-                fontSize: 14, 
-                color: '#1f2937', 
-                marginBottom: 8,
-                lineHeight: 20 
-              }}>
-                {chartData.totalRevenue > 1000 ? 
-                  `You've earned $${chartData.totalRevenue.toFixed(0)} from VybeLocal RSVPs!` :
-                  chartData.totalRevenue > 200 ?
-                  `You've made $${chartData.totalRevenue.toFixed(0)} on VybeLocal so far.` :
-                  chartData.totalRevenue > 0 ?
-                  `You've started earning on VybeLocal with $${chartData.totalRevenue.toFixed(0)} in revenue.` :
-                  `You haven't earned on VybeLocal yet.`
-                }
-              </Text>
-              <Text style={{ 
-                fontSize: 13, 
-                color: chartData.totalRevenue > 1000 ? '#10b981' : chartData.totalRevenue > 200 ? '#f59e0b' : '#3b82f6', 
-                fontWeight: '500',
-                lineHeight: 18 
-              }}>
-                💡 {chartData.totalRevenue > 1000 ? 
-                  'Consider premium event tiers or merchandise to further increase revenue.' :
-                  chartData.totalRevenue > 200 ?
-                  'Keep experimenting with ticket pricing and promotion to boost earnings.' :
-                  chartData.totalRevenue > 0 ?
-                  'Post more events and promote them to grow your VybeLocal revenue.' :
-                  'Host your first paid event to start earning on VybeLocal.'
-                }
-              </Text>
-            </View>
-          </View>
+      {chartData.type === 'bar' && chartData.title.includes('Top-Earning') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="revenue"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
         </View>
       )}
 
       {/* AI Insight for RSVP Growth Chart */}
-      {chartData.type === 'line' && chartData.title.includes('RSVP Growth') && chartData.totalRsvps !== undefined && (
-        <View style={{
-          backgroundColor: 'white',
-          borderRadius: 12,
-          padding: 16,
-          marginTop: 16,
-          borderLeftWidth: 4,
-          borderLeftColor: chartData.totalRsvps > 100 ? '#10b981' : chartData.totalRsvps > 50 ? '#f59e0b' : '#3b82f6',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
-        }}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-            <Ionicons 
-              name={chartData.totalRsvps > 100 ? 'trending-up' : chartData.totalRsvps > 50 ? 'bulb' : 'rocket'} 
-              size={20} 
-              color={chartData.totalRsvps > 100 ? '#10b981' : chartData.totalRsvps > 50 ? '#f59e0b' : '#3b82f6'} 
-              style={{ marginRight: 12, marginTop: 2 }} 
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={{ 
-                fontSize: 14, 
-                color: '#1f2937', 
-                marginBottom: 8,
-                lineHeight: 20 
-              }}>
-                {chartData.totalRsvps > 100 ? 
-                  `You've built a strong VybeLocal community with ${chartData.totalRsvps} total RSVPs!` :
-                  chartData.totalRsvps > 50 ?
-                  `You're growing your VybeLocal presence with ${chartData.totalRsvps} RSVPs so far.` :
-                  chartData.totalRsvps > 10 ?
-                  `You're getting started on VybeLocal with ${chartData.totalRsvps} RSVPs - good momentum!` :
-                  `You're just beginning your VybeLocal journey with ${chartData.totalRsvps} RSVPs.`
-                }
-              </Text>
-              <Text style={{ 
-                fontSize: 13, 
-                color: chartData.totalRsvps > 100 ? '#10b981' : chartData.totalRsvps > 50 ? '#f59e0b' : '#3b82f6', 
-                fontWeight: '500',
-                lineHeight: 18 
-              }}>
-                💡 {chartData.totalRsvps > 100 ? 
-                  'Keep the momentum going! Consider hosting premium events or expanding to new event types.' :
-                  chartData.totalRsvps > 50 ?
-                  'Post consistently and engage with your RSVPs to build a loyal community on the platform.' :
-                  chartData.totalRsvps > 10 ?
-                  'Focus on creating compelling event descriptions and posting regularly to accelerate growth.' :
-                  'Host 2-3 more events to establish your presence and start building a VybeLocal following.'
-                }
-              </Text>
-            </View>
-          </View>
+      {chartData.type === 'line' && chartData.title.includes('RSVP Growth') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="rsvpGrowth"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
+        </View>
+      )}
+
+      {/* AI Insight for Revenue Timeline Chart */}
+      {chartData.type === 'line' && chartData.title.includes('Total Revenue Timeline') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="revenueTimeline"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
+        </View>
+      )}
+
+      {/* AI Insight for Sell-Out Status Chart */}
+      {chartData.type === 'pie' && chartData.title.includes('Event Fill Status') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="sellOut"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
+        </View>
+      )}
+
+      {/* AI Insight for Repeat Guest Chart */}
+      {chartData.type === 'doughnut' && chartData.title.includes('Guest Attendance Frequency') && (
+        <AIInsightCard 
+          chartType="repeatGuest"
+          chartData={chartData}
+          context={{ timePeriod: 'current' }}
+          style={{ marginTop: 24 }}
+        />
+      )}
+
+      {/* AI Insight for Peak Timing Chart */}
+      {(chartData.title.includes('Peak RSVP') || chartData.title.includes('RSVP Timing')) && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="peakTiming"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
+        </View>
+      )}
+
+      {/* AI Insight for Refund Chart */}
+      {chartData.title.includes('Refund') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="refund"
+            chartData={chartData}
+            context={{ timePeriod: 'current' }}
+          />
         </View>
       )}
     </View>
@@ -1743,17 +1770,25 @@ const LineChart = ({ data, color }) => {
               }} />
             ))}
             
-            {/* Beautiful SVG line */}
-            <Svg width={chartWidth} height={chartHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
-              <Polyline
-                points={points}
-                fill="none"
-                stroke={color || '#3b82f6'}
-                strokeWidth={3}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
+            {/* Simple Dot Chart */}
+            {data.map((point, index) => {
+              const x = (index / (data.length - 1)) * chartWidth;
+              const y = chartHeight - (point.value / maxValue) * chartHeight;
+              return (
+                <View
+                  key={index}
+                  style={{
+                    position: 'absolute',
+                    left: x - 3,
+                    top: y - 3,
+                    width: 6,
+                    height: 6,
+                    backgroundColor: color || '#3b82f6',
+                    borderRadius: 3,
+                  }}
+                />
+              );
+            })}
           </View>
           
           {/* Peak Value Label */}
@@ -1820,7 +1855,7 @@ const PieChart = ({ data, color, isDoughnut }) => {
   ];
   
   return (
-    <View style={{ height: 320, paddingTop: 16 }}>
+    <View style={{ paddingTop: 16, paddingBottom: 16 }}>
       {/* Summary Stats */}
       <View style={{
         flexDirection: 'row',
@@ -1878,9 +1913,22 @@ const PieChart = ({ data, color, isDoughnut }) => {
                   {item.label}
                 </Text>
                 <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1f2937' }}>
-                  {item.value}
+                  {percentage.toFixed(1)}%
                 </Text>
               </View>
+              
+              {/* Subtitle if available */}
+              {item.subtitle && (
+                <Text style={{ 
+                  fontSize: 12, 
+                  color: '#6b7280', 
+                  marginBottom: 8,
+                  lineHeight: 16,
+                  fontStyle: 'italic'
+                }}>
+                  {item.subtitle}
+                </Text>
+              )}
               
               {/* Percentage Bar */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1899,7 +1947,7 @@ const PieChart = ({ data, color, isDoughnut }) => {
                   }} />
                 </View>
                 <Text style={{ fontSize: 12, color: '#6b7280', minWidth: 45, textAlign: 'right' }}>
-                  {percentage.toFixed(1)}%
+                  ${item.value}
                 </Text>
               </View>
             </View>
@@ -2101,6 +2149,7 @@ export default function HostCreateScreen() {
   const [pastSortBy, setPastSortBy] = useState('date'); // 'date' or 'rsvps'
   const [showTooltip, setShowTooltip] = useState(false);
   const [paidOnly, setPaidOnly] = useState(true);
+  const [taxRate, setTaxRate] = useState(0.18); // Default 18% tax rate (Texas - no state income tax)
   const [joinDate, setJoinDate] = useState(null);
   const [metrics, setMetrics] = useState({
     totalRsvps: 0,
@@ -2551,25 +2600,140 @@ export default function HostCreateScreen() {
             />
           </View>
         }>
-          <AnalyticsContent events={[...events, ...pastEvents]} paidOnly={paidOnly} setPaidOnly={setPaidOnly} joinDate={joinDate} />
-        </HostSection>
-
-        {/* Profile */}
-        <HostSection title="Profile" icon="person">
-          <PlaceholderContent 
-            icon="person-outline"
-            title="Profile"
-            description="Manage your host profile, bio, and account settings"
+          <AnalyticsContent 
+            events={[...events, ...pastEvents]} 
+            paidOnly={paidOnly} 
+            setPaidOnly={setPaidOnly} 
+            joinDate={joinDate}
+            taxRate={taxRate}
+            setTaxRate={setTaxRate}
           />
         </HostSection>
 
-        {/* Tools */}
-        <HostSection title="Tools" icon="settings">
-          <PlaceholderContent 
-            icon="construct-outline"
-            title="Tools"
-            description="Advanced tools for event management, bulk operations, and integrations"
-          />
+        {/* Business Profile/Tools - Pro Tier */}
+        <HostSection title="Business Profile/Tools" icon="business" headerRight={
+          <View style={{ 
+            backgroundColor: '#8b5cf6', 
+            paddingHorizontal: 8, 
+            paddingVertical: 4, 
+            borderRadius: 12 
+          }}>
+            <Text style={{ color: 'white', fontSize: 10, fontWeight: '600' }}>PRO</Text>
+          </View>
+        }>
+          <View style={{ gap: 16 }}>
+            {/* QR Scanner Card */}
+            <TouchableOpacity style={{
+              backgroundColor: '#f8fafc',
+              borderRadius: 12,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: '#e2e8f0',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  backgroundColor: '#dbeafe',
+                  borderRadius: 20,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Ionicons name="qr-code" size={20} color="#3b82f6" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#1f2937', marginBottom: 4 }}>
+                    QR Scanner
+                  </Text>
+                  <Text style={{ fontSize: 14, color: '#6b7280' }}>
+                    Scan QR codes for quick check-ins and event management
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Business Profile Management Card */}
+            <TouchableOpacity style={{
+              backgroundColor: '#f8fafc',
+              borderRadius: 12,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: '#e2e8f0',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  backgroundColor: '#dcfce7',
+                  borderRadius: 20,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Ionicons name="business" size={20} color="#16a34a" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#1f2937', marginBottom: 4 }}>
+                    Profile Management
+                  </Text>
+                  <Text style={{ fontSize: 14, color: '#6b7280' }}>
+                    Update business details, branding, and account settings
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Advanced Tools Card */}
+            <TouchableOpacity style={{
+              backgroundColor: '#f8fafc',
+              borderRadius: 12,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: '#e2e8f0',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  backgroundColor: '#fef3c7',
+                  borderRadius: 20,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Ionicons name="construct" size={20} color="#d97706" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#1f2937', marginBottom: 4 }}>
+                    Advanced Tools
+                  </Text>
+                  <Text style={{ fontSize: 14, color: '#6b7280' }}>
+                    Bulk operations, integrations, and analytics exports
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Pro Tier Info */}
+            <View style={{
+              backgroundColor: '#f3e8ff',
+              borderRadius: 12,
+              padding: 16,
+              borderWidth: 1,
+              borderColor: '#d8b4fe',
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Ionicons name="star" size={16} color="#8b5cf6" />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#8b5cf6' }}>
+                  Pro Tier Features
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, color: '#7c3aed', lineHeight: 16 }}>
+                Unlock advanced business tools, QR scanning, custom branding, and detailed analytics to grow your events.
+              </Text>
+            </View>
+          </View>
         </HostSection>
 
         {/* Bottom spacing for tab bar */}
