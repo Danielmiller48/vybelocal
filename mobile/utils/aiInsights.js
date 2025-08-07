@@ -5,6 +5,35 @@
 // TODO: Add your OpenAI API key to environment variables
 // const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// Lightweight cache and backoff to reduce API calls
+let MemCache = new Map(); // key -> { at, result }
+let InFlight = new Map(); // key -> Promise
+const MEM_TTL_MS = 24 * 60 * 60 * 1000;
+
+const stableHash = (obj) => {
+  try {
+    const s = JSON.stringify(obj);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
+    return h.toString(36);
+  } catch { return String(Date.now()); }
+};
+
+async function withBackoff(fn) {
+  let delay = 800, lastErr;
+  for (let i = 0; i < 2; i++) {
+    try { return await fn(); }
+    catch (e) {
+      lastErr = e;
+      const status = e?.status || e?.response?.status || /\b(429)\b/.test(String(e)) ? 429 : 0;
+      if (status !== 429) throw e;
+      await new Promise(r => setTimeout(r, delay));
+      delay *= 2;
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Generate AI insights for analytics charts
  * @param {string} chartType - Type of chart (capacity, revenue, rsvp, etc.)
@@ -15,7 +44,7 @@
 const generateAIInsight = async (chartType, data, context = {}) => {
   try {
     // Use real OpenAI for insights
-    return await callOpenAI(chartType, data, context);
+    return await withBackoff(() => callOpenAI(chartType, data, context));
   } catch (error) {
     console.error('OpenAI API Error:', error);
     // Fallback to enhanced conditional insights if OpenAI fails
@@ -66,6 +95,33 @@ const generateAIInsight = async (chartType, data, context = {}) => {
     }
   }
 };
+
+// Cached wrapper to avoid spamming API
+async function getInsightCached(chartType, data, context = {}) {
+  const minimal = {
+    t: chartType,
+    d: (data?.data || []).map(({ label, value }) => [label, value]),
+    extras: { title: data?.title, r: data?.refundRate, p: context?.timePeriod || 'current' },
+  };
+  const key = `ai:insight:${chartType}:${stableHash(minimal)}`;
+
+  const mem = MemCache.get(key);
+  if (mem && Date.now() - mem.at < MEM_TTL_MS) return mem.result;
+
+  if (InFlight.has(key)) return InFlight.get(key);
+
+  const p = (async () => {
+    try {
+      const res = await generateAIInsight(chartType, data, context);
+      MemCache.set(key, { at: Date.now(), result: res });
+      return res;
+    } finally {
+      InFlight.delete(key);
+    }
+  })();
+  InFlight.set(key, p);
+  return p;
+}
 
 /**
  * Capacity Fill Rate Insights
@@ -383,9 +439,10 @@ const generateGenericInsight = (data, context) => {
 const callOpenAI = async (chartType, data, context) => {
   // Get OpenAI API key from environment variables
   const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const USE_OPENAI = (process.env.EXPO_PUBLIC_USE_OPENAI ?? 'true') !== 'false';
   
-  if (!OPENAI_API_KEY) {
-    throw new Error('OpenAI API key not configured - add EXPO_PUBLIC_OPENAI_API_KEY to .env');
+  if (!OPENAI_API_KEY || !USE_OPENAI) {
+    throw new Error('OpenAI disabled or key missing');
   }
 
   const prompt = createVybeLocalPrompt(chartType, data, context);
@@ -397,7 +454,7 @@ const callOpenAI = async (chartType, data, context) => {
       'Authorization': `Bearer ${OPENAI_API_KEY}`
     },
     body: JSON.stringify({
-      model: "gpt-4",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
@@ -768,5 +825,6 @@ const generateNewHostInsight = (data, context) => {
 
 // Export for React Native
 module.exports = {
-  generateAIInsight
+  generateAIInsight,
+  getInsightCached
 };

@@ -14,6 +14,8 @@ import Svg, { Polyline } from 'react-native-svg';
 
 import AIInsightCard from '../components/analytics/AIInsightCard';
 import AnalyticsDrawerInsights from '../components/analytics/AnalyticsDrawerInsights';
+import MiniCalendar from '../components/host/MiniCalendar';
+import EventQuickModal from '../components/host/EventQuickModal';
 
 // Collapsible Section Component
 function HostSection({ title, children, defaultOpen = false, icon, headerRight=null }) {
@@ -441,6 +443,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   
   // Initialize pastEvents if not available
   const pastEvents = [];
+
+  const aiEnabled = !!paidOnly; // disable AI when Paid Only is off
 
   // Calculate advanced analytics metrics
   const calculateAnalytics = () => {
@@ -1072,43 +1076,56 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     };
   };
 
-  const MetricCard = ({ title, value, subtitle, icon, color = '#3b82f6', metricType }) => (
-    <TouchableOpacity 
-      style={{
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-        borderLeftWidth: 4,
-        borderLeftColor: color,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-      }}
-      onPress={() => {
-        setSelectedMetric({ title, metricType, color });
-        setModalVisible(true);
-      }}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-        <Ionicons name={icon} size={20} color={color} style={{ marginRight: 8 }} />
-        <Text style={{ fontSize: 14, fontWeight: '600', color: '#1f2937', flex: 1 }}>
-          {title}
+  const MetricCard = ({ title, value, subtitle, icon, color = '#3b82f6', metricType, disabled=false, disabledNote }) => {
+    const muted = disabled;
+    const borderColor = muted ? '#e5e7eb' : color;
+    const textColor = muted ? '#9ca3af' : '#1f2937';
+    const iconColor = muted ? '#9ca3af' : color;
+    return (
+      <TouchableOpacity 
+        disabled={muted}
+        style={{
+          backgroundColor: muted ? '#fafafa' : 'white',
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 12,
+          borderLeftWidth: 4,
+          borderLeftColor: borderColor,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+        }}
+        onPress={() => {
+          if (muted) return;
+          setSelectedMetric({ title, metricType, color });
+          setModalVisible(true);
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <Ionicons name={icon} size={20} color={iconColor} style={{ marginRight: 8 }} />
+          <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, flex: 1 }}>
+            {title}
+          </Text>
+          {!muted && <Ionicons name="chevron-forward" size={16} color="#9ca3af" />}
+        </View>
+        <Text style={{ fontSize: 24, fontWeight: 'bold', color: textColor, marginBottom: 4 }}>
+          {value}
         </Text>
-        <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
-      </View>
-      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#1f2937', marginBottom: 4 }}>
-        {value}
-      </Text>
-      {subtitle && (
-        <Text style={{ fontSize: 12, color: '#6b7280' }}>
-          {subtitle}
-        </Text>
-      )}
-    </TouchableOpacity>
-  );
+        {subtitle && (
+          <Text style={{ fontSize: 12, color: '#6b7280' }}>
+            {subtitle}
+          </Text>
+        )}
+        {muted && (
+          <Text style={{ fontSize: 11, color: '#9ca3af', marginTop: 8, fontStyle: 'italic' }}>
+            {disabledNote || 'Run paid events to receive AI insights.'}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const InsightCard = ({ insight, recommendation, type = 'info' }) => {
     const getColor = () => {
@@ -1219,6 +1236,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         icon="cash"
         color="#f59e0b"
         metricType="topEarning"
+        disabled={!paidOnly}
+        disabledNote="Verify your account to start earning for real."
       />
 
       <MetricCard
@@ -1228,6 +1247,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         icon="trending-up"
         color="#8b5cf6"
         metricType="revenueTimeline"
+        disabled={!paidOnly}
+        disabledNote="Complete payout setup to grow this number fast."
       />
 
       <MetricCard
@@ -1237,6 +1258,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         icon="calculator"
         color="#059669"
         metricType="afterTax"
+        disabled={!paidOnly}
+        disabledNote="Register for payouts to make it yours."
       />
 
 
@@ -1266,6 +1289,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         icon="card-outline"
         color="#f59e0b"
         metricType="refund"
+        disabled={!paidOnly}
+        disabledNote="Get verified to keep this number earning for you."
       />
 
       {/* AI Insights Section */}
@@ -1279,8 +1304,16 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         AI Insights & Recommendations
       </Text>
 
-      {/* AI-powered insights based on real data */}
-      <AnalyticsDrawerInsights analytics={analytics} />
+      {/* AI-powered insights based on real data (only when Paid Only is on) */}
+      {aiEnabled ? (
+        <AnalyticsDrawerInsights analytics={analytics} />
+      ) : (
+        <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb' }}>
+          <Text style={{ fontSize: 13, color: '#6b7280' }}>
+            Run paid events to receive AI insights.
+          </Text>
+        </View>
+      )}
 
 
 
@@ -1400,6 +1433,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
             <ChartContainer 
               chartData={selectedMetric ? generateChartData(selectedMetric.metricType, timePeriod, paidOnly, joinDate, pastEvents) : null}
               color={selectedMetric?.color}
+              aiEnabled={aiEnabled}
             />
           </ScrollView>
         </SafeAreaView>
@@ -1409,7 +1443,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 }
 
 // Simple Chart Container Component
-const ChartContainer = ({ chartData, color }) => {
+const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
   if (!chartData || !chartData.data || chartData.data.length === 0) {
     return (
       <View style={{ 
@@ -1468,7 +1502,7 @@ const ChartContainer = ({ chartData, color }) => {
           marginBottom: 16,
           lineHeight: 18 
         }}>
-          This shows your cumulative VybeLocal RSVP growth over time. The line tracks how your total RSVPs have grown across all events during the selected period.
+          This shows your running RSVP count across all VybeLocal events you've hosted. The line tracks each rise in your crowd over the selected period, giving you a clear view of your momentum.
         </Text>
       )}
 
@@ -1531,7 +1565,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insights */}
-      {chartData.type === 'bar' && chartData.title.includes('Fill Rate') && (
+      {aiEnabled && chartData.type === 'bar' && chartData.title.includes('Fill Rate') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="capacity"
@@ -1542,7 +1576,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for Top Revenue Chart */}
-      {chartData.type === 'bar' && chartData.title.includes('Top-Earning') && (
+      {aiEnabled && chartData.type === 'bar' && chartData.title.includes('Top-Earning') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="revenue"
@@ -1553,7 +1587,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for RSVP Growth Chart */}
-      {chartData.type === 'line' && chartData.title.includes('RSVP Growth') && (
+      {aiEnabled && chartData.type === 'line' && chartData.title.includes('RSVP Growth') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="rsvpGrowth"
@@ -1564,7 +1598,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for Revenue Timeline Chart */}
-      {chartData.type === 'line' && chartData.title.includes('Total Revenue Timeline') && (
+      {aiEnabled && chartData.type === 'line' && chartData.title.includes('Total Revenue Timeline') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="revenueTimeline"
@@ -1575,7 +1609,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for Sell-Out Status Chart */}
-      {chartData.type === 'pie' && chartData.title.includes('Event Fill Status') && (
+      {aiEnabled && chartData.type === 'pie' && chartData.title.includes('Event Fill Status') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="sellOut"
@@ -1586,7 +1620,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for Repeat Guest Chart */}
-      {chartData.type === 'doughnut' && chartData.title.includes('Guest Attendance Frequency') && (
+      {aiEnabled && chartData.type === 'doughnut' && chartData.title.includes('Guest Attendance Frequency') && (
         <AIInsightCard 
           chartType="repeatGuest"
           chartData={chartData}
@@ -1596,7 +1630,7 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for Peak Timing Chart */}
-      {(chartData.title.includes('Peak RSVP') || chartData.title.includes('RSVP Timing')) && (
+      {aiEnabled && (chartData.title.includes('Peak RSVP') || chartData.title.includes('RSVP Timing')) && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="peakTiming"
@@ -1607,13 +1641,21 @@ const ChartContainer = ({ chartData, color }) => {
       )}
 
       {/* AI Insight for Refund Chart */}
-      {chartData.title.includes('Refund') && (
+      {aiEnabled && chartData.title.includes('Refund') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="refund"
             chartData={chartData}
             context={{ timePeriod: 'current' }}
           />
+        </View>
+      )}
+
+      {!aiEnabled && (
+        <View style={{ marginTop: 16, backgroundColor: '#fafafa', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 12 }}>
+          <Text style={{ fontSize: 13, color: '#6b7280' }}>
+            Run paid events to receive AI insights.
+          </Text>
         </View>
       )}
     </View>
@@ -1771,7 +1813,7 @@ const LineChart = ({ data, color }) => {
               }} />
             ))}
             
-            {/* SVG Solid Line */}
+            {/* SVG solid line */}
             <Svg width={chartWidth} height={chartHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
               <Polyline
                 points={points}
@@ -2149,6 +2191,7 @@ export default function HostCreateScreen() {
     rsvpsToday: 0,
     monthlyRevenue: 0
   });
+  const [calendarModal, setCalendarModal] = useState({ open:false, event:null });
 
   useEffect(() => {
     if (user) {
@@ -2734,6 +2777,12 @@ export default function HostCreateScreen() {
       </ScrollView>
       
       <HostDrawerOverlay />
+      <EventQuickModal
+        visible={calendarModal.open}
+        event={calendarModal.event}
+        onClose={()=> setCalendarModal({ open:false, event:null })}
+        onCancel={(ev)=> {/* TODO: wire cancellation flow */ setCalendarModal({ open:false, event:null }); }}
+      />
     </SafeAreaView>
     </LinearGradient>
   );

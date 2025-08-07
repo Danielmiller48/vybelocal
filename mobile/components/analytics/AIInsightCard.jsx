@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-const { generateAIInsight } = require('../../utils/aiInsights');
+const { getInsightCached } = require('../../utils/aiInsights');
 
 /**
  * AI Insight Card Component
@@ -15,31 +15,33 @@ const AIInsightCard = ({
 }) => {
   const [insight, setInsight] = useState(null);
   const [loading, setLoading] = useState(true);
+  const timerRef = useRef(null);
 
   useEffect(() => {
-    const loadInsight = async () => {
+    if (!chartType || !chartData) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+
+    timerRef.current = setTimeout(async () => {
       try {
         setLoading(true);
-        const result = await generateAIInsight(chartType, chartData, context);
+        const result = await getInsightCached(chartType, chartData, context);
         setInsight(result);
       } catch (error) {
         console.error('Failed to load AI insight:', error);
         setInsight({
-          message: "Unable to generate insights at this time.",
-          recommendation: "Please try again later.",
+          message: 'Unable to generate insights at this time.',
+          recommendation: 'Please try again later.',
           icon: 'alert-circle',
           color: '#6b7280',
-          confidence: 0
+          confidence: 0,
         });
       } finally {
         setLoading(false);
       }
-    };
+    }, 700); // debounce
 
-    if (chartData && chartType) {
-      loadInsight();
-    }
-  }, [chartType, chartData, context]);
+    return () => timerRef.current && clearTimeout(timerRef.current);
+  }, [chartType, chartData?.title, JSON.stringify(chartData?.data), context?.timePeriod]);
 
   if (loading) {
     return (
@@ -109,16 +111,17 @@ const AIInsightCard = ({
           }}>
             {insight.message}
           </Text>
-          <Text style={{ 
-            fontSize: 13, 
-            color: insight.color || '#3b82f6', 
-            fontWeight: '500',
-            lineHeight: 18 
-          }}>
-            💡 {insight.recommendation}
-          </Text>
-          
-          {/* Optional: Show confidence indicator */}
+          {insight.recommendation ? (
+            <Text style={{ 
+              fontSize: 13, 
+              color: insight.color || '#3b82f6', 
+              fontWeight: '500',
+              lineHeight: 18 
+            }}>
+              💡 {insight.recommendation}
+            </Text>
+          ) : null}
+
           {insight.confidence !== undefined && insight.confidence < 0.7 && (
             <Text style={{
               fontSize: 11,
