@@ -608,10 +608,10 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
       default: // 'all'
         startDate = new Date(2020, 0, 1);
     }
-    // Adjust start date to not precede host join date (but don't use future dates)
-    if(joinDateParam && startDate < joinDateParam && joinDateParam <= now) {
-      startDate = joinDateParam;
-    }
+    // Remove join date filtering - show all historical data
+    // if(joinDateParam && startDate < joinDateParam && joinDateParam <= now) {
+    //   startDate = joinDateParam;
+    // }
 
     const allEvents = [...(events || []), ...(pastEventsParam || pastEvents || [])]; // Combine upcoming and past events
     const baseEvents = paidOnly ? allEvents.filter(e => e.price_in_cents > 0) : allEvents;
@@ -836,19 +836,20 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate }) {
   };
 
   const generateRevenueChart = (events) => {
-    // Top earning events (limit 10)
-    const revenueByEvent = events.map(e => ({
+    // Top earning events (limit 5) - calculate actual revenue (price × RSVPs)
+    const paidEvents = events.filter(e => e.price_in_cents > 0);
+    const revenueByEvent = paidEvents.map(e => ({
       label: e.title.length > 20 ? e.title.slice(0,20)+'…' : e.title,
-      value: (e.price_in_cents || 0) / 100,
+      value: ((e.price_in_cents || 0) * (e.rsvp_count || 0)) / 100,
       fullTitle: e.title,
-    }));
+    })).filter(e => e.value > 0);
 
     revenueByEvent.sort((a,b)=> b.value - a.value);
-    const top = revenueByEvent.slice(0,10);
+    const top = revenueByEvent.slice(0,5);
 
     const totalRevenue = top.reduce((sum,r)=>sum+r.value,0);
 
-    return { data: top, type: 'bar', title: 'Top-Earning Events', totalRevenue };
+    return { data: top, type: 'bar', title: 'Top-Earning Events', subtitle: 'Highest revenue events (price × RSVPs)', totalRevenue };
   };
 
   const generateSellOutChart = (events) => {
