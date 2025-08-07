@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import HostDrawerOverlay from '../components/HostDrawerOverlay';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
+import Svg, { Polyline } from 'react-native-svg';
 
 import AIInsightCard from '../components/analytics/AIInsightCard';
 import AnalyticsDrawerInsights from '../components/analytics/AnalyticsDrawerInsights';
@@ -1770,25 +1771,17 @@ const LineChart = ({ data, color }) => {
               }} />
             ))}
             
-            {/* Simple Dot Chart */}
-            {data.map((point, index) => {
-              const x = (index / (data.length - 1)) * chartWidth;
-              const y = chartHeight - (point.value / maxValue) * chartHeight;
-              return (
-                <View
-                  key={index}
-                  style={{
-                    position: 'absolute',
-                    left: x - 3,
-                    top: y - 3,
-                    width: 6,
-                    height: 6,
-                    backgroundColor: color || '#3b82f6',
-                    borderRadius: 3,
-                  }}
-                />
-              );
-            })}
+            {/* SVG Solid Line */}
+            <Svg width={chartWidth} height={chartHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
+              <Polyline
+                points={points}
+                fill="none"
+                stroke={color || '#3b82f6'}
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
           </View>
           
           {/* Peak Value Label */}
