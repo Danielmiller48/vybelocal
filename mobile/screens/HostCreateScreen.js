@@ -2669,7 +2669,7 @@ export default function HostCreateScreen() {
         {/* Analytics */}
         <HostSection title="Analytics" icon="bar-chart" headerRight={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Text style={{ fontSize: 12, color: '#6b7280' }}>Paid Only</Text>
+            <Text style={{ fontSize: 12, color: '#6b7280' }}>Show for paid events</Text>
             <Switch 
               value={paidOnly} 
               onValueChange={setPaidOnly}

@@ -8,11 +8,15 @@ import Constants from 'expo-constants';
 
 // Configure how notifications are displayed
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async (notification) => {
+    // Always show notifications, even when app is in foreground
+    console.log('📱 Handling notification in foreground:', notification.request.content.title);
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    };
+  },
 });
 
 class PushNotificationService {
@@ -26,11 +30,22 @@ class PushNotificationService {
     let token;
 
     if (Platform.OS === 'android') {
+      // Create notification channels for different types
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
+        name: 'Default',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF231F7C',
+        showBadge: true,
+      });
+      
+      await Notifications.setNotificationChannelAsync('chat', {
+        name: 'Chat Messages',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+        showBadge: true,
+        sound: 'default',
       });
     }
 
@@ -187,18 +202,27 @@ class PushNotificationService {
   setupNotificationListeners() {
     // Listener for when notification is received while app is foregrounded
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      console.log('Notification received:', notification);
-      // (Reverted DB fetch patch – keep simple log)
-      // Example: notificationUtils.getEventUnreadCount(data.target_user_id || null, data.eventId)
-      // .then(count => {
-      //   notifEventBus.emit('unread_update', { eventId: data.eventId, count });
-      // })
-      // .catch(() => {});
+      console.log('📩 Notification received in foreground:', {
+        title: notification.request.content.title,
+        body: notification.request.content.body,
+        data: notification.request.content.data,
+        shouldShow: true
+      });
+      
+      // For chat messages, we could show an in-app banner or update chat UI
+      const data = notification.request.content.data;
+      if (data?.type === 'chat_message') {
+        console.log('💬 Chat notification received while app is open');
+        // Could emit an event here to update chat UI or show in-app notification
+      }
     });
 
     // Listener for when user taps on notification
     this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification tapped:', response);
+      console.log('👆 Notification tapped:', {
+        title: response.notification.request.content.title,
+        data: response.notification.request.content.data
+      });
       
       const data = response.notification.request.content.data;
       if (data?.type === 'chat_message') {

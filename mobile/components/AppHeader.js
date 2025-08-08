@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Image, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, Image, Pressable, AppState } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
@@ -69,6 +69,26 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
       if (subscription) {
         notificationUtils.unsubscribeFromNotifications(subscription);
       }
+    };
+  }, [user?.id]);
+
+  // Handle app state changes - refresh notification count when app becomes active
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      console.log('📱 AppState changed to:', nextAppState);
+      if (nextAppState === 'active' && user?.id) {
+        console.log('🔄 App became active - refreshing notification count');
+        // Delay to ensure any background notifications have been processed
+        setTimeout(() => {
+          loadUnreadCount();
+        }, 500);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription?.remove();
     };
   }, [user?.id]);
 

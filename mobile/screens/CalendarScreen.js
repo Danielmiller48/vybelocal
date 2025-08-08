@@ -15,6 +15,7 @@ export default function CalendarScreen() {
   const [upcoming, setUpcoming] = useState([]); // [{ date:'yyyy-MM-dd', events:[] }]
   const [expanded, setExpanded] = useState({});
 
+  // Initial data fetch
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -34,6 +35,80 @@ export default function CalendarScreen() {
       });
       setUpcoming(Object.entries(upcomingMap).map(([k, v]) => ({ date: k, events: v })));
     })();
+  }, [user?.id]);
+
+  // Real-time updates
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to event changes
+    const eventChannel = supabase
+      .channel('mobile_calendar_events')
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'events',
+          filter: 'status=eq.approved'
+        },
+        async (payload) => {
+          // Refetch user's RSVP'd events when any event changes
+          const { data: rows } = await supabase
+            .from('events')
+            .select('* , rsvps!inner(user_id)')
+            .eq('rsvps.user_id', user.id);
+
+          const now = new Date();
+          const upcomingMap = {};
+          rows?.forEach(ev => {
+            const dateKey = format(new Date(ev.starts_at), 'yyyy-MM-dd');
+            if (new Date(ev.starts_at) >= now) {
+              if (!upcomingMap[dateKey]) upcomingMap[dateKey] = [];
+              upcomingMap[dateKey].push(ev);
+            }
+          });
+          setUpcoming(Object.entries(upcomingMap).map(([k, v]) => ({ date: k, events: v })));
+        }
+      )
+      .subscribe();
+
+    // Subscribe to RSVP changes
+    const rsvpChannel = supabase
+      .channel('mobile_calendar_rsvps')
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'rsvps',
+          filter: `user_id=eq.${user.id}`
+        },
+        async (payload) => {
+          // Refetch when user's RSVPs change
+          const { data: rows } = await supabase
+            .from('events')
+            .select('* , rsvps!inner(user_id)')
+            .eq('rsvps.user_id', user.id);
+
+          const now = new Date();
+          const upcomingMap = {};
+          rows?.forEach(ev => {
+            const dateKey = format(new Date(ev.starts_at), 'yyyy-MM-dd');
+            if (new Date(ev.starts_at) >= now) {
+              if (!upcomingMap[dateKey]) upcomingMap[dateKey] = [];
+              upcomingMap[dateKey].push(ev);
+            }
+          });
+          setUpcoming(Object.entries(upcomingMap).map(([k, v]) => ({ date: k, events: v })));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(eventChannel);
+      supabase.removeChannel(rsvpChannel);
+    };
   }, [user?.id]);
 
   const today = startOfDay(new Date());

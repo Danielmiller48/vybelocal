@@ -14,6 +14,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import clsx from "clsx";
 import dynamic from 'next/dynamic';
+import { createSupabaseBrowser } from "@/utils/supabase/client";
 
 import VibeEvent from "@/components/event/VibeEvent";
 import DayDrawer from "@/components/event/DayDrawer";
@@ -63,16 +64,114 @@ function groupEventsByDay(events) {
 
 /* ---------- Component -------------------------------------- */
 export default function VibeCalendar({ events, role = "user" }) {
-  /* ----- Normalise event dates once ------------------------ */
-  const localEvents = useMemo(
-    () =>
-      events.map((e) => ({
-        ...e,
-        start: toZonedTime(new Date(e.start), TZ),
-        end: toZonedTime(new Date(e.end), TZ),
-      })),
-    [events]
-  );
+  const [localEvents, setLocalEvents] = useState([]);
+  const supabase = createSupabaseBrowser();
+
+  /* ----- Initialize events and set up real-time updates --- */
+  useEffect(() => {
+    // Initial normalization of events
+    const normalizedEvents = events.map((e) => ({
+      ...e,
+      start: toZonedTime(new Date(e.start), TZ),
+      end: toZonedTime(new Date(e.end), TZ),
+    }));
+    setLocalEvents(normalizedEvents);
+  }, [events]);
+
+  /* ----- Real-time event updates --------------------------- */
+  useEffect(() => {
+    // Subscribe to real-time changes for events table
+    const channel = supabase
+      .channel('calendar_events')
+      .on(
+        'postgres_changes',
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'events',
+          filter: 'status=eq.approved'
+        },
+        (payload) => {
+          const { eventType, new: newEvent, old: oldEvent } = payload;
+          
+          setLocalEvents(prev => {
+            switch (eventType) {
+              case 'INSERT':
+                if (newEvent && new Date(newEvent.starts_at) >= new Date()) {
+                  const normalizedEvent = {
+                    ...newEvent,
+                    start: toZonedTime(new Date(newEvent.starts_at), TZ),
+                    end: toZonedTime(new Date(newEvent.ends_at), TZ),
+                  };
+                  return [...prev, normalizedEvent];
+                }
+                return prev;
+              
+              case 'UPDATE':
+                if (newEvent) {
+                  const normalizedEvent = {
+                    ...newEvent,
+                    start: toZonedTime(new Date(newEvent.starts_at), TZ),
+                    end: toZonedTime(new Date(newEvent.ends_at), TZ),
+                  };
+                  return prev.map(event => 
+                    event.id === newEvent.id ? normalizedEvent : event
+                  );
+                }
+                return prev;
+              
+              case 'DELETE':
+                if (oldEvent) {
+                  return prev.filter(event => event.id !== oldEvent.id);
+                }
+                return prev;
+              
+              default:
+                return prev;
+            }
+          });
+        }
+      )
+      .subscribe();
+
+    // Subscribe to RSVP changes if user role
+    let rsvpChannel = null;
+    if (role === "user") {
+      rsvpChannel = supabase
+        .channel('calendar_rsvps')
+        .on(
+          'postgres_changes',
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'rsvps'
+          },
+          (payload) => {
+            // Update RSVP status on events when RSVPs change
+            const { eventType, new: newRsvp, old: oldRsvp } = payload;
+            
+            setLocalEvents(prev => {
+              return prev.map(event => {
+                if (eventType === 'INSERT' && newRsvp?.event_id === event.id) {
+                  return { ...event, rsvpd: true };
+                } else if (eventType === 'DELETE' && oldRsvp?.event_id === event.id) {
+                  return { ...event, rsvpd: false };
+                }
+                return event;
+              });
+            });
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (rsvpChannel) {
+        supabase.removeChannel(rsvpChannel);
+      }
+    };
+  }, [role]);
 
   /* ----- Filtering state ----------------------------------- */
   const [vibe, setVibe] = useState("all");

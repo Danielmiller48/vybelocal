@@ -544,7 +544,7 @@ export default function EventChatModal({ visible, onClose, event }) {
             {/* Chat Expiry Notice */}
             <View style={styles.expiryNotice}>
               <Text style={styles.expiryText}>
-                💬 Messages auto-delete after 1 hour
+                💬 Chat closes 1 hour after event ends
               </Text>
             </View>
 

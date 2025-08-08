@@ -13,6 +13,7 @@ import { useAuth } from '../auth/AuthProvider';
 import realTimeChatManager from '../utils/realTimeChat';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import SimpleCropModal from './SimpleCropModal';
+import { LinearGradient } from 'expo-linear-gradient';
 
 function getCardAspect(){
   const screenW = Dimensions.get('window').width - 32; // assume 16px margin both sides similar to EventCard
@@ -23,6 +24,20 @@ function getCardAspect(){
   const g = gcd(w,h);
   return [Math.round(w/g), Math.round(h/g)];
 }
+
+const palette = {
+  violet: '#7c3aed',
+  midnight: '#111827',
+  orange: '#f97316',
+  coral: '#fb7185',
+  blue: '#60a5fa',
+  green: '#34d399',
+  violetSoft: '#a78bfa',
+  orangeSoft: '#fb923c',
+  sand: '#F3EBD9',
+  emerald: '#10b981',
+  emeraldDark: '#059669',
+};
 
 export default function HostDrawerOverlay({ onCreated }) {
   const sheetH = Dimensions.get('window').height * 0.8;
@@ -421,7 +436,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   };
 
   return (
-    <Animated.View style={[styles.container, { height: sheetH, transform:[{ translateY: sheetY }] }]}>
+    <Animated.View style={[styles.container, { height: sheetH, transform:[{ translateY: sheetY }] }]}>      
       {/* FAB handle */}
       <TouchableOpacity onPress={toggle} style={styles.handleTouch} hitSlop={{ top:16,left:16,right:16,bottom:16 }}>
         <View style={styles.handleCircle}>
@@ -430,14 +445,48 @@ export default function HostDrawerOverlay({ onCreated }) {
       </TouchableOpacity>
 
       <View style={styles.drawerInner} onLayout={e=>setContainerH(e.nativeEvent.layout.height)}>
-        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {/* White to peach gradient background */}
+        <LinearGradient
+          colors={['#FFFFFF', '#FFE5D9']}
+          start={{x:0,y:0}} 
+          end={{x:0,y:1}}
+          style={[StyleSheet.absoluteFill, { borderTopLeftRadius: 16, borderTopRightRadius: 16 }]}
+          pointerEvents="none"
+        />
+        
+                  {/* Border overlay - transparent center with curved border */}
+          <View style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            borderWidth: 2,
+            borderColor: '#BAA4EB',
+            backgroundColor: 'transparent',
+            pointerEvents: 'none',
+            zIndex: 100
+          }} />
+          
+          {/* Grab handle */}
+          <View style={{ position:'absolute', top:8, alignSelf:'center', width:56, height:6, borderRadius:3, backgroundColor:'rgba(255,255,255,0.45)', zIndex:10 }} />
+
+
         <ScrollView
           style={{ flex:1 }}
-          contentContainerStyle={{ padding:20, paddingTop:48, paddingBottom:200 + insets.bottom, flexGrow:1 }}
+          contentContainerStyle={{ padding:20, paddingTop:76, paddingBottom:200 + insets.bottom, flexGrow:1 }}
           bounces={false}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={(w,h)=>setContentH(h)}
         >
+          {/* Mini header to anchor context */}
+          <View style={{ marginBottom:16, paddingBottom:10, borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.06)' }}>
+            <Text style={{ color:'#000000', fontSize:12, fontWeight:'700', letterSpacing:0.3 }}>Host Dashboard</Text>
+            <Text style={{ color:'#000000', fontSize:16, fontWeight:'800', marginTop:2 }}>Create a Vybe</Text>
+          </View>
+
           {/* Thumbnail */}
           <TouchableOpacity style={styles.thumbRect} onPress={pickImage}>
             {imageUri ? (
@@ -447,50 +496,66 @@ export default function HostDrawerOverlay({ onCreated }) {
             )}
           </TouchableOpacity>
 
+          {/* Divider */}
+          <View style={styles.divider} />
+
           <Text style={styles.label}>Event Title</Text>
           <TextInput
             style={styles.input}
             placeholder="Sunset Picnic"
             value={title}
             onChangeText={setTitle}
-            placeholderTextColor="#aaa"
+            placeholderTextColor="#666"
           />
 
-          <Text style={[styles.label,{ marginTop:16 }]}>Vibe</Text>
+          <Text style={[styles.label,{ marginTop:12 }]}>Vibe</Text>
           <View style={styles.vibeRow}>
-            {['chill','hype','creative','active'].map(v=>(
-              <TouchableOpacity key={v} style={[styles.vibeBtn, vibe===v && styles.vibeBtnActive]} onPress={()=>setVibe(v)}>
-                <Text style={[styles.vibeTxt, vibe===v && styles.vibeTxtActive]}>{v}</Text>
-              </TouchableOpacity>
-            ))}
+            {['chill','hype','creative','active'].map(v=>{
+              const colorMap = v==='chill'? palette.blue : v==='hype'? palette.orangeSoft : v==='creative'? palette.violetSoft : palette.green;
+              const active = vibe===v;
+              return (
+                <TouchableOpacity key={v} style={[styles.vibeChip, { borderColor: colorMap, backgroundColor: active? `${colorMap}26`:'transparent' }]} onPress={()=>setVibe(v)}>
+                  <Text style={{ color: active? '#ffffff' : colorMap, fontSize:12, fontWeight:'700', textTransform:'capitalize' }}>{v}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
+          {/* Divider */}
+          <View style={styles.divider} />
+
           {/* Paid Event Toggle */}
-          <View style={[styles.toggleRow, { marginTop: 16 }]}>
+          <View style={[styles.toggleRow, { marginTop: 4, marginBottom: 8 }]}>
             <Text style={styles.label}>Paid Event</Text>
             <TouchableOpacity 
-              style={[styles.toggle, paid && styles.toggleActive]} 
+              style={[styles.toggle]}
               onPress={() => setPaid(!paid)}
+              activeOpacity={0.85}
             >
-              <View style={[styles.toggleThumb, paid && styles.toggleThumbActive]} />
+              {paid ? (
+                <LinearGradient colors={[palette.emerald, palette.emeraldDark]} start={{x:0,y:0}} end={{x:1,y:0}} style={[styles.toggleGrad]} />
+              ) : (
+                <View style={[styles.toggleGrad, { backgroundColor:'rgba(255,255,255,0.18)' }]} />
+              )}
+              <View style={[styles.toggleThumb, paid && { transform:[{ translateX: 20 }]}]} />
             </TouchableOpacity>
           </View>
 
           {paid && canCharge && (
             <>
               {/* Price Input */}
-              <Text style={[styles.label, { marginTop: 16 }]}>Ticket Price (USD)</Text>
+              <Text style={[styles.label, { marginTop: 6 }]}>Ticket Price (USD)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. 5.00"
                 value={price}
                 onChangeText={setPrice}
-                placeholderTextColor="#aaa"
+                placeholderTextColor="#666"
                 keyboardType="decimal-pad"
               />
 
               {/* Refund Policy */}
-              <Text style={[styles.label, { marginTop: 16 }]}>Refund Policy</Text>
+              <Text style={[styles.label, { marginTop: 10 }]}>Refund Policy</Text>
               <View style={styles.refundRow}>
                 {[
                   { value: 'anytime', label: 'Anytime' },
@@ -514,72 +579,65 @@ export default function HostDrawerOverlay({ onCreated }) {
           )}
 
           {paid && !canCharge && (
-            <Text style={[styles.warnTxt, { marginTop: 8 }]}>
-              Set up Stripe payments in settings to charge for events
-            </Text>
+            <Text style={[styles.warnTxt, { marginTop: 6 }]}>Set up Stripe payments in settings to charge for events</Text>
           )}
 
+          {/* Divider */}
+          <View style={styles.divider} />
+
           {/* Description */}
-          <Text style={[styles.label,{ marginTop:16 }]}>Description</Text>
+          <Text style={[styles.label,{ marginTop:6 }]}>Description</Text>
           <TextInput
             style={[styles.input,{ height:80, textAlignVertical:'top' }]}
             placeholder="Tell people what makes this vibe special…"
             value={desc}
             onChangeText={setDesc}
-            placeholderTextColor="#aaa"
+            placeholderTextColor="#666"
             multiline
             maxLength={280}
           />
 
           {/* RSVP Capacity */}
-          <Text style={[styles.label, { marginTop: 16 }]}>RSVP Capacity (optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Leave blank for unlimited"
-            value={capacity}
-            onChangeText={setCapacity}
-            placeholderTextColor="#aaa"
-            keyboardType="number-pad"
-          />
+          <Text style={[styles.label, { marginTop: 10 }]}>RSVP Capacity (optional)</Text>
+          <TextInput style={styles.input} placeholder="Leave blank for unlimited" value={capacity} onChangeText={setCapacity} placeholderTextColor="#666" keyboardType="number-pad" />
 
           {/* Address */}
-          <Text style={[styles.label,{ marginTop:16 }]}>Address</Text>
-          <TouchableOpacity 
-            style={[styles.input, { justifyContent: 'center' }]} 
-            onPress={() => setShowAddressModal(true)}
-          >
-            <Text style={{ color: address ? '#fff' : '#aaa' }}>
-              {address || '123 Main St, City'}
-            </Text>
+          <Text style={[styles.label,{ marginTop:10 }]}>Address</Text>
+          <TouchableOpacity style={[styles.input, { justifyContent: 'center' }]} onPress={() => setShowAddressModal(true)}>
+                            <Text style={{ color: address ? '#3C3450' : '#666' }}>{address || '123 Main St, City'}</Text>
           </TouchableOpacity>
 
           {/* Start Date */}
-          <Text style={[styles.label,{ marginTop:16 }]}>Start Date</Text>
+          <Text style={[styles.label,{ marginTop:10 }]}>Start Date</Text>
           <TouchableOpacity style={styles.input} onPress={()=>setShowDate(true)}>
-            <Text style={{ color:'#fff' }}>{new Date(startTime).toLocaleDateString()}</Text>
+            <Text style={{ color:'#3C3450' }}>{new Date(startTime).toLocaleDateString()}</Text>
           </TouchableOpacity>
 
           {/* Times Row */}
-          <View style={[styles.timeRow,{ marginTop:16 }]}>
+          <View style={[styles.timeRow,{ marginTop:10 }]}>
             <View style={{ flex:1, marginRight:8 }}>
               <Text style={styles.label}>Start Time</Text>
               <TouchableOpacity style={styles.input} onPress={()=>setShowStart(true)}>
-                <Text style={{ color:'#fff' }}>{new Date(startTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
+                <Text style={{ color:'#3C3450' }}>{new Date(startTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
               </TouchableOpacity>
             </View>
             <View style={{ flex:1 }}>
               <Text style={styles.label}>End Time</Text>
               <TouchableOpacity style={styles.input} onPress={()=>setShowEnd(true)}>
-                <Text style={{ color:'#fff' }}>{new Date(endTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
+                <Text style={{ color:'#3C3450' }}>{new Date(endTime).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          <TouchableOpacity style={[styles.createBtn, busy && { opacity:0.5 }]} onPress={createEvent} disabled={busy}>
-            <Text style={styles.createTxt}>{busy? 'Creating…':'Create Draft'}</Text>
+          {/* Submit Button - Simple and guaranteed to show */}
+          <TouchableOpacity style={[styles.publishBtn, { marginTop: 20 }]} onPress={createEvent} disabled={busy} activeOpacity={0.9}>
+            <View style={styles.publishSolid}>
+              <Text style={styles.publishTxt}>{busy ? 'Posting…' : 'Publish Vybe'}</Text>
+            </View>
           </TouchableOpacity>
 
         </ScrollView>
+
         {/* custom scrollbar */}
         {contentH>containerH && (
           <Animated.View style={[styles.scrollBar,{ height: indicatorSize, transform:[{ translateY }] }]} />
@@ -895,20 +953,31 @@ const sage = '#8FB996';
 const styles = StyleSheet.create({
   container:{ position:'absolute', left:0,right:0,bottom:0, overflow:'visible', zIndex:30 },
   handleTouch:{ position:'absolute', top:-28, alignSelf:'center', zIndex:1000 },
-  handleCircle:{ width:56,height:56,borderRadius:28,backgroundColor:sage,justifyContent:'center',alignItems:'center',shadowColor:'#000',shadowOpacity:0.25,shadowRadius:6,shadowOffset:{width:0,height:2} },
-  drawerInner:{ flex:1, borderTopLeftRadius:16, borderTopRightRadius:16, overflow:'hidden' },
-  label:{ color:'#fff', fontSize:14, fontWeight:'600', marginBottom:6 },
-  input:{ backgroundColor:'rgba(255,255,255,0.1)', color:'#fff', padding:10, borderRadius:8 },
+  handleCircle:{ width:66,height:66,borderRadius:33,backgroundColor:'#BAA4EB',justifyContent:'center',alignItems:'center',shadowColor:'#BAA4EB',shadowOpacity:0.45,shadowRadius:12,shadowOffset:{width:0,height:3} },
+  drawerInner:{ flex:1, borderTopLeftRadius:16, borderTopRightRadius:16, overflow:'hidden', borderWidth:0, shadowColor:'#BAA4EB', shadowOpacity:0.8, shadowRadius:50, shadowOffset:{width:0,height:-20}, elevation:50, backgroundColor:'rgba(255,255,255,0.2)' },
+  topHalo:{ position:'absolute', left:0, right:0, top:0, height:100 },
+  label:{ color:'#000000', fontSize:13, fontWeight:'700', marginBottom:6 },
+  input:{ backgroundColor:'rgba(240,235,250,0.9)', color:'#3C3450', padding:16, borderRadius:16, borderWidth:2, borderColor:'rgba(180,168,209,0.8)', shadowColor:'#BAA4EB', shadowOpacity:0.4, shadowRadius:12, shadowOffset:{width:0,height:4} },
   vibeRow:{ flexDirection:'row', flexWrap:'wrap', marginTop:4 },
-  vibeBtn:{ paddingVertical:6, paddingHorizontal:12, borderRadius:16, borderWidth:1, borderColor:'#fff', marginRight:8, marginTop:8 },
-  vibeBtnActive:{ backgroundColor:'#fff' },
-  vibeTxt:{ color:'#fff', fontSize:12, fontWeight:'600' },
-  vibeTxtActive:{ color:'#000' },
-  createBtn:{ marginTop:24, backgroundColor:sage, paddingVertical:12, borderRadius:8, alignItems:'center' },
-  createTxt:{ color:'#fff', fontWeight:'700', fontSize:16 },
+  vibeChip:{ paddingVertical:6, paddingHorizontal:10, borderRadius:14, borderWidth:1, marginRight:8, marginTop:8 },
   warnTxt:{ color:'#ff6b6b', fontSize:13, marginTop:6, fontWeight:'600' },
-  inputDisabled:{ backgroundColor:'rgba(255,255,255,0.05)', borderColor:'#ff6b6b', borderWidth:1 },
-  scrollBar:{ position:'absolute', right:4, top:48, width:3, borderRadius:2, backgroundColor:'rgba(255,255,255,0.6)' },
+  scrollBar:{ position:'absolute', right:4, top:72, width:3, borderRadius:2, backgroundColor:'rgba(255,255,255,0.5)' },
+  thumbRect:{ width:'100%', height:200, borderRadius:16, backgroundColor:'rgba(240,235,250,0.9)', justifyContent:'center', alignItems:'center', marginBottom:16, borderWidth:2, borderColor:'rgba(180,168,209,0.8)', shadowColor:'#BAA4EB', shadowOpacity:0.4, shadowRadius:12, shadowOffset:{width:0,height:4} },
+  thumbTxt:{ color:'#3C3450', fontSize:14 },
+  divider:{ height:1, backgroundColor:'rgba(255,255,255,0.08)', marginVertical:10 },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  toggle:{ width: 50, height: 30, borderRadius: 15, padding: 2, overflow:'hidden', borderWidth:2, borderColor:'rgba(180,168,209,0.8)', backgroundColor:'rgba(240,235,250,0.9)', shadowColor:'#BAA4EB', shadowOpacity:0.4, shadowRadius:12, shadowOffset:{width:0,height:4} },
+  toggleGrad:{ position:'absolute', left:0, right:0, top:0, bottom:0, borderRadius:14 },
+  toggleThumb: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff' },
+  refundRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  refundBtn: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 2, marginRight: 6, marginTop: 6, borderColor:'rgba(180,168,209,0.8)', backgroundColor:'rgba(240,235,250,0.9)', shadowColor:'#BAA4EB', shadowOpacity:0.4, shadowRadius:12, shadowOffset:{width:0,height:4} },
+  refundBtnActive: { backgroundColor: '#fff' },
+  refundTxt: { color: '#3C3450', fontSize: 11, fontWeight: '600' },
+  refundTxtActive: { color: '#000' },
+  bottomBar:{ position:'absolute', left:0, right:0, bottom:0, padding:12, borderTopWidth:1, borderTopColor:'rgba(255,255,255,0.1)' },
+  publishBtn:{ borderRadius:16, overflow:'hidden' },
+  publishSolid:{ paddingVertical:14, borderRadius:16, alignItems:'center', backgroundColor:'#BAA4EB', shadowColor:'#BAA4EB', shadowOpacity:0.45, shadowRadius:12 },
+  publishTxt:{ color:'#fff', fontWeight:'800', fontSize:16 },
   modalOverlay:{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'rgba(0,0,0,0.6)' },
   modalContent:{ backgroundColor:'#111', padding:20, borderRadius:16, width:'80%' },
   closeBtn:{ position:'absolute', top:10, right:10 },
@@ -916,20 +985,8 @@ const styles = StyleSheet.create({
   suggItem:{ paddingVertical:8, paddingHorizontal:12 },
   suggTxt:{ color:'#fff', fontSize:13 },
   timeRow:{ flexDirection:'row', alignItems:'flex-start' },
-  thumbRect:{ width:'100%', height:200, borderRadius:16, backgroundColor:'rgba(255,255,255,0.1)', justifyContent:'center', alignItems:'center', marginBottom:16 },
-  thumbTxt:{ color:'#888', fontSize:14 },
   // Toggle styles
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  toggle: { width: 50, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.2)', padding: 2 },
-  toggleActive: { backgroundColor: sage },
-  toggleThumb: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#fff' },
-  toggleThumbActive: { transform: [{ translateX: 20 }] },
   // Refund policy styles
-  refundRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
-  refundBtn: { paddingVertical: 6, paddingHorizontal: 8, borderRadius: 12, borderWidth: 1, borderColor: '#fff', marginRight: 6, marginTop: 6 },
-  refundBtnActive: { backgroundColor: '#fff' },
-  refundTxt: { color: '#fff', fontSize: 11, fontWeight: '600' },
-  refundTxtActive: { color: '#000' },
   // Modal styles
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
   modalText: { color: '#ccc', fontSize: 14, lineHeight: 20, marginBottom: 20 },

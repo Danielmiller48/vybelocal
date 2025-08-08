@@ -45,6 +45,7 @@ export default function UserSidebar() {
     { href: '/user/discover',  label: 'Discover' },
     { href: '/user/calendar',  label: 'Calendar' },
     { href: '/user/profile',   label: 'Profile'  },
+    { href: '/user/tracked',   label: 'Tracked Hosts' },
     { href: '/user/blocked',   label: 'Blocked Profiles' },
     { href: '/user/history',   label: 'Past Events' },
   ]
