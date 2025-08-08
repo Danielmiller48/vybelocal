@@ -14,7 +14,6 @@ export const chatNotifications = {
         .eq('status', 'going');
 
       if (rsvpError) {
-        console.error('Error fetching RSVP users:', rsvpError);
         return false;
       }
 
@@ -24,7 +23,6 @@ export const chatNotifications = {
         .filter(userId => userId !== senderId);
 
       if (userIds.length === 0) {
-        console.log('No other users to notify');
         return false;
       }
 
@@ -81,17 +79,14 @@ export const chatNotifications = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Push notification failed:', errorData);
+        await response.json().catch(() => null);
         return false;
       }
 
       const result = await response.json();
-      console.log('Push notifications sent:', result);
       return true;
 
     } catch (error) {
-      console.error('Error sending chat notification:', error);
       return false;
     }
   },
@@ -107,7 +102,6 @@ export const chatNotifications = {
       }
       return counts;
     } catch (error) {
-      console.error('Error getting message counts:', error);
       return {};
     }
   },
@@ -118,7 +112,7 @@ export const chatNotifications = {
       const key = `chat_count_${eventId}_${userId}`;
       await AsyncStorage.setItem(key, count.toString());
     } catch (error) {
-      console.error('Error updating message count:', error);
+      // quiet error
     }
   },
 
@@ -128,7 +122,7 @@ export const chatNotifications = {
       const key = `chat_count_${eventId}_${userId}`;
       await AsyncStorage.removeItem(key);
     } catch (error) {
-      console.error('Error resetting message count:', error);
+      // quiet error
     }
   },
 

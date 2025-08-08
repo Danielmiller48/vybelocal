@@ -28,10 +28,7 @@ if (__DEV__) {
   global.PushNotificationService = PushNotificationService;
 }
 
-console.log('ENV check →', {
-  url: process.env.EXPO_PUBLIC_SUPABASE_URL,
-  anon: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-});
+
 
 const Stack = createNativeStackNavigator();
 const HomeStack = createNativeStackNavigator();
@@ -100,7 +97,7 @@ function RootNavigator() {
           }
         })
         .catch((error) => {
-          console.log('Push notification registration failed:', error);
+    
         });
     } else {
       // Clean up notification listeners when user logs out

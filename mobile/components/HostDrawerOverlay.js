@@ -1,6 +1,6 @@
 // mobile/components/HostDrawerOverlay.js
 import React, { useRef, useState } from 'react';
-import { Animated, Dimensions, TouchableOpacity, StyleSheet, View, TextInput, Text, ScrollView, Alert, Modal, Keyboard, Platform, Image } from 'react-native';
+import { Animated, Dimensions, TouchableOpacity, StyleSheet, View, TextInput, Text, ScrollView, Alert, Modal, Keyboard, Platform, Image, Easing } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
@@ -12,17 +12,13 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from '../auth/AuthProvider';
 import realTimeChatManager from '../utils/realTimeChat';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import SimpleCropModal from './SimpleCropModal';
+
+
 import { LinearGradient } from 'expo-linear-gradient';
 
 function getCardAspect(){
-  const screenW = Dimensions.get('window').width - 32; // assume 16px margin both sides similar to EventCard
-  const cardH = 200; // EventCard image height
-  const w = Math.round(screenW);
-  const h = cardH;
-  function gcd(a,b){ return b===0? a : gcd(b, a % b); }
-  const g = gcd(w,h);
-  return [Math.round(w/g), Math.round(h/g)];
+  // EventCard now uses 4:3 aspect ratio
+  return [4, 3];
 }
 
 const palette = {
@@ -66,8 +62,6 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [address, setAddress] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [imageUri, setImageUri] = useState(null);
-  const [cropUri, setCropUri]   = useState(null);
-  const [cropOpen, setCropOpen] = useState(false);
   const roundToNextHalfHour = (d)=>{ const ms=30*60*1000; return new Date(Math.ceil(d.getTime()/ms)*ms); };
   const [startTime, setStartTime] = useState(()=> roundToNextHalfHour(new Date()));
   const [endTime, setEndTime]     = useState(()=> new Date(roundToNextHalfHour(new Date()).getTime()+60*60*1000));
@@ -80,6 +74,45 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [contentH, setContentH] = useState(0);
   const [containerH, setContainerH] = useState(0);
   const scrollY = useRef(new Animated.Value(0)).current;
+  
+  // Ripple animation for purple glow
+  const rippleAnim1 = useRef(new Animated.Value(0)).current;
+  const rippleAnim2 = useRef(new Animated.Value(0)).current;
+  const rippleAnim3 = useRef(new Animated.Value(0)).current;
+  
+  // Start ripple animation
+  React.useEffect(() => {
+    const createRipple = (animValue, delay = 0) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(animValue, {
+            toValue: 1,
+            duration: 2000,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animValue, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+        { iterations: -1 }
+      );
+    };
+
+    // Start three ripples with staggered delays
+    const animation = Animated.parallel([
+      createRipple(rippleAnim1, 0),
+      createRipple(rippleAnim2, 667),
+      createRipple(rippleAnim3, 1334),
+    ]);
+    
+    animation.start();
+    
+    return () => animation.stop();
+  }, [rippleAnim1, rippleAnim2, rippleAnim3]);
 
   const indicatorSize = containerH && contentH ? (containerH/contentH)*containerH : 0;
   const maxScroll = Math.max(1, contentH - containerH);
@@ -136,13 +169,13 @@ export default function HostDrawerOverlay({ onCreated }) {
      }
      const res = await ImagePicker.launchImageLibraryAsync({
        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-       quality: 1,
-       allowsEditing: false,
+       quality: 0.8,
+       allowsEditing: true,
+       aspect: [1, 1],
      });
      if(!res.canceled){
        const uri = res.assets[0].uri;
-       setCropUri(uri);
-       setCropOpen(true);
+       setImageUri(uri);
      }
    }
 
@@ -182,7 +215,7 @@ export default function HostDrawerOverlay({ onCreated }) {
         }
       }
       
-      console.log('Blob size:', blob.size, 'type:', blob.type);
+      
       
       // Final check for empty blob
       if (blob.size === 0) {
@@ -207,9 +240,9 @@ export default function HostDrawerOverlay({ onCreated }) {
       // Method 1: Try direct file upload with FileSystem
       if (!uri.startsWith('data:')) {
         try {
-          console.log('Trying direct FileSystem upload...');
+  
           const fileInfo = await FileSystem.getInfoAsync(uri);
-          console.log('File info:', fileInfo);
+  
           
           if (fileInfo.exists) {
             uploadResult = await supabase.storage
@@ -223,14 +256,14 @@ export default function HostDrawerOverlay({ onCreated }) {
               });
               
             if (!uploadResult.error) {
-              console.log('Direct upload successful!');
+    
             } else {
-              console.log('Direct upload failed:', uploadResult.error);
+    
               throw uploadResult.error;
             }
           }
         } catch (directError) {
-          console.log('Direct upload failed, trying blob method:', directError);
+
           
           // Fallback to blob method
           uploadResult = await supabase.storage
@@ -259,7 +292,7 @@ export default function HostDrawerOverlay({ onCreated }) {
         throw error;
       }
       
-      console.log('Upload successful:', data);
+      
       
       // Verify the uploaded file size
       try {
@@ -268,7 +301,7 @@ export default function HostDrawerOverlay({ onCreated }) {
           .getPublicUrl(filename);
           
         if (!getError) {
-          console.log('Uploaded file public URL:', fileData.publicUrl);
+  
           
           // Try to get file info
           const { data: listData, error: listError } = await supabase.storage
@@ -277,7 +310,7 @@ export default function HostDrawerOverlay({ onCreated }) {
             
           if (!listError && listData) {
             const uploadedFile = listData.find(f => f.name === filename);
-            console.log('Uploaded file info:', uploadedFile);
+    
           }
         }
       } catch (verifyError) {
@@ -437,8 +470,55 @@ export default function HostDrawerOverlay({ onCreated }) {
 
   return (
     <Animated.View style={[styles.container, { height: sheetH, transform:[{ translateY: sheetY }] }]}>      
-      {/* FAB handle */}
+      {/* FAB handle with ripple glow */}
       <TouchableOpacity onPress={toggle} style={styles.handleTouch} hitSlop={{ top:16,left:16,right:16,bottom:16 }}>
+        {/* Ripple effects behind the button */}
+        <Animated.View style={[
+          styles.ripple,
+          {
+            opacity: rippleAnim1.interpolate({
+              inputRange: [0, 0.3, 1],
+              outputRange: [0, 0.3, 0],
+            }),
+            transform: [{
+              scale: rippleAnim1.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 2.0],
+              }),
+            }],
+          },
+        ]} />
+        <Animated.View style={[
+          styles.ripple,
+          {
+            opacity: rippleAnim2.interpolate({
+              inputRange: [0, 0.3, 1],
+              outputRange: [0, 0.2, 0],
+            }),
+            transform: [{
+              scale: rippleAnim2.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 2.0],
+              }),
+            }],
+          },
+        ]} />
+        <Animated.View style={[
+          styles.ripple,
+          {
+            opacity: rippleAnim3.interpolate({
+              inputRange: [0, 0.3, 1],
+              outputRange: [0, 0.1, 0],
+            }),
+            transform: [{
+              scale: rippleAnim3.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 2.0],
+              }),
+            }],
+          },
+        ]} />
+        
         <View style={styles.handleCircle}>
           <Ionicons name={open ? 'remove' : 'add'} size={32} color="#fff" />
         </View>
@@ -646,40 +726,40 @@ export default function HostDrawerOverlay({ onCreated }) {
       {/* Date Picker Modal */}
       {showDate && (
         <Modal transparent animationType="fade" visible onRequestClose={()=>setShowDate(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowDate(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={()=>setShowDate(false)}>
+            <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={() => {}}>
+              <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowDate(false)} activeOpacity={0.7}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
               <DateTimePicker value={startTime} minimumDate={getMinStart()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const ns=new Date(date); ns.setHours(startTime.getHours(), startTime.getMinutes(),0,0); const minS=getMinStart(); if(ns<minS) ns.setTime(minS.getTime()); setStartTime(ns); if(endTime-ns<60*60*1000) setEndTime(new Date(ns.getTime()+60*60*1000)); }} />
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
       )}
       {/* Start Time Picker */}
       {showStart && (
         <Modal transparent animationType="fade" visible onRequestClose={()=>setShowStart(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowStart(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={()=>setShowStart(false)}>
+            <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={() => {}}>
+              <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowStart(false)} activeOpacity={0.7}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
               <DateTimePicker value={startTime} mode="time" display={Platform.OS==='ios'?'spinner':'default'} minuteInterval={30} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const r=roundToNextHalfHour(date); const minS=getMinStart(); const valid=r<minS?minS:r; setStartTime(valid); if(endTime-valid<60*60*1000) setEndTime(new Date(valid.getTime()+60*60*1000)); }} />
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
       )}
       {/* End Time Picker */}
       {showEnd && (
         <Modal transparent animationType="fade" visible onRequestClose={()=>setShowEnd(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowEnd(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={()=>setShowEnd(false)}>
+            <TouchableOpacity style={styles.modalContent} activeOpacity={1} onPress={() => {}}>
+              <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowEnd(false)} activeOpacity={0.7}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
               <DateTimePicker value={endTime} mode="time" display={Platform.OS==='ios'?'spinner':'default'} minuteInterval={30} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const r=roundToNextHalfHour(date); if(r-startTime<60*60*1000){ setEndTime(new Date(startTime.getTime()+60*60*1000)); } else { setEndTime(r);} }} />
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
       )}
 
@@ -708,16 +788,6 @@ export default function HostDrawerOverlay({ onCreated }) {
           capacity={parseInt(capacity, 10) || null}
         />
       )}
-      
-             <SimpleCropModal 
-        visible={cropOpen} 
-        imageUri={cropUri} 
-        onClose={() => setCropOpen(false)} 
-        onCrop={(uri) => { 
-          setImageUri(uri); 
-          setCropOpen(false); 
-        }} 
-      />
     </Animated.View>
   );
 }
@@ -868,7 +938,7 @@ async function moderateContent(eventData) {
 
   let mod;
   try {
-    console.log('Calling OpenAI moderation API from mobile...');
+
     const openaiRes = await fetch('https://api.openai.com/v1/moderations', {
       method: 'POST',
       headers: {
@@ -879,7 +949,7 @@ async function moderateContent(eventData) {
     });
     
     mod = await openaiRes.json();
-    console.log('OpenAI moderation response:', mod);
+
     
     if (mod.error || !mod.results) {
       console.error('OpenAI moderation failed:', mod);
@@ -954,6 +1024,7 @@ const styles = StyleSheet.create({
   container:{ position:'absolute', left:0,right:0,bottom:0, overflow:'visible', zIndex:30 },
   handleTouch:{ position:'absolute', top:-28, alignSelf:'center', zIndex:1000 },
   handleCircle:{ width:66,height:66,borderRadius:33,backgroundColor:'#BAA4EB',justifyContent:'center',alignItems:'center',shadowColor:'#BAA4EB',shadowOpacity:0.45,shadowRadius:12,shadowOffset:{width:0,height:3} },
+  ripple:{ position:'absolute', width:66, height:66, borderRadius:33, backgroundColor:'#BAA4EB', top:0, left:0, zIndex:-1 },
   drawerInner:{ flex:1, borderTopLeftRadius:16, borderTopRightRadius:16, overflow:'hidden', borderWidth:0, shadowColor:'#BAA4EB', shadowOpacity:0.8, shadowRadius:50, shadowOffset:{width:0,height:-20}, elevation:50, backgroundColor:'rgba(255,255,255,0.2)' },
   topHalo:{ position:'absolute', left:0, right:0, top:0, height:100 },
   label:{ color:'#000000', fontSize:13, fontWeight:'700', marginBottom:6 },
@@ -962,7 +1033,7 @@ const styles = StyleSheet.create({
   vibeChip:{ paddingVertical:6, paddingHorizontal:10, borderRadius:14, borderWidth:1, marginRight:8, marginTop:8 },
   warnTxt:{ color:'#ff6b6b', fontSize:13, marginTop:6, fontWeight:'600' },
   scrollBar:{ position:'absolute', right:4, top:72, width:3, borderRadius:2, backgroundColor:'rgba(255,255,255,0.5)' },
-  thumbRect:{ width:'100%', height:200, borderRadius:16, backgroundColor:'rgba(240,235,250,0.9)', justifyContent:'center', alignItems:'center', marginBottom:16, borderWidth:2, borderColor:'rgba(180,168,209,0.8)', shadowColor:'#BAA4EB', shadowOpacity:0.4, shadowRadius:12, shadowOffset:{width:0,height:4} },
+  thumbRect:{ width:'100%', aspectRatio: 4/3, borderRadius:16, backgroundColor:'rgba(240,235,250,0.9)', justifyContent:'center', alignItems:'center', marginBottom:16, borderWidth:2, borderColor:'rgba(180,168,209,0.8)', shadowColor:'#BAA4EB', shadowOpacity:0.4, shadowRadius:12, shadowOffset:{width:0,height:4} },
   thumbTxt:{ color:'#3C3450', fontSize:14 },
   divider:{ height:1, backgroundColor:'rgba(255,255,255,0.08)', marginVertical:10 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -980,7 +1051,25 @@ const styles = StyleSheet.create({
   publishTxt:{ color:'#fff', fontWeight:'800', fontSize:16 },
   modalOverlay:{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'rgba(0,0,0,0.6)' },
   modalContent:{ backgroundColor:'#111', padding:20, borderRadius:16, width:'80%' },
-  closeBtn:{ position:'absolute', top:10, right:10 },
+  closeBtn:{ 
+    position:'absolute', 
+    top:6, 
+    right:6, 
+    width: 60, 
+    height: 60, 
+    borderRadius: 30, 
+    backgroundColor: 'rgba(0,0,0,0.7)', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+    zIndex: 9999,
+    elevation: 20
+  },
   suggList:{ borderRadius:8, marginTop:4, overflow:'hidden' },
   suggItem:{ paddingVertical:8, paddingHorizontal:12 },
   suggTxt:{ color:'#fff', fontSize:13 },

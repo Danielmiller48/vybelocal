@@ -14,7 +14,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) {
+export default function SimpleCropModal({ visible, imageUri, onClose, onCrop, aspectRatio = [4, 3] }) {
   const scrollViewRef = useRef(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [cropRegion, setCropRegion] = useState({ x: 0, y: 0, zoom: 1 });
@@ -57,9 +57,9 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop }) 
     };
   };
 
-  // EventCard dimensions - 1:2 aspect ratio (width:height)
-  const CROP_WIDTH = SCREEN_W * 0.8;
-  const CROP_HEIGHT = CROP_WIDTH * 0.5; // 1:2 ratio means height is half of width
+  // EventCard dimensions - dynamic aspect ratio
+  const CROP_WIDTH = SCREEN_W * 0.9;
+  const CROP_HEIGHT = CROP_WIDTH * (aspectRatio[1] / aspectRatio[0]); // Use provided aspect ratio
 
   const handleImageLoad = () => {
     if (imageUri) {
@@ -315,15 +315,11 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     position: 'relative',
-    width: SCREEN_W * 0.8,
-    height: SCREEN_W * 0.8 * 0.5,
   },
   cropFrame: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: SCREEN_W * 0.8,
-    height: SCREEN_W * 0.8 * 0.5,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,

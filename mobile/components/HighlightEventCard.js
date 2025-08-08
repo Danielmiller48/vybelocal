@@ -71,7 +71,7 @@ export default function HighlightEventCard({ event, onPress }) {
 const styles = StyleSheet.create({
   wrapper:{ marginBottom:24 },
   card:{ borderRadius:20, overflow:'hidden', shadowColor:'#ffbc8b', shadowOpacity:0.6, shadowRadius:20, shadowOffset:{width:0,height:6}, elevation:6, borderWidth:2, borderColor:'#ffbc8b' },
-  image:{ width:'100%', height:260 },
+  image:{ width:'100%', aspectRatio: 4/3 },
   title:{ fontSize:22, fontWeight:'700', color:'#fff', marginBottom:6 },
   meta:{ color:'#e0e0e0', fontSize:14, marginBottom:8 },
   pill:{ alignSelf:'flex-start', paddingHorizontal:12, paddingVertical:6, borderRadius:14, marginBottom:12 },

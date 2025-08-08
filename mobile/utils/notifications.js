@@ -28,7 +28,6 @@ export const notificationUtils = {
         .eq('is_dismissed', false);
 
       if (error) {
-        console.error('Error getting unread counts:', error);
         return {};
       }
 
@@ -45,7 +44,6 @@ export const notificationUtils = {
 
       return unreadCounts;
     } catch (error) {
-      console.error('Error in getUnreadCounts:', error);
       return {};
     }
   },
@@ -65,7 +63,6 @@ export const notificationUtils = {
         .limit(1);
 
       if (error) {
-        console.error('Error getting event unread count:', error);
         return 0;
       }
 
@@ -73,7 +70,6 @@ export const notificationUtils = {
 
       return data[0].batch_count || 0;
     } catch (error) {
-      console.error('Error in getEventUnreadCount:', error);
       return 0;
     }
   },
@@ -88,14 +84,12 @@ export const notificationUtils = {
         });
 
       if (error) {
-        console.error('Error marking notifications as read:', error);
         return false;
       }
 
-      console.log(`Marked ${data} chat notifications as read for event:`, eventId);
+      // quiet success log
       return true;
     } catch (error) {
-      console.error('Error in markChatNotificationsRead:', error);
       return false;
     }
   },
@@ -138,7 +132,6 @@ export const notificationUtils = {
   // Subscribe to real-time notification changes
   subscribeToNotifications: (userId, callback) => {
     const channelName = `notif_${userId}_${Date.now()}`;
-    console.log('🔔 CREATING CHANNEL:', channelName);
     const subscription = supabase
       .channel(channelName)
       .on(
@@ -152,7 +145,7 @@ export const notificationUtils = {
         (payload) => {
           // Broadcast to in-app listeners
           try {
-            console.log('⏩ RAW PAYLOAD', JSON.stringify(payload));
+            // quiet payload log
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRow = payload.new || {};
               notifBus.emit('chat_unread', {
@@ -172,7 +165,7 @@ export const notificationUtils = {
         }
       )
       .subscribe((status) => {
-        console.log('🔔 CHANNEL STATUS:', status);
+        // quiet status log
       });
 
     return subscription;

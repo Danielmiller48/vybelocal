@@ -16,7 +16,6 @@ export default function TimelineEvent({ event, onCancel }) {
   const countdown = minutesAway <= 0 ? null : minutesAway < 60 ? `Starts in ${minutesAway}m` : `Starts in ${Math.round(minutesAway/60)}h`;
   const [remind, setRemind] = useState(true);
   const [avatars, setAvatars] = useState([]);
-  const [rsvpCount, setRsvpCount] = useState(0);
   
   // Layout animations enabled
 
@@ -54,28 +53,24 @@ export default function TimelineEvent({ event, onCancel }) {
     })();
   }, [event.attendees?.avatars]);
 
-  // Fetch avatars and count RSVPs
+  // Fetch avatars via public_user_cards view if not provided or empty
   useEffect(() => {
     if (avatars.length || !event.id) return;
     (async () => {
       try {
-        // Get all user_ids who RSVP'd (status = 'attending')
+        // Get up to 4 user_ids who RSVP'd
         const { data: rRows } = await supabase
           .from('rsvps')
           .select('user_id')
           .eq('event_id', event.id)
-          .eq('status', 'attending');
-        
+          .limit(4);
         const userIds = (rRows || []).map(r => r.user_id);
-        setRsvpCount(userIds.length);
-        
         if (!userIds.length) return;
 
-        // Get avatars for first 4 users
         const { data: profRows } = await supabase
           .from('public_user_cards')
           .select('avatar_url')
-          .in('uuid', userIds.slice(0, 4));
+          .in('uuid', userIds);
 
         const urls = await Promise.all(
           (profRows || []).map(p => resolveAvatarUrl(p.avatar_url))
@@ -239,9 +234,7 @@ export default function TimelineEvent({ event, onCancel }) {
                 ))}
               </View>
             ) : null}
-            {rsvpCount > 1 && (
-              <Text style={styles.statusText}>{rsvpCount} locals going</Text>
-            )}
+            <Text style={styles.statusText}>Tap to meet locals</Text>
           </TouchableOpacity>
         )}
         {expanded && (

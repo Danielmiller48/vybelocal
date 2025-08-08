@@ -32,10 +32,34 @@ export default function EventChatModal({ visible, onClose, event }) {
   const [messageIds, setMessageIds] = useState(new Set());
   const [userColors, setUserColors] = useState(new Map());
   const scrollViewRef = useRef(null);
+  const [userName, setUserName] = useState('User');
 
   // 🔥 REAL-TIME STATE
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
+
+  // Fetch user's display name from profiles table
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const fetchUserName = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', user.id)
+          .maybeSingle();
+        
+        if (data?.name) {
+          setUserName(data.name);
+        }
+      } catch (error) {
+        // Keep default 'User' if fetch fails
+      }
+    };
+    
+    fetchUserName();
+  }, [user?.id]);
 
   // Color palette for chat users - all colors tested for readability on white
   const chatColors = [
@@ -81,7 +105,7 @@ export default function EventChatModal({ visible, onClose, event }) {
         if (instantIndex !== -1) {
           // Replace instant message with server message
           updatedMessages[instantIndex] = newMsg;
-          console.log('🔄 REPLACED INSTANT MESSAGE with server message');
+    
         } else {
           // Add new message normally (from other users or no instant match)
           updatedMessages.push(newMsg);
@@ -186,19 +210,17 @@ export default function EventChatModal({ visible, onClose, event }) {
             setTimeout(() => {
               scrollViewRef.current?.scrollToEnd({ animated: false });
             }, 100);
-          } catch (error) {
-            console.error('❌ Error loading messages:', error);
-            setMessages([]);
-            setMessagesLoading(false);
-          }
+      } catch (error) {
+        setMessages([]);
+        setMessagesLoading(false);
+      }
         };
 
         // 🔄 Load messages and reset unread count in parallel (both non-blocking)
         loadMessages();
-        realTimeChatManager.resetUnreadCount(event.id, user.id).catch(console.error);
+        realTimeChatManager.resetUnreadCount(event.id, user.id).catch(() => {});
 
       } catch (error) {
-        console.error('❌ Error in initial setup:', error);
         setLoading(false);
         setMessagesLoading(false);
       }
@@ -212,23 +234,15 @@ export default function EventChatModal({ visible, onClose, event }) {
     // Validation checks
     const trimmedText = messageText.trim();
     if (!trimmedText || loading) {
-      console.log('🚫 Send blocked:', { 
-        hasText: !!trimmedText, 
-        loading, 
-        connected: isConnected 
-      });
       return;
     }
 
     // Check user data with flexible name handling
     if (!user?.id) {
-      console.error('❌ Missing user ID:', user);
       return;
     }
 
-    // Get user name from any available field and capitalize first letter
-    const rawUserName = user.full_name || user.name || user.email?.split('@')[0] || 'User';
-    const userName = rawUserName.charAt(0).toUpperCase() + rawUserName.slice(1).toLowerCase();
+    // Use the fetched userName from profiles table
     
 
 
@@ -266,8 +280,6 @@ export default function EventChatModal({ visible, onClose, event }) {
 
 
     } catch (error) {
-      console.error('❌ Error sending message:', error);
-      
       // Remove the instant message if send failed
       setMessages(prevMessages => {
         return prevMessages.filter(msg => msg.id !== instantMessage.id);
@@ -312,7 +324,6 @@ export default function EventChatModal({ visible, onClose, event }) {
 
       setAttendees(profileData || []);
     } catch (error) {
-      console.error('Error loading attendees:', error);
       setAttendees([]); // Set empty array on error
     }
   };
@@ -346,7 +357,6 @@ export default function EventChatModal({ visible, onClose, event }) {
       const hostData = hostProfiles && hostProfiles.length > 0 ? hostProfiles[0] : null;
       setHostName(hostData?.name || 'Host');
     } catch (error) {
-      console.error('Error loading host info:', error);
       setHostName('Host'); // Set default on error
     }
   };
@@ -366,10 +376,10 @@ export default function EventChatModal({ visible, onClose, event }) {
   useEffect(() => {
     const handleAppStateChange = (nextAppState) => {
       if (nextAppState === 'background') {
-        console.log('⏸️ APP BACKGROUNDED - pausing real-time connections');
+    
         realTimeChatManager.pause();
       } else if (nextAppState === 'active') {
-        console.log('▶️ APP FOREGROUNDED - resuming real-time connections');
+
         realTimeChatManager.resume();
       }
     };
@@ -432,17 +442,7 @@ export default function EventChatModal({ visible, onClose, event }) {
     const isOwnMessage = message.userId === user?.id;
     const userColor = getUserColor(message.userId);
     
-    // 🐛 DEBUG: Log message data to catch blank message issues
-    if (!message.text || !message.userName) {
-      console.warn('⚠️ Message missing data:', {
-        id: message.id,
-        text: message.text ? `"${message.text}"` : 'MISSING',
-        userName: message.userName ? `"${message.userName}"` : 'MISSING',
-        userId: message.userId,
-        timestamp: message.timestamp,
-        isOwnMessage
-      });
-    }
+    
     
           return (
         <View key={message.id} style={[

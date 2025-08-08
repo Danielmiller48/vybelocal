@@ -81,7 +81,7 @@ class RealTimeChatManager {
     this.startRealTimeLoop(eventId, connection);
 
     
-    this.logActiveConnections();
+    // this.logActiveConnections();
   }
 
   logActiveConnections() {
@@ -94,22 +94,12 @@ class RealTimeChatManager {
       age: ((Date.now() - conn.startTime) / 1000).toFixed(1) + 's'
     }));
     
-
-    
-    // 🚨 EMERGENCY: Show total requests across all connections
-    const totalRequests = Array.from(this.requestCounts.values()).reduce((sum, count) => sum + count, 0);
-    if (totalRequests > 20) {
-      console.error('🚨 HIGH REQUEST COUNT DETECTED!', {
-        totalConnections: this.connections.size,
-        totalRequests,
-        averagePerConnection: (totalRequests / Math.max(this.connections.size, 1)).toFixed(1)
-      });
-    }
+    // Quiet high-request logging in production build
   }
 
   // 🛑 EMERGENCY STOP: Kill all connections if things go crazy
   emergencyStop() {
-    console.error('🛑 EMERGENCY STOP: Killing all connections');
+    // Quiet emergency stop logs
     
     this.connections.forEach((connection, eventId) => {
       connection.isActive = false;
@@ -117,7 +107,7 @@ class RealTimeChatManager {
       if (connection.abortController) {
         try { connection.abortController.abort(); } catch(e){}
       }
-      console.log('🛑 Stopped connection for event:', eventId);
+      // Quiet stop log per event
     });
     
     this.connections.clear();
@@ -127,14 +117,14 @@ class RealTimeChatManager {
     this.initialMessageCounts.clear();
     this.totalApiCalls = 0;
     
-    console.log('🛑 All connections destroyed, counters reset');
+    // Quiet summary log
   }
 
   // 🔄 MANUAL RESTART: Fix dead connections
   restartConnection(eventId) {
     const connection = this.connections.get(eventId);
     if (connection) {
-      console.log('🔄 MANUALLY RESTARTING CONNECTION for event:', eventId);
+      // Quiet manual restart log
       connection.errorCount = 0;
       connection.isActive = true;
       connection.lastErrorTime = 0;
@@ -192,8 +182,7 @@ class RealTimeChatManager {
         const controller = new AbortController();
         // Store so we can cancel if user navigates away or a new event is opened
         connection.abortController = controller;
-        const timeoutId = setTimeout(() => {
-          console.log('⏰ Long-poll timeout after 35 seconds for event:', eventId);
+          const timeoutId = setTimeout(() => {
           controller.abort();
         }, 35000); // 35 second timeout (longer than server's 30 seconds)
         
@@ -215,7 +204,7 @@ class RealTimeChatManager {
           connection.errorCount++;
           connection.lastErrorTime = Date.now();
           
-          console.error('❌ Real-time connection error:', response.status, 'count:', connection.errorCount);
+          // Quiet connection error log
           
           // 🚨 CIRCUIT BREAKER: Stop aggressive retries after 5 consecutive errors
           if (connection.errorCount >= 5) {
@@ -226,7 +215,7 @@ class RealTimeChatManager {
           
           // Exponential backoff: 5s, 10s, 20s, 40s, 60s
           const delayMs = Math.min(5000 * Math.pow(2, connection.errorCount - 1), 60000);
-          console.log('⏳ Waiting', delayMs/1000, 'seconds before retry...');
+          // Quiet retry wait log
           await this.delay(delayMs);
           continue;
         }
@@ -270,11 +259,11 @@ class RealTimeChatManager {
           connection.errorCount++;
           connection.lastErrorTime = Date.now();
           
-          console.error('❌ Real-time loop error for event:', eventId, 'after:', pollDuration + 's', 'error:', error.message, 'count:', connection.errorCount);
+           // Quiet loop error
           
           // 🚨 CIRCUIT BREAKER: Stop after too many errors
           if (connection.errorCount >= 5) {
-            console.error('🛑 TOO MANY ERRORS - STOPPING POLLING for event:', eventId);
+            // Quiet stop after too many errors
             connection.isActive = false;
             break;
           }
@@ -372,7 +361,7 @@ class RealTimeChatManager {
     const connection = this.connections.get(eventId);
     
     if (!connection) {
-      console.log('ℹ️ No active connection for event:', eventId);
+      // Quiet no active connection log
       return;
     }
 
@@ -415,7 +404,7 @@ class RealTimeChatManager {
       
       return count;
     } catch (error) {
-      console.error('❌ Failed to batch increment unread count:', error);
+      // Quiet unread batch error
       return 0;
     }
   }
@@ -442,7 +431,7 @@ class RealTimeChatManager {
         callback(0);
       }
     } catch (error) {
-      console.error('❌ Failed to reset unread count:', error);
+      // Quiet reset unread error
     }
   }
 
@@ -452,7 +441,7 @@ class RealTimeChatManager {
       const count = await AsyncStorage.getItem(key);
       return parseInt(count || '0');
     } catch (error) {
-      console.error('❌ Failed to get unread count:', error);
+      // Quiet get unread error
       return 0;
     }
   }
@@ -474,7 +463,7 @@ class RealTimeChatManager {
       try {
         await this.unsubscribeFromEvent(eventId, connection.userId);
       } catch (error) {
-        console.error('❌ Failed to cleanup connection for event:', eventId, error);
+        // Quiet cleanup error
       }
     }
     
@@ -499,12 +488,10 @@ class RealTimeChatManager {
   }
 
   pause() {
-    console.log('⏸️ PAUSING real-time chat connections');
     this.isActive = false;
   }
 
   resume() {
-    console.log('▶️ RESUMING real-time chat connections');
     this.isActive = true;
     
     // Restart all connections

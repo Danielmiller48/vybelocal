@@ -75,9 +75,9 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
   // Handle app state changes - refresh notification count when app becomes active
   useEffect(() => {
     const handleAppStateChange = (nextAppState) => {
-      console.log('📱 AppState changed to:', nextAppState);
+
       if (nextAppState === 'active' && user?.id) {
-        console.log('🔄 App became active - refreshing notification count');
+
         // Delay to ensure any background notifications have been processed
         setTimeout(() => {
           loadUnreadCount();
