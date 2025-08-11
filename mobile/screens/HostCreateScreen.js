@@ -18,6 +18,7 @@ import MiniCalendar from '../components/host/MiniCalendar';
 import EventQuickModal from '../components/host/EventQuickModal';
 import HostEventActionsSheet from '../components/HostEventActionsSheet';
 import ConfirmCancelModal from '../components/ConfirmCancelModal';
+import EventChatModal from '../components/EventChatModal';
 
 // Collapsible Section Component
 function HostSection({ title, children, defaultOpen = false, icon, headerRight=null }) {
@@ -98,8 +99,11 @@ function HostSection({ title, children, defaultOpen = false, icon, headerRight=n
 function EventCard({ event, isPast = false }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
-  const progress = event.capacity > 0 ? (event.rsvp_count / event.capacity) : 0;
-  const progressAnim = new Animated.Value(0);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [showRsvpModal, setShowRsvpModal] = useState(false);
+  
+  const progress = (event.capacity > 0 && event.rsvp_count > 0) ? (event.rsvp_count / event.capacity) : 0;
+  const progressAnim = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     Animated.timing(progressAnim, {
@@ -215,15 +219,15 @@ function EventCard({ event, isPast = false }) {
       event={event}
       onOpenChat={() => {
         setSheetOpen(false);
-        // TODO: Navigate to chat
+        setShowChatModal(true);
       }}
       onViewRsvps={() => {
         setSheetOpen(false);
-        // TODO: Navigate to RSVPs
+        setShowRsvpModal(true);
       }}
       onEdit={() => {
         setSheetOpen(false);
-        // TODO: Navigate to edit
+        // TODO: Navigate to edit (implement when edit screen is ready)
       }}
       onCancelEvent={() => {
         setSheetOpen(false);
@@ -241,6 +245,42 @@ function EventCard({ event, isPast = false }) {
         // The modal already shows success/error messages
       }}
     />
+    
+    <EventChatModal
+      visible={showChatModal}
+      onClose={() => setShowChatModal(false)}
+      event={event}
+    />
+    
+    {/* Simple RSVP List Modal */}
+    <Modal visible={showRsvpModal} animationType="slide" presentationStyle="pageSheet">
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          padding: 20, 
+          borderBottomWidth: 1, 
+          borderBottomColor: '#e5e7eb' 
+        }}>
+          <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>
+            RSVPs ({event.rsvp_count || 0})
+          </Text>
+          <TouchableOpacity onPress={() => setShowRsvpModal(false)}>
+            <Ionicons name="close" size={24} color="#6b7280" />
+          </TouchableOpacity>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="people-outline" size={48} color="#d1d5db" />
+          <Text style={{ fontSize: 16, color: '#6b7280', marginTop: 12 }}>
+            RSVP list coming soon
+          </Text>
+          <Text style={{ fontSize: 14, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
+            This feature will show detailed attendee information
+          </Text>
+        </View>
+      </SafeAreaView>
+    </Modal>
     </>
   );
 }
@@ -2264,7 +2304,7 @@ export default function HostCreateScreen() {
       // Fetch upcoming events
       const { data: upcomingData, error: upcomingError } = await supabase
         .from('events')
-        .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity')
+        .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
         .eq('host_id', user.id)
         .gte('starts_at', now)
         .order('starts_at', { ascending: true });
@@ -2274,7 +2314,7 @@ export default function HostCreateScreen() {
       // Fetch past events
       const { data: pastData, error: pastError } = await supabase
         .from('events')
-        .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity')
+        .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
         .eq('host_id', user.id)
         .lt('starts_at', now)
         .order('starts_at', { ascending: false });
@@ -2354,16 +2394,37 @@ export default function HostCreateScreen() {
         }));
       };
 
-      // Add RSVP data to events
-      const enrichEvents = (events) => events?.map(event => ({
-        ...event,
-        rsvp_count: rsvpCounts[event.id]?.attending || 0,
-        total_rsvps: rsvpCounts[event.id]?.total || 0,
-        capacity: event.rsvp_capacity, // Use actual capacity from DB (null/0 = no limit)
-      })) || [];
+      // Helper function to create event image URL
+      const createEventImageUrl = async (imgPath) => {
+        if (!imgPath) return null;
+        if (imgPath.startsWith('http')) return imgPath;
+        try {
+          const { data } = await supabase.storage
+            .from('event-images')
+            .createSignedUrl(imgPath, 3600);
+          return data?.signedUrl || null;
+        } catch {
+          return null;
+        }
+      };
 
-      const enrichedUpcoming = enrichEvents(upcomingData);
-      const enrichedPast = enrichEvents(pastData);
+      // Add RSVP data to events
+      const enrichEvents = async (events) => {
+        if (!events) return [];
+        const enrichedEvents = await Promise.all(
+          events.map(async (event) => ({
+            ...event,
+            rsvp_count: rsvpCounts[event.id]?.attending || 0,
+            total_rsvps: rsvpCounts[event.id]?.total || 0,
+            capacity: event.rsvp_capacity, // Use actual capacity from DB (null/0 = no limit)
+            imageUrl: await createEventImageUrl(event.img_path),
+          }))
+        );
+        return enrichedEvents;
+      };
+
+      const enrichedUpcoming = await enrichEvents(upcomingData);
+      const enrichedPast = await enrichEvents(pastData);
       
       setEvents(enrichedUpcoming);
       setPastEvents(enrichedPast);

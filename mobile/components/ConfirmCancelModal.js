@@ -19,7 +19,8 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
     const fetchPreview = async () => {
       setFetchingPreview(true);
       try {
-        const response = await fetch(`/api/events/${event.id}/cancel`, {
+        const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
+        const response = await fetch(`${baseUrl}/api/events/${event.id}/cancel`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -50,7 +51,8 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
     try {
       // 1️⃣ If penalty payment required, handle card charge first
       if (preview.isPaidEvent && preview.willChargeHost) {
-        const payResponse = await fetch(`/api/events/${event.id}/penalty-intent`, { 
+        const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
+        const payResponse = await fetch(`${baseUrl}/api/events/${event.id}/penalty-intent`, { 
           method: 'POST' 
         });
         const payData = await payResponse.json();
@@ -61,7 +63,8 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
       }
 
       // 2️⃣ Proceed with actual cancellation
-      const response = await fetch(`/api/events/${event.id}/cancel`, {
+      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
+      const response = await fetch(`${baseUrl}/api/events/${event.id}/cancel`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
