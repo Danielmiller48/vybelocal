@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Modal, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, Modal, TouchableOpacity, StyleSheet, SafeAreaView, Image, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 
@@ -28,10 +28,33 @@ export default function HostEventActionsSheet({
   onEdit, 
   onCancelEvent 
 }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (visible) {
+      const pulse = () => {
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.2,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ]).start(() => pulse());
+      };
+      pulse();
+    }
+  }, [visible, pulseAnim]);
+
   if (!visible || !event) return null;
 
   const eventDate = new Date(event.starts_at);
   const isUpcoming = eventDate > new Date();
+  const hasRsvps = (event.rsvp_count || 0) > 0;
 
   return (
     <Modal
@@ -41,6 +64,28 @@ export default function HostEventActionsSheet({
       onRequestClose={onClose}
     >
       <SafeAreaView style={styles.container}>
+        {/* Close Button */}
+        <Animated.View style={[styles.closeButtonContainer, { transform: [{ scale: pulseAnim }] }]}>
+          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <Ionicons name="close" size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </Animated.View>
+        
+        {/* Event Image */}
+        <View style={styles.imageContainer}>
+          {event.imageUrl ? (
+            <Image 
+              source={{ uri: event.imageUrl }} 
+              style={styles.eventImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.eventImage, styles.placeholderImage]}>
+              <Ionicons name="image-outline" size={48} color="#9ca3af" />
+            </View>
+          )}
+        </View>
+        
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
@@ -54,9 +99,6 @@ export default function HostEventActionsSheet({
               {event.rsvp_count || 0} RSVPs • {event.rsvp_capacity || '∞'} capacity • {event.price_in_cents ? `$${(event.price_in_cents/100).toFixed(2)}` : 'Free'}
             </Text>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
         </View>
 
         {/* Actions */}
@@ -83,10 +125,10 @@ export default function HostEventActionsSheet({
             <ActionRow
               icon="create"
               title="Edit Event"
-              subtitle="Update details or settings"
-              onPress={onEdit}
-              color="#7c3aed"
-              backgroundColor="#f3e8ff"
+              subtitle={hasRsvps ? "Cannot edit after RSVPs" : "Update details or settings"}
+              onPress={hasRsvps ? undefined : onEdit}
+              color={hasRsvps ? "#9ca3af" : "#7c3aed"}
+              backgroundColor={hasRsvps ? "#f9fafb" : "#f3e8ff"}
             />
           )}
 
@@ -108,6 +150,30 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
+  },
+  imageContainer: {
+    width: '95%',
+    aspectRatio: 4/3,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    marginLeft: '2.5%',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  eventImage: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderImage: {
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -171,5 +237,27 @@ const styles = StyleSheet.create({
   actionSubtitle: {
     fontSize: 13,
     color: '#6b7280',
+  },
+  closeButtonContainer: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 0.5,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 8,
+    opacity: 0.95,
   },
 });
