@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Image, Pressable, AppState, ScrollView, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, Image, Pressable, AppState, ScrollView, Animated, Dimensions, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -114,11 +114,30 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuMounted, setMenuMounted] = useState(false);
   const menuOpacity = React.useRef(new Animated.Value(0)).current;
+  const anchorRef = React.useRef(null);
+  const [menuTop, setMenuTop] = useState(0);
 
   const insets = useSafeAreaInsets();
   const headerHeight = 56; // content area height (approx)
 
-  const toggleMenu = () => setMenuOpen(p=>!p);
+  const calcMenuTop = React.useCallback(() => {
+    if (!anchorRef.current) return;
+    try {
+      anchorRef.current.measureInWindow((x, y, width, height) => {
+        if (typeof y === 'number' && typeof height === 'number') {
+          setMenuTop(y + height + 6);
+        }
+      });
+    } catch {}
+  }, []);
+
+  const toggleMenu = () => {
+    if (!menuOpen) {
+      // recalc position before opening
+      setTimeout(calcMenuTop, 0);
+    }
+    setMenuOpen(p=>!p);
+  };
   const closeMenu = () => setMenuOpen(false);
 
   // Fade in/out the hamburger dropdown
@@ -133,12 +152,22 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
     }
   }, [menuOpen, menuMounted, menuOpacity]);
 
+  React.useEffect(() => {
+    // recalc on safe area changes (orientation/notch)
+    calcMenuTop();
+  }, [insets.top, calcMenuTop]);
+
+  const baseTop = insets.top + headerHeight;
+  const offsetDown = 16; // universal downward shift (moved up 4px)
+  const adjustedTop = menuTop + offsetDown;
+  const menuMaxHeight = Math.min(520, Dimensions.get('window').height - adjustedTop - 16);
+
   return (
     <View style={{ height: insets.top + headerHeight, marginTop: -insets.top, zIndex:1000, elevation:1000 }}>
       {/* Black background covering status bar and header */}
       <View style={{ position:'absolute', top:0, left:0, right:0, height: insets.top + headerHeight, backgroundColor: '#000' }} />
 
-      <View style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingTop: insets.top, paddingBottom:12 }}>
+      <View ref={anchorRef} style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingTop: insets.top, paddingBottom:12 }}>
         <Text style={{ fontSize:20, fontWeight:'700', flex:1, color:'#fff' }}>VybeLocal</Text>
         <TouchableOpacity onPress={handleNotificationPress} style={{ marginRight:16, position: 'relative' }} accessibilityLabel="Notifications">
           <Ionicons name="notifications-outline" size={24} color="#fff" />
@@ -176,9 +205,17 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
         </TouchableOpacity>
       </View>
       {menuMounted && (
-        <Pressable style={{ position:'absolute', top:0, left:0, right:0, bottom:0 }} onPress={closeMenu}>
-          <Animated.View style={{ position:'absolute', top: insets.top + headerHeight + 6, right:12, left:12, backgroundColor:'#111827', borderRadius:12, paddingVertical:10, paddingHorizontal:0, shadowColor:'#000', shadowOpacity:0.35, shadowRadius:10, shadowOffset:{width:0,height:6}, maxHeight: 520, opacity: menuOpacity }}>
-            <ScrollView contentContainerStyle={{ paddingVertical:6 }} showsVerticalScrollIndicator={false}>
+        <Modal visible transparent animationType="none" onRequestClose={closeMenu}>
+          <Animated.View style={{ flex:1, opacity: menuOpacity }} pointerEvents="box-none">
+            {/* Outside close area */}
+            <Pressable style={{ position:'absolute', top:0, left:0, right:0, height: adjustedTop }} onPress={closeMenu} />
+            <Pressable style={{ position:'absolute', top: adjustedTop + menuMaxHeight + 16, left:0, right:0, bottom:0 }} onPress={closeMenu} />
+            <Pressable style={{ position:'absolute', top: adjustedTop, left:0, width:12, height: menuMaxHeight + 16 }} onPress={closeMenu} />
+            <Pressable style={{ position:'absolute', top: adjustedTop, right:0, width:12, height: menuMaxHeight + 16 }} onPress={closeMenu} />
+            {/* Menu container */}
+            <View style={{ position:'absolute', top: adjustedTop, right:12, left:12 }} pointerEvents="box-none">
+              <View style={{ backgroundColor:'#111827', borderRadius:12, paddingVertical:8, paddingHorizontal:0, shadowColor:'#000', shadowOpacity:0.35, shadowRadius:10, shadowOffset:{width:0,height:6}, maxHeight: menuMaxHeight, elevation: 20 }}>
+                <ScrollView contentContainerStyle={{ paddingVertical:6 }} showsVerticalScrollIndicator nestedScrollEnabled>
               {/* Quick Actions */}
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingTop:6, paddingBottom:4 }}>Quick Actions</Text>
               <MenuItem icon="search" label="Find a Vybe" onPress={() => { closeMenu(); navigation.navigate('Discover'); }} />
@@ -215,9 +252,11 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
                   <Text style={{ color:'#fff', fontWeight:'700' }}>Sign out</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+                </ScrollView>
+              </View>
+            </View>
           </Animated.View>
-        </Pressable>
+        </Modal>
       )}
 
       {/* Notification Modal */}

@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import AppHeader from '../components/AppHeader';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import HostDrawerOverlay from '../components/HostDrawerOverlay';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
@@ -2549,6 +2549,8 @@ const AreaChart = ({ data, color }) => {
 
 export default function HostCreateScreen() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const tooltipBottom = insets.bottom + 33; // raised by 5px
   const [events, setEvents] = useState([]);
   const [pastEvents, setPastEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2718,11 +2720,9 @@ export default function HostCreateScreen() {
       setEvents(enrichedUpcoming);
       setPastEvents(enrichedPast);
       
-      // Show tooltip for first-time users (no events at all)
-      const hasNoEvents = enrichedUpcoming.length === 0 && enrichedPast.length === 0;
-      if (hasNoEvents) {
-        setTimeout(() => setShowTooltip(true), 1000); // Show after 1 second
-      }
+      // Show tooltip only if the user has never created any events
+      const hasAnyEvents = (enrichedUpcoming.length + enrichedPast.length) > 0;
+      setShowTooltip(!hasAnyEvents);
       
       // Calculate metrics
       const totalRsvps = Object.values(rsvpCounts).reduce((sum, count) => sum + count.attending, 0);
@@ -3145,18 +3145,19 @@ export default function HostCreateScreen() {
       {showTooltip && (
         <View style={{
           position: 'absolute',
-          bottom: 120,
+          bottom: tooltipBottom,
           alignSelf: 'center',
-          backgroundColor: 'rgba(59, 130, 246, 0.95)',
+          transform: [{ translateX: 16 }],
+          backgroundColor: '#CBB4E3',
           borderRadius: 12,
           padding: 16,
-          maxWidth: 250,
+          maxWidth: 280,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.3,
           shadowRadius: 8,
           elevation: 10,
-          zIndex: 2000,
+          zIndex: 100,
         }}>
           <View style={{
             position: 'absolute',
@@ -3170,16 +3171,16 @@ export default function HostCreateScreen() {
             borderTopWidth: 8,
             borderLeftColor: 'transparent',
             borderRightColor: 'transparent',
-            borderTopColor: 'rgba(59, 130, 246, 0.95)',
+            borderTopColor: '#CBB4E3',
           }} />
-          <Text style={{ color: 'white', fontSize: 14, fontWeight: '600', marginBottom: 8 }}>
+          <Text style={{ color: '#111827', fontSize: 14, fontWeight: '700', marginBottom: 8 }}>
             Create Your First Event! 🎉
           </Text>
-          <Text style={{ color: 'white', fontSize: 12, lineHeight: 16, marginBottom: 12 }}>
+          <Text style={{ color: '#111827', fontSize: 12, lineHeight: 18, marginBottom: 12, opacity: 0.9 }}>
             Tap the purple + button to host your first event and start building your community.
           </Text>
           <TouchableOpacity onPress={() => setShowTooltip(false)} style={{ alignSelf: 'flex-end', backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}>
-            <Text style={{ color: 'white', fontSize: 12, fontWeight: '500' }}>Got it!</Text>
+            <Text style={{ color: '#111827', fontSize: 12, fontWeight: '700' }}>Got it!</Text>
           </TouchableOpacity>
         </View>
       )}
