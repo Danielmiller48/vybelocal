@@ -47,6 +47,15 @@ export default function HostDrawerOverlay({ onCreated }) {
     setOpen(!open);
   };
 
+  // Expose global imperative toggle for header menu shortcut
+  React.useEffect(() => {
+    globalThis.HostDrawerToggle = () => {
+      Animated.timing(sheetY, { toValue: openPos, duration: 300, useNativeDriver: true }).start();
+      setOpen(true);
+    };
+    return () => { if (globalThis.HostDrawerToggle) delete globalThis.HostDrawerToggle; };
+  }, [openPos, sheetY]);
+
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [title, setTitle]    = useState('');
@@ -1022,7 +1031,7 @@ const sage = '#8FB996';
 
 const styles = StyleSheet.create({
   container:{ position:'absolute', left:0,right:0,bottom:0, overflow:'visible', zIndex:30 },
-  handleTouch:{ position:'absolute', top:-28, alignSelf:'center', zIndex:1000 },
+  handleTouch:{ position:'absolute', top:-28, alignSelf:'center', zIndex:2000 },
   handleCircle:{ width:66,height:66,borderRadius:33,backgroundColor:'#BAA4EB',justifyContent:'center',alignItems:'center',shadowColor:'#BAA4EB',shadowOpacity:0.45,shadowRadius:12,shadowOffset:{width:0,height:3} },
   ripple:{ position:'absolute', width:66, height:66, borderRadius:33, backgroundColor:'#BAA4EB', top:0, left:0, zIndex:-1 },
   drawerInner:{ flex:1, borderTopLeftRadius:16, borderTopRightRadius:16, overflow:'hidden', borderWidth:0, shadowColor:'#BAA4EB', shadowOpacity:0.8, shadowRadius:50, shadowOffset:{width:0,height:-20}, elevation:50, backgroundColor:'rgba(255,255,255,0.2)' },

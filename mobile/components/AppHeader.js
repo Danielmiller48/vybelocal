@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, Image, Pressable, AppState } from 'react-native';
+import { View, Text, TouchableOpacity, Image, Pressable, AppState, ScrollView, Animated } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
@@ -11,6 +13,7 @@ import NotificationModal from './NotificationModal';
 
 export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () => {}, onAvatarPress = () => {} }) {
   const { user } = useAuth();
+  const navigation = useNavigation();
   const [avatar, setAvatar] = useState(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -109,12 +112,26 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
 
   const { signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuMounted, setMenuMounted] = useState(false);
+  const menuOpacity = React.useRef(new Animated.Value(0)).current;
 
   const insets = useSafeAreaInsets();
   const headerHeight = 56; // content area height (approx)
 
   const toggleMenu = () => setMenuOpen(p=>!p);
   const closeMenu = () => setMenuOpen(false);
+
+  // Fade in/out the hamburger dropdown
+  React.useEffect(() => {
+    if (menuOpen) {
+      if (!menuMounted) setMenuMounted(true);
+      Animated.timing(menuOpacity, { toValue: 1, duration: 100, useNativeDriver: true }).start();
+    } else if (menuMounted) {
+      Animated.timing(menuOpacity, { toValue: 0, duration: 100, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setMenuMounted(false);
+      });
+    }
+  }, [menuOpen, menuMounted, menuOpacity]);
 
   return (
     <View style={{ height: insets.top + headerHeight, marginTop: -insets.top, zIndex:1000, elevation:1000 }}>
@@ -158,13 +175,48 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
           <Ionicons name="menu" size={28} color="#fff" />
         </TouchableOpacity>
       </View>
-      {menuOpen && (
+      {menuMounted && (
         <Pressable style={{ position:'absolute', top:0, left:0, right:0, bottom:0 }} onPress={closeMenu}>
-          <View style={{ position:'absolute', top: insets.top + headerHeight + 4, right:16, backgroundColor:'#1f2937', borderRadius:8, paddingVertical:10, paddingHorizontal:16, shadowColor:'#000', shadowOpacity:0.3, shadowRadius:6, shadowOffset:{width:0,height:2} }}>
-            <TouchableOpacity onPress={() => { closeMenu(); signOut(); }}>
-              <Text style={{ color:'#fff', fontWeight:'600' }}>Sign Out</Text>
-            </TouchableOpacity>
-          </View>
+          <Animated.View style={{ position:'absolute', top: insets.top + headerHeight + 6, right:12, left:12, backgroundColor:'#111827', borderRadius:12, paddingVertical:10, paddingHorizontal:0, shadowColor:'#000', shadowOpacity:0.35, shadowRadius:10, shadowOffset:{width:0,height:6}, maxHeight: 520, opacity: menuOpacity }}>
+            <ScrollView contentContainerStyle={{ paddingVertical:6 }} showsVerticalScrollIndicator={false}>
+              {/* Quick Actions */}
+              <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingTop:6, paddingBottom:4 }}>Quick Actions</Text>
+              <MenuItem icon="search" label="Find a Vybe" onPress={() => { closeMenu(); navigation.navigate('Discover'); }} />
+              <MenuItem icon="add-circle-outline" label="Host a Vybe" onPress={() => { closeMenu(); globalThis?.HostDrawerToggle?.(); navigation.navigate('Host'); }} />
+              <MenuItem icon="calendar-outline" label="Upcoming Vybes" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
+
+              {/* Account & Tools */}
+              <SectionDivider />
+              <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Account & Tools</Text>
+              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); onAvatarPress(); }} />
+              <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
+              <MenuItem icon="card-outline" label="Payment Methods" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/app/payments'); }} />
+
+              {/* Info & Support */}
+              <SectionDivider />
+              <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Info & Support</Text>
+              <MenuItem icon="information-circle-outline" label="About VybeLocal" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/learn'); }} />
+              <MenuItem icon="shield-checkmark-outline" label="Trust & Safety" onPress={() => { closeMenu(); navigation.navigate('Guidelines'); }} />
+              <MenuItem icon="refresh-circle-outline" label="Refund Policy" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/refund'); }} />
+              <MenuItem icon="lock-closed-outline" label="Privacy Policy" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/privacy'); }} />
+              <MenuItem icon="help-buoy-outline" label="Contact Support" onPress={() => { closeMenu(); Linking.openURL('mailto:support@vybelocal.com'); }} />
+
+              {/* Brand / Extra */}
+              <SectionDivider />
+              <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Extra</Text>
+              <MenuItem icon="star-outline" label="Become a paid event Host" onPress={() => { closeMenu(); navigation.navigate('Host'); }} />
+              <MenuItem icon="heart-outline" label="Support VybeLocal" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/patron'); }} />
+              <MenuItem icon="logo-instagram" label="Follow Us" onPress={() => { closeMenu(); Linking.openURL('https://instagram.com/joinvybelocal'); }} />
+
+              {/* Sign out */}
+              <SectionDivider />
+              <View style={{ paddingHorizontal:16, paddingTop:2, paddingBottom:8 }}>
+                <TouchableOpacity onPress={() => { closeMenu(); signOut(); }} style={{ backgroundColor:'#dc2626', borderRadius:10, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#fff', fontWeight:'700' }}>Sign out</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </Animated.View>
         </Pressable>
       )}
 
@@ -176,3 +228,17 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
     </View>
   );
 } 
+
+function SectionDivider(){
+  return <View style={{ height:1, backgroundColor:'#374151', marginVertical:8, opacity:0.6 }} />
+}
+
+function MenuItem({ icon, label, onPress }){
+  return (
+    <TouchableOpacity onPress={onPress} style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingVertical:10 }}>
+      <Ionicons name={icon} size={20} color="#E5E7EB" style={{ marginRight:12 }} />
+      <Text style={{ color:'#E5E7EB', fontSize:14, fontWeight:'600', flex:1 }}>{label}</Text>
+      <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+    </TouchableOpacity>
+  );
+}

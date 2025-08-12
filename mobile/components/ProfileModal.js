@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Animated, Dimensions, Easing } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Animated, Dimensions, Easing, TextInput, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../utils/supabase';
+import { useAuth } from '../auth/AuthProvider';
 
 function useAvatarUrl(path) {
   const [url, setUrl] = useState('https://placehold.co/80x80');
@@ -28,26 +29,124 @@ function formatLastActive(lastActive) {
 }
 
 export default function ProfileModal({ visible, onClose, profile, stats = {} }) {
+  const { user } = useAuth();
   const screenH = Dimensions.get('window').height;
   const slideAnim = React.useRef(new Animated.Value(screenH)).current;
-  const [blockReason, setBlockReason] = useState('');
-  const [blockDetails, setBlockDetails] = useState('');
-  const [isBlocking, setIsBlocking] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportExplanation, setReportExplanation] = useState('');
+  const [shouldBlock, setShouldBlock] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showFollowModal, setShowFollowModal] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   React.useEffect(() => {
     if (visible) {
       Animated.timing(slideAnim, { toValue: 0, duration: 350, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      // Check if already following this host
+      checkFollowStatus();
     } else {
       slideAnim.setValue(screenH);
+      // Reset modal state when profile modal closes
+      setShowFollowModal(false);
     }
   }, [visible]);
+
+  const checkFollowStatus = async () => {
+    const hostId = profile?.uuid || profile?.id;
+    if (!user || !hostId) {
+      console.log('Missing data:', { user: user?.id, profile: profile, hostId });
+      return;
+    }
+    
+    try {
+      console.log('Checking follow status for:', { follower: user.id, host: hostId });
+      const { data, error } = await supabase
+        .from('host_follows')
+        .select('id')
+        .eq('follower_id', user.id)
+        .eq('host_id', hostId)
+        .maybeSingle();
+      
+      if (error) {
+        console.error('Error checking follow status:', error);
+        return;
+      }
+      
+      console.log('Follow status result:', data);
+      setIsFollowing(!!data);
+    } catch (error) {
+      console.error('Error checking follow status:', error);
+    }
+  };
+
+  const handleFollowToggle = async () => {
+    const hostId = profile?.uuid || profile?.id;
+    console.log('handleFollowToggle called', { user: user?.id, hostId, isFollowing });
+    
+    if (!user || !hostId) {
+      console.log('Missing user or profile');
+      Alert.alert('Error', 'User or profile information missing.');
+      return;
+    }
+    
+    setFollowLoading(true);
+    try {
+      if (isFollowing) {
+        // Unfollow
+        console.log('Attempting to unfollow...');
+        const { error } = await supabase
+          .from('host_follows')
+          .delete()
+          .eq('follower_id', user.id)
+          .eq('host_id', hostId);
+        
+        if (error) {
+          console.error('Unfollow error:', error);
+          throw error;
+        }
+        console.log('Unfollow successful');
+        setIsFollowing(false);
+        Alert.alert('Success', 'You are no longer following this host.');
+      } else {
+        // Follow
+        console.log('Attempting to follow...');
+        console.log('Insert data:', { follower_id: user.id, host_id: hostId });
+        
+        const { data, error } = await supabase
+          .from('host_follows')
+          .insert({
+            follower_id: user.id,
+            host_id: hostId
+          })
+          .select();
+        
+        if (error) {
+          console.error('Follow error:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
+          throw error;
+        }
+        console.log('Follow successful, inserted data:', data);
+        setIsFollowing(true);
+        Alert.alert('Success', 'You are now following this host! You\'ll see their events in your feed.');
+      }
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+      Alert.alert('Error', `Failed to update follow status: ${error.message || 'Please try again.'}`);
+    } finally {
+      setFollowLoading(false);
+      setShowFollowModal(false);
+    }
+  };
 
   const avatarUrl = useAvatarUrl(profile?.avatar_url);
 
   if (!visible || !profile) return null;
 
   return (
+    <>
     <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform:[{ translateY: slideAnim }] }]}>
@@ -130,12 +229,7 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
                   </Text>
                 )}
               </View>
-              <TouchableOpacity 
-                style={styles.flagButton}
-                onPress={() => setShowReportModal(true)}
-              >
-                <Ionicons name="flag" size={20} color="#9ca3af" />
-              </TouchableOpacity>
+
             </View>
 
             {/* Bio */}
@@ -146,102 +240,276 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
             )}
 
             {/* Last Active */}
-            <View style={styles.lastActiveContainer}>
+            <View style={[styles.lastActiveContainer, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
               <Text style={styles.lastActiveText}>Last active: {formatLastActive(profile.last_active_at)}</Text>
-            </View>
-
-            {/* Block Section */}
-            <View style={styles.blockSection}>
-              <Text style={styles.blockSectionTitle}>Reason for blocking (optional):</Text>
-              
-              <View style={styles.pickerContainer}>
-                <TouchableOpacity 
-                  style={styles.pickerButton}
-                  onPress={() => {
-                    // Simple implementation - could be enhanced with a proper picker modal
-                    const reasons = [
-                      { label: 'No reason', value: '' },
-                      { label: 'Spam or scam', value: 'spam' },
-                      { label: 'Harassment or bullying', value: 'harassment' },
-                      { label: 'Inappropriate content', value: 'inappropriate' },
-                      { label: 'Other (custom reason)', value: 'other' }
-                    ];
-                    
-                    // For now, cycle through options on tap
-                    const currentIndex = reasons.findIndex(r => r.value === blockReason);
-                    const nextIndex = (currentIndex + 1) % reasons.length;
-                    setBlockReason(reasons[nextIndex].value);
-                  }}
-                >
-                  <Text style={styles.pickerText}>
-                    {blockReason === '' ? 'No reason' :
-                     blockReason === 'spam' ? 'Spam or scam' :
-                     blockReason === 'harassment' ? 'Harassment or bullying' :
-                     blockReason === 'inappropriate' ? 'Inappropriate content' :
-                     blockReason === 'other' ? 'Other (custom reason)' : 'No reason'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={16} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-
-              {blockReason === 'other' && (
-                <View style={styles.textAreaContainer}>
-                  <Text style={styles.textAreaLabel}>Add more details (optional):</Text>
-                  {/* Note: React Native doesn't have textarea, using TextInput with multiline */}
-                  <View style={styles.textAreaWrapper}>
-                    <Text style={styles.textAreaPlaceholder}>
-                      {blockDetails || 'Add more details (optional)'}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
               <TouchableOpacity 
-                style={[styles.blockBtn, isBlocking && styles.blockBtnDisabled]}
-                onPress={() => alert('Block functionality will be implemented with proper API calls')}
-                disabled={isBlocking}
+                style={styles.flagButton}
+                onPress={() => setShowReportModal(true)}
               >
-                <Ionicons name="shield" size={16} color="#fff" style={{ marginRight: 8 }} />
-                <Text style={styles.blockBtnText}>
-                  {isBlocking ? 'Blocking...' : 'Block User'}
-                </Text>
+                <Ionicons name="flag" size={16} color="#9ca3af" style={{ marginRight: 4 }} />
+                <Text style={styles.flagButtonText}>Block/Report User</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Follow Section - only show if not viewing own profile */}
+            {user?.id !== (profile?.uuid || profile?.id) && (
+              <View style={styles.followSection}>
+                <TouchableOpacity 
+                  style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+                  onPress={() => {
+                    if (isFollowing) {
+                      handleFollowToggle();
+                    } else {
+                      setShowFollowModal(true);
+                    }
+                  }}
+                  disabled={followLoading}
+                >
+                  <Ionicons 
+                    name={isFollowing ? "checkmark-circle" : "add-circle-outline"} 
+                    size={16} 
+                    color={isFollowing ? "#fff" : "#BAA4EB"} 
+                    style={{ marginRight: 8 }} 
+                  />
+                                  <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+                  {followLoading ? 'Loading...' : (isFollowing ? 'Following' : 'Follow Host')}
+                </Text>
+              </TouchableOpacity>
+              
+              </View>
+            )}
+
           </ScrollView>
         </Animated.View>
 
-        {/* Simple Report Modal */}
+        {/* Enhanced Report Modal with Blocking */}
         {showReportModal && (
           <View style={styles.reportModalOverlay}>
             <View style={styles.reportModal}>
               <Text style={styles.reportModalTitle}>Report User</Text>
               <Text style={styles.reportModalText}>
                 VybeLocal is built on trust and real-world respect.{'\n\n'}
-                If this user feels unsafe, misleading, or out of alignment with our community values, please let us know.{'\n\n'}
-                We review all reports with care, and your voice stays private.
+                If this user feels unsafe, misleading, or out of alignment with our community values, please let us know.
               </Text>
+
+              {/* Reason Dropdown */}
+              <View style={styles.dropdownContainer}>
+                <Text style={styles.dropdownLabel}>Reason for reporting:</Text>
+                <TouchableOpacity 
+                  style={styles.dropdownButton}
+                  onPress={() => setShowDropdown(!showDropdown)}
+                >
+                  <Text style={styles.dropdownText}>
+                    {reportReason === 'no_interaction' ? 'I just don\'t want to interact with this person' :
+                     reportReason === 'spam' ? 'Spam or scam' :
+                     reportReason === 'harassment' ? 'Harassment or bullying' :
+                     reportReason === 'inappropriate' ? 'Inappropriate content or behavior' :
+                     reportReason === 'fake' ? 'Fake profile or impersonation' :
+                     reportReason === 'other' ? 'Other' : 'Select a reason...'}
+                  </Text>
+                  <Ionicons name={showDropdown ? "chevron-up" : "chevron-down"} size={16} color="#6b7280" />
+                </TouchableOpacity>
+                
+                {showDropdown && (
+                  <View style={styles.dropdownList}>
+                    <ScrollView 
+                      style={styles.dropdownScrollView}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                    >
+                      {[
+                        { label: 'I just don\'t want to interact with this person', value: 'no_interaction' },
+                        { label: 'Spam or scam', value: 'spam' },
+                        { label: 'Harassment or bullying', value: 'harassment' },
+                        { label: 'Inappropriate content or behavior', value: 'inappropriate' },
+                        { label: 'Fake profile or impersonation', value: 'fake' },
+                        { label: 'Other', value: 'other' }
+                      ].map((reason) => (
+                        <TouchableOpacity
+                          key={reason.value}
+                          style={[styles.dropdownOption, reportReason === reason.value && styles.dropdownOptionSelected]}
+                          onPress={() => {
+                            setReportReason(reason.value);
+                            setShowDropdown(false);
+                          }}
+                        >
+                          <Text style={[styles.dropdownOptionText, reportReason === reason.value && styles.dropdownOptionTextSelected]}>
+                            {reason.label}
+                          </Text>
+                          {reportReason === reason.value && (
+                            <Ionicons name="checkmark" size={16} color="#BAA4EB" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              {/* Explanation field for reasons other than "no interaction" */}
+              {reportReason && reportReason !== 'no_interaction' && (
+                <View style={styles.explanationContainer}>
+                  <Text style={styles.explanationLabel}>Please explain (required):</Text>
+                  <TextInput
+                    style={styles.explanationInput}
+                    multiline
+                    numberOfLines={4}
+                    maxLength={255}
+                    placeholder="Describe the issue in detail..."
+                    placeholderTextColor="#9ca3af"
+                    value={reportExplanation}
+                    onChangeText={setReportExplanation}
+                    textAlignVertical="top"
+                  />
+                  <Text style={styles.charCount}>{reportExplanation.length}/255</Text>
+                </View>
+              )}
+
+              {/* Blocking option */}
+              <TouchableOpacity 
+                style={styles.blockOption}
+                onPress={() => setShouldBlock(!shouldBlock)}
+              >
+                <View style={[styles.checkbox, shouldBlock && styles.checkboxChecked]}>
+                  {shouldBlock && <Ionicons name="checkmark" size={14} color="#fff" />}
+                </View>
+                <Text style={styles.blockOptionText}>
+                  Also block this user (they won't be able to see your events or interact with you)
+                </Text>
+              </TouchableOpacity>
+
               <View style={styles.reportModalButtons}>
                 <TouchableOpacity 
                   style={[styles.reportModalBtn, styles.reportModalBtnCancel]}
-                  onPress={() => setShowReportModal(false)}
+                  onPress={() => {
+                    setShowReportModal(false);
+                    setReportReason('');
+                    setReportExplanation('');
+                    setShouldBlock(false);
+                  }}
                 >
                   <Text style={styles.reportModalBtnText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.reportModalBtn, styles.reportModalBtnSubmit]}
-                  onPress={() => {
-                    setShowReportModal(false);
-                    alert('Report functionality will be implemented with proper API calls');
+                  style={[
+                    styles.reportModalBtn, 
+                    styles.reportModalBtnSubmit,
+                    (isSubmitting || (!reportReason || (reportReason !== 'no_interaction' && !reportExplanation.trim()))) && styles.buttonDisabled
+                  ]}
+                  onPress={async () => {
+                    if (!reportReason) {
+                      Alert.alert('Error', 'Please select a reason for reporting.');
+                      return;
+                    }
+                    if (reportReason !== 'no_interaction' && !reportExplanation.trim()) {
+                      Alert.alert('Error', 'Please provide an explanation for your report.');
+                      return;
+                    }
+
+                    setIsSubmitting(true);
+                    try {
+                      const reportedUserId = profile?.uuid || profile?.id;
+                      
+                      // Submit the report
+                      const { error: reportError } = await supabase
+                        .from('flags') // Assuming this is the table name
+                        .insert({
+                          target_type: 'user',
+                          target_id: reportedUserId,
+                          reporter_id: user.id,
+                          user_id: reportedUserId, // Same as target_id since we're reporting a user
+                          reason_code: reportReason,
+                          details: reportReason !== 'no_interaction' ? reportExplanation : null,
+                          severity: 1,
+                          status: 'pending',
+                          source: 'user'
+                        });
+
+                      if (reportError) {
+                        console.error('Report submission error:', reportError);
+                        throw reportError;
+                      }
+
+                      // If user also wants to block, handle that
+                      if (shouldBlock) {
+                        const { error: blockError } = await supabase
+                          .from('blocks')
+                          .insert({
+                            blocker_id: user.id,
+                            blocked_id: reportedUserId
+                          });
+
+                        if (blockError) {
+                          console.error('Block submission error:', blockError);
+                          // Don't throw here - report was successful, blocking failed
+                          Alert.alert('Report Submitted', 'Your report was submitted, but there was an issue blocking the user. Please try blocking separately.');
+                          return;
+                        }
+                      }
+                      
+                      setShowReportModal(false);
+                      setReportReason('');
+                      setReportExplanation('');
+                      setShouldBlock(false);
+                      
+                      Alert.alert(
+                        'Report Submitted', 
+                        shouldBlock 
+                          ? 'Thank you for your report. The user has been blocked and our moderation team will review your report.' 
+                          : 'Thank you for your report. Our moderation team will review it shortly.'
+                      );
+                    } catch (error) {
+                      console.error('Error submitting report:', error);
+                      Alert.alert('Error', `Failed to submit report: ${error.message || 'Please try again.'}`);
+                    } finally {
+                      setIsSubmitting(false);
+                    }
                   }}
+                  disabled={isSubmitting || !reportReason || (reportReason !== 'no_interaction' && !reportExplanation.trim())}
                 >
-                  <Text style={[styles.reportModalBtnText, { color: '#fff' }]}>Submit Report</Text>
+                  <Text style={[styles.reportModalBtnText, { color: '#fff' }]}>
+                    {isSubmitting ? 'Submitting...' : (shouldBlock ? 'Report & Block' : 'Submit Report')}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         )}
+
+        {showFollowModal && (
+          <View style={styles.reportModalOverlay}>
+            <View style={styles.reportModal}>
+              <Text style={styles.reportModalTitle}>Track This Host</Text>
+              <Text style={styles.reportModalText}>
+                Stay in the loop. No alerts on their end, just more fun on yours.
+              </Text>
+              <View style={styles.reportModalButtons}>
+                <TouchableOpacity 
+                  style={[styles.reportModalBtn, styles.reportModalBtnCancel]}
+                  onPress={() => setShowFollowModal(false)}
+                >
+                  <Text style={styles.reportModalBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.reportModalBtn, styles.reportModalBtnSubmit]}
+                  onPress={handleFollowToggle}
+                  disabled={followLoading}
+                >
+                  <Text style={[styles.reportModalBtnText, { color: '#fff' }]}>
+                    {followLoading ? 'Tracking...' : 'Track'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+
       </View>
     </Modal>
+
+
+    </>
   );
 }
 
@@ -259,15 +527,15 @@ const styles = StyleSheet.create({
   verifiedContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   verifiedText: { fontSize: 12, color: '#22c55e', fontWeight: '600', marginLeft: 4 },
   trustedSince: { fontSize: 10, color: '#6b7280', marginTop: 2 },
-  flagButton: { padding: 8 },
+  flagButton: { padding: 8, flexDirection: 'row', alignItems: 'center' },
+  flagButtonText: { fontSize: 12, color: '#9ca3af', fontWeight: '500' },
   bioContainer: { marginBottom: 12 },
   bioText: { fontSize: 14, color: '#374151', lineHeight: 20 },
   lastActiveContainer: { marginBottom: 16 },
   lastActiveText: { fontSize: 12, color: '#6b7280' },
-  blockSection: { paddingTop: 16, borderTopWidth: 1, borderTopColor: '#e5e7eb' },
-  blockSectionTitle: { fontSize: 14, fontWeight: '600', marginBottom: 12, color: '#374151' },
-  pickerContainer: { marginBottom: 12 },
-  pickerButton: { 
+  dropdownContainer: { marginBottom: 16 },
+  dropdownLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#374151' },
+  dropdownButton: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
     alignItems: 'center', 
@@ -278,32 +546,134 @@ const styles = StyleSheet.create({
     borderRadius: 8, 
     backgroundColor: '#fff' 
   },
-  pickerText: { fontSize: 14, color: '#374151' },
-  textAreaContainer: { marginBottom: 12 },
-  textAreaLabel: { fontSize: 14, fontWeight: '500', marginBottom: 8, color: '#374151' },
-  textAreaWrapper: { 
+  dropdownText: { fontSize: 14, color: '#374151', flex: 1 },
+  dropdownList: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 200,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  dropdownScrollView: {
+    maxHeight: 200,
+  },
+  dropdownOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  dropdownOptionSelected: {
+    backgroundColor: 'rgba(186, 164, 235, 0.1)',
+  },
+  dropdownOptionText: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+  },
+  dropdownOptionTextSelected: {
+    color: '#BAA4EB',
+    fontWeight: '600',
+  },
+  explanationContainer: { marginBottom: 16 },
+  explanationLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#374151' },
+  explanationInput: { 
     paddingVertical: 12, 
     paddingHorizontal: 16, 
     borderWidth: 1, 
     borderColor: '#d1d5db', 
     borderRadius: 8, 
     backgroundColor: '#fff',
-    minHeight: 80
+    minHeight: 80,
+    fontSize: 14,
+    color: '#374151'
   },
-  textAreaPlaceholder: { fontSize: 14, color: '#9ca3af' },
-  blockBtn: { 
+  charCount: { 
+    fontSize: 12, 
+    color: '#6b7280', 
+    textAlign: 'right', 
+    marginTop: 4 
+  },
+  blockOption: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start', 
+    marginBottom: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb'
+  },
+  checkbox: { 
+    width: 20, 
+    height: 20, 
+    borderRadius: 4, 
+    borderWidth: 2, 
+    borderColor: '#d1d5db', 
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 2
+  },
+  checkboxChecked: { 
+    backgroundColor: '#BAA4EB', 
+    borderColor: '#BAA4EB' 
+  },
+  blockOptionText: { 
+    fontSize: 14, 
+    color: '#374151', 
+    flex: 1,
+    lineHeight: 20
+  },
+  buttonDisabled: { opacity: 0.5 },
+  followSection: { 
+    paddingTop: 16, 
+    borderTopWidth: 1, 
+    borderTopColor: 'rgba(186, 164, 235, 0.3)' 
+  },
+  followBtn: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'center', 
     paddingVertical: 12, 
     paddingHorizontal: 16, 
-    backgroundColor: '#fef2f2', 
-    borderRadius: 8,
+    backgroundColor: 'rgba(186, 164, 235, 0.1)', 
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#fecaca'
+    borderColor: '#BAA4EB',
+    // iOS-only subtle shadow; Android uses clean no-elevation to avoid heavy look
+    ...(Platform.OS === 'ios' ? {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 2,
+    } : {
+      elevation: 0,
+    }),
   },
-  blockBtnDisabled: { opacity: 0.5 },
-  blockBtnText: { fontSize: 14, fontWeight: '600', color: '#b91c1c' },
+  followBtnActive: { 
+    backgroundColor: '#BAA4EB',
+    borderColor: '#BAA4EB',
+  },
+  followBtnText: { 
+    fontSize: 14, 
+    fontWeight: '700', 
+    color: '#BAA4EB' 
+  },
+  followBtnTextActive: { 
+    color: '#fff' 
+  },
   reportModalOverlay: { 
     position: 'absolute', 
     top: 0, 
@@ -314,6 +684,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center', 
     alignItems: 'center',
     zIndex: 1000
+  },
+  fullScreenOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   reportModal: { 
     backgroundColor: '#fff', 

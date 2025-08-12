@@ -11,11 +11,24 @@ import { notificationUtils } from '../utils/notifications';
 import { notifBus } from '../utils/notifications';
 import { useAuth } from '../auth/AuthProvider';
 
-export default function TimelineEvent({ event, onCancel }) {
+function TimelineEvent({ event, onCancel }) {
   const { user } = useAuth();
   const isHost = user?.id === event?.host_id;
-  const minutesAway = differenceInMinutes(new Date(event.starts_at), new Date());
-  const countdown = minutesAway <= 0 ? null : minutesAway < 60 ? `Starts in ${minutesAway}m` : `Starts in ${Math.round(minutesAway/60)}h`;
+  // Safely parse event start time to avoid "Invalid time value" errors
+  const eventStart = (() => {
+    try {
+      if (!event?.starts_at) return null;
+      const d = new Date(event.starts_at);
+      return isNaN(d.getTime()) ? null : d;
+    } catch {
+      return null;
+    }
+  })();
+
+  const minutesAway = eventStart ? differenceInMinutes(eventStart, new Date()) : 0;
+  const countdown = eventStart && minutesAway > 0
+    ? (minutesAway < 60 ? `Starts in ${minutesAway}m` : `Starts in ${Math.round(minutesAway/60)}h`)
+    : null;
   const [remind, setRemind] = useState(true);
   const [avatars, setAvatars] = useState([]);
   
@@ -202,7 +215,9 @@ export default function TimelineEvent({ event, onCancel }) {
           <View style={{ marginLeft:12, flex:1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title} numberOfLines={1}>{event.title}</Text>
-              <Text style={styles.time}>{format(new Date(event.starts_at), 'h:mm a')}</Text>
+              {!!eventStart && (
+                <Text style={styles.time}>{format(eventStart, 'h:mm a')}</Text>
+              )}
             </View>
             <TouchableOpacity onPress={openChatModal} style={styles.chatBubble}>
               <Text style={styles.chatBubbleEmoji}>💬</Text>
@@ -298,6 +313,21 @@ export default function TimelineEvent({ event, onCancel }) {
     </TouchableOpacity>
   );
 }
+
+const arePropsEqual = (prevProps, nextProps) => {
+  const p = prevProps.event || {};
+  const n = nextProps.event || {};
+  const pCount = p.attendees?.count || 0;
+  const nCount = n.attendees?.count || 0;
+  return (
+    p.id === n.id &&
+    p.starts_at === n.starts_at &&
+    p.imageUrl === n.imageUrl &&
+    pCount === nCount
+  );
+};
+
+export default React.memo(TimelineEvent, arePropsEqual);
 
 const styles = StyleSheet.create({
   // Enhanced card with gradient and shadows

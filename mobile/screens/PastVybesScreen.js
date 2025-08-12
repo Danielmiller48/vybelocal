@@ -1,6 +1,6 @@
 // mobile/screens/PastVybesScreen.js
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import TimelineEvent from '../components/TimelineEvent';
 import TimelineSectionHeader from '../components/TimelineSectionHeader';
@@ -20,6 +20,14 @@ export default function PastVybesScreen() {
   const [first, setFirst] = useState('');
   const navigation = useNavigation();
   const isFocused = useIsFocused();
+
+  // Report modal state
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportEvent, setReportEvent] = useState(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportExplanation, setReportExplanation] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const loadPastEvents = async () => {
     if (!user) return;
@@ -103,23 +111,53 @@ export default function PastVybesScreen() {
     }
   };
 
-  const handleReportEvent = useCallback((event) => {
-    Alert.alert(
-      'Report Event',
-      'Report inappropriate behavior or issues with this event?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Report',
-          style: 'destructive',
-          onPress: () => {
-            // TODO: Implement reporting functionality
-            Alert.alert('Report Submitted', 'Thank you for your report. Our moderation team will review it shortly.');
-          }
-        }
-      ]
-    );
+  const openReportModal = useCallback((ev) => {
+    setReportEvent(ev);
+    setReportReason('');
+    setReportExplanation('');
+    setShowDropdown(false);
+    setReportVisible(true);
   }, []);
+
+  const submitReport = useCallback(async () => {
+    if (!user || !reportEvent) return;
+    if (!reportReason) {
+      Alert.alert('Select a reason', 'Please choose a reason from the list.');
+      return;
+    }
+    if (reportReason !== 'no_interaction' && !reportExplanation.trim()) {
+      Alert.alert('Add details', 'Please include a brief explanation.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        target_type: 'event',
+        target_id: reportEvent.id,
+        reporter_id: user.id,
+        user_id: reportEvent.host_id, // event owner
+        reason_code: reportReason,
+        details: reportReason === 'no_interaction' ? null : { explanation: reportExplanation.trim() },
+        severity: 1,
+        status: 'pending',
+        source: 'user',
+      };
+
+      const { error } = await supabase.from('flags').insert(payload);
+      if (error) throw error;
+
+      setReportVisible(false);
+      setReportEvent(null);
+      setReportReason('');
+      setReportExplanation('');
+      Alert.alert('Report submitted', 'Thanks. Our team will review this Vybe.');
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not submit report.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [user, reportEvent, reportReason, reportExplanation]);
 
   const renderItem = useCallback(({ item }) => {
     if (item.type === 'header') {
@@ -134,20 +172,20 @@ export default function PastVybesScreen() {
         />
         <TouchableOpacity 
           style={styles.reportButton}
-          onPress={() => handleReportEvent(item.event)}
+          onPress={() => openReportModal(item.event)}
         >
           <Ionicons name="flag-outline" size={16} color="#ef4444" />
           <Text style={styles.reportText}>Report Issue</Text>
         </TouchableOpacity>
       </View>
     );
-  }, [handleReportEvent]);
+  }, [openReportModal]);
 
   const keyExtractor = useCallback((item) => item.id, []);
 
   const getItemLayout = useCallback((data, index) => ({
-    length: 200, // Approximate item height
-    offset: 200 * index,
+    length: 300,
+    offset: 300 * index,
     index,
   }), []);
 
@@ -212,6 +250,88 @@ export default function PastVybesScreen() {
             </View>
           )}
         </View>
+
+        {/* Report Event Modal (overlay) */}
+        {reportVisible && (
+          <View style={styles.reportOverlay}>
+            <View style={styles.reportCard}>
+              <Text style={styles.reportTitle}>Report This Vybe</Text>
+              <Text style={styles.reportCopy}>
+                We take safety and authenticity seriously. Tell us what went wrong so we can look into it.
+              </Text>
+
+              {/* Reason dropdown */}
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.dropdownLabel}>Reason</Text>
+                <TouchableOpacity style={styles.dropdownButton} onPress={() => setShowDropdown(!showDropdown)}>
+                  <Text style={styles.dropdownText}>
+                    {reportReason === 'no_show' ? 'No show by host' :
+                     reportReason === 'mlm_scam' ? 'MLM / Scam' :
+                     reportReason === 'harassment' ? 'Harassment or bullying' :
+                     reportReason === 'unsafe' ? 'Unsafe environment' :
+                     reportReason === 'inappropriate' ? 'Inappropriate content or behavior' :
+                     reportReason === 'spam' ? 'Spam or solicitation' :
+                     reportReason === 'misleading' ? 'Misleading or false event' :
+                     reportReason === 'other' ? 'Other' : 'Select a reason...'}
+                  </Text>
+                  <Ionicons name={showDropdown ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+                </TouchableOpacity>
+                {showDropdown && (
+                  <View style={styles.dropdownList}>
+                    {[
+                      { label: 'No show by host', value: 'no_show' },
+                      { label: 'MLM / Scam', value: 'mlm_scam' },
+                      { label: 'Harassment or bullying', value: 'harassment' },
+                      { label: 'Unsafe environment', value: 'unsafe' },
+                      { label: 'Inappropriate content or behavior', value: 'inappropriate' },
+                      { label: 'Spam or solicitation', value: 'spam' },
+                      { label: 'Misleading or false event', value: 'misleading' },
+                      { label: 'Other', value: 'other' },
+                    ].map(opt => (
+                      <TouchableOpacity key={opt.value} style={styles.dropdownOption} onPress={() => { setReportReason(opt.value); setShowDropdown(false); }}>
+                        <Text style={[styles.dropdownOptionText, reportReason === opt.value && { color:'#BAA4EB', fontWeight:'600' }]}>{opt.label}</Text>
+                        {reportReason === opt.value && <Ionicons name="checkmark" size={16} color="#BAA4EB" />}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* Explanation */}
+              {reportReason && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={styles.dropdownLabel}>What happened? (required)</Text>
+                  <TextInput
+                    style={styles.explanationInput}
+                    multiline
+                    numberOfLines={4}
+                    maxLength={255}
+                    placeholder="Give us a brief description..."
+                    placeholderTextColor="#9ca3af"
+                    value={reportExplanation}
+                    onChangeText={setReportExplanation}
+                    textAlignVertical="top"
+                  />
+                  <Text style={styles.charCount}>{reportExplanation.length}/255</Text>
+                </View>
+              )}
+
+              {/* Actions */}
+              <View style={{ flexDirection:'row', gap: 12 }}>
+                <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setReportVisible(false)} disabled={isSubmitting}>
+                  <Text style={styles.modalBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnSubmit, (isSubmitting || !reportReason || !reportExplanation.trim()) && { opacity: 0.5 }]}
+                  disabled={isSubmitting || !reportReason || !reportExplanation.trim()}
+                  onPress={submitReport}
+                >
+                  <Text style={[styles.modalBtnText, { color:'#fff' }]}>{isSubmitting ? 'Submitting...' : 'Submit Report'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -291,4 +411,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 32,
   },
+  reportOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  reportCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    width: '92%',
+    maxWidth: 440,
+  },
+  reportTitle: { fontSize: 18, fontWeight: '700', color: '#1f2937', marginBottom: 8 },
+  reportCopy: { fontSize: 14, color: '#374151', marginBottom: 16, lineHeight: 20 },
+  dropdownLabel: { fontSize: 14, fontWeight: '600', marginBottom: 6, color: '#374151' },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+  },
+  dropdownText: { fontSize: 14, color: '#111827', flex: 1 },
+  dropdownList: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  dropdownOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  dropdownOptionText: { fontSize: 14, color: '#111827', flex: 1 },
+  explanationInput: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    minHeight: 90,
+    fontSize: 14,
+    color: '#111827',
+  },
+  charCount: { fontSize: 12, color: '#6b7280', textAlign: 'right', marginTop: 4 },
+  modalBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  modalBtnCancel: { backgroundColor: '#f3f4f6' },
+  modalBtnSubmit: { backgroundColor: '#e11d48' },
+  modalBtnText: { fontSize: 14, fontWeight: '600', color: '#111827' },
 });

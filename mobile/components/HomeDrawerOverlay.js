@@ -178,7 +178,7 @@ export default function HomeDrawerOverlay() {
                 icon: 'people-outline',
                 action: () => {
                   closeSheet();
-                  // TODO: Navigate to tracked hosts screen
+                  navigation.navigate('TrackedHosts');
                 },
               },
               {

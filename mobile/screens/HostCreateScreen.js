@@ -2979,68 +2979,7 @@ export default function HostCreateScreen() {
           )}
         </HostSection>
 
-        {/* First-Timer Tooltip */}
-        {showTooltip && (
-          <View style={{
-            position: 'absolute',
-            top: 100,
-            right: 20,
-            backgroundColor: 'rgba(59, 130, 246, 0.95)',
-            borderRadius: 12,
-            padding: 16,
-            maxWidth: 250,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 10,
-            zIndex: 1000,
-          }}>
-            <View style={{
-              position: 'absolute',
-              top: -8,
-              right: 40,
-              width: 0,
-              height: 0,
-              borderLeftWidth: 8,
-              borderRightWidth: 8,
-              borderBottomWidth: 8,
-              borderLeftColor: 'transparent',
-              borderRightColor: 'transparent',
-              borderBottomColor: 'rgba(59, 130, 246, 0.95)',
-            }} />
-            <Text style={{
-              color: 'white',
-              fontSize: 14,
-              fontWeight: '600',
-              marginBottom: 8,
-            }}>
-              Create Your First Event! 🎉
-            </Text>
-            <Text style={{
-              color: 'white',
-              fontSize: 12,
-              lineHeight: 16,
-              marginBottom: 12,
-            }}>
-              Tap the green + button to host your first event and start building your community.
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowTooltip(false)}
-              style={{
-                alignSelf: 'flex-end',
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 6,
-              }}
-            >
-              <Text style={{ color: 'white', fontSize: 12, fontWeight: '500' }}>
-                Got it!
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* First-Timer Tooltip moved outside ScrollView */}
 
         {/* Payouts & Earnings */}
         <HostSection title="Payouts & Earnings" icon="card">
@@ -3203,6 +3142,47 @@ export default function HostCreateScreen() {
         {/* Bottom spacing for tab bar */}
         <View style={{ height: 100 }} />
       </ScrollView>
+      {showTooltip && (
+        <View style={{
+          position: 'absolute',
+          bottom: 120,
+          alignSelf: 'center',
+          backgroundColor: 'rgba(59, 130, 246, 0.95)',
+          borderRadius: 12,
+          padding: 16,
+          maxWidth: 250,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 10,
+          zIndex: 2000,
+        }}>
+          <View style={{
+            position: 'absolute',
+            bottom: -8,
+            left: '50%',
+            marginLeft: -8,
+            width: 0,
+            height: 0,
+            borderLeftWidth: 8,
+            borderRightWidth: 8,
+            borderTopWidth: 8,
+            borderLeftColor: 'transparent',
+            borderRightColor: 'transparent',
+            borderTopColor: 'rgba(59, 130, 246, 0.95)',
+          }} />
+          <Text style={{ color: 'white', fontSize: 14, fontWeight: '600', marginBottom: 8 }}>
+            Create Your First Event! 🎉
+          </Text>
+          <Text style={{ color: 'white', fontSize: 12, lineHeight: 16, marginBottom: 12 }}>
+            Tap the purple + button to host your first event and start building your community.
+          </Text>
+          <TouchableOpacity onPress={() => setShowTooltip(false)} style={{ alignSelf: 'flex-end', backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}>
+            <Text style={{ color: 'white', fontSize: 12, fontWeight: '500' }}>Got it!</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       
       <HostDrawerOverlay />
       <EventQuickModal
