@@ -15,6 +15,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   const [busy, setBusy] = useState(false);
   const [rsvpCount, setRsvpCount] = useState(0);
   const capacity = event?.rsvp_capacity ?? null;
+  const isHost = user?.id === event?.host_id;
 
   // Fetch whether current user already RSVP'd
   useEffect(() => {
@@ -60,6 +61,11 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     if (!user) {
       // Redirect unauthenticated users to login screen
       navigation.navigate('Login');
+      return;
+    }
+
+    // Hosts can't RSVP to their own events
+    if (isHost) {
       return;
     }
 
@@ -118,7 +124,9 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   const disabled = (!joined && capacity && rsvpCount >= capacity) || busy;
 
   let label;
-  if (busy) {
+  if (isHost) {
+    label = 'Hosting';
+  } else if (busy) {
     label = '…';
   } else if (joined) {
     label = 'Cancel RSVP';
@@ -141,13 +149,13 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     <TouchableOpacity
       style={[
         styles.button,
-        joined ? styles.joined : styles.notJoined,
+        isHost ? styles.hosting : (joined ? styles.joined : styles.notJoined),
         disabled && styles.disabled,
         dynamicStyle,
       ]}
       onPress={(e) => { e.stopPropagation?.(); handlePress(); }}
-      disabled={disabled}
-      activeOpacity={0.8}
+      disabled={disabled || isHost}
+      activeOpacity={isHost ? 1 : 0.8}
     >
       {busy ? (
         <ActivityIndicator color="#fff" />
@@ -171,6 +179,9 @@ const styles = StyleSheet.create({
   },
   notJoined: {
     backgroundColor: colors.primary,
+  },
+  hosting: {
+    backgroundColor: '#BAA4EB',
   },
   disabled: {
     opacity: 0.55,

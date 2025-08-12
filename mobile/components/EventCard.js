@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { format } from 'date-fns';
 import { supabase } from '../utils/supabase';
+import { useAuth } from '../auth/AuthProvider';
 import ProfileModal from './ProfileModal';
 import RSVPButton from './RSVPButton';
 // pastel colors for vibe pills
@@ -30,10 +31,12 @@ function useAvatarUrl(path) {
 }
 
 export default function EventCard({ event, onPress }) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [hostProfile, setHostProfile] = useState(null);
   const [hostStats, setHostStats] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const isHost = user?.id === event?.host_id;
 
   useEffect(() => {
     let isMounted = true;
@@ -153,8 +156,12 @@ export default function EventCard({ event, onPress }) {
           {/* Host row */}
           <TouchableOpacity
             style={styles.hostRow}
-            onPress={(e) => { e.stopPropagation(); if (hostProfile) setModalOpen(true); }}
-            activeOpacity={0.8}
+            onPress={(e) => { 
+              e.stopPropagation(); 
+              if (hostProfile && !isHost) setModalOpen(true); 
+            }}
+            activeOpacity={isHost ? 1 : 0.8}
+            disabled={isHost}
           >
             {loading ? (
               <ActivityIndicator style={{ width: 32, height: 32, marginRight: 8 }} />

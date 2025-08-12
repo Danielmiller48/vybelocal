@@ -7,7 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import colors from '../theme/colors';
 
 export default function HomeDrawerOverlay() {
-  const sheetH = Dimensions.get('window').height * 0.6;
+  const sheetH = Dimensions.get('window').height * 0.55;
   const peek = 28; // visible portion when closed
   const sheetY = useRef(new Animated.Value(sheetH - peek)).current;
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -160,7 +160,7 @@ export default function HomeDrawerOverlay() {
         {/* Grab handle */}
         <View style={{ position:'absolute', top:8, alignSelf:'center', width:56, height:6, borderRadius:3, backgroundColor:'rgba(255,255,255,0.45)', zIndex:10 }} />
         
-        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 40, paddingBottom: 66 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 40, paddingBottom: 20 }}>
           <View style={{ marginTop: 24 }}>
             {[
               {
@@ -170,15 +170,6 @@ export default function HomeDrawerOverlay() {
                 action: () => {
                   closeSheet();
                   navigation.navigate('HomeMain');
-                },
-              },
-              {
-                key: 'calendar',
-                label: 'View Full Calendar',
-                icon: 'calendar-outline',
-                action: () => {
-                  closeSheet();
-                  navigation.navigate('Calendar');
                 },
               },
               {
@@ -196,7 +187,7 @@ export default function HomeDrawerOverlay() {
                 icon: 'time-outline',
                 action: () => {
                   closeSheet();
-                  // TODO: Past vybes implementation
+                  navigation.navigate('PastVybes');
                 },
               },
               {

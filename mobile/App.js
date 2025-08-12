@@ -21,6 +21,7 @@ import { AuthProvider, useAuth } from './auth/AuthProvider';
 import HostCreateScreen from './screens/HostCreateScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import GuidelinesScreen from './screens/GuidelinesScreen';
+import PastVybesScreen from './screens/PastVybesScreen';
 import PushNotificationService from './utils/pushNotifications';
 
 // Make PushNotificationService available globally for testing
@@ -136,6 +137,7 @@ function HomeStackScreen() {
       <HomeStack.Screen name="HomeMain" component={HomeDashboard} />
       <HomeStack.Screen name="Calendar" component={CalendarScreen} />
       <HomeStack.Screen name="Guidelines" component={GuidelinesScreen} />
+      <HomeStack.Screen name="PastVybes" component={PastVybesScreen} />
     </HomeStack.Navigator>
   );
 }

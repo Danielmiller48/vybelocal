@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Animated, Dimensions, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../utils/supabase';
 
@@ -50,19 +51,70 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
     <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Animated.View style={[styles.card, { transform:[{ translateY: slideAnim }] }]}>
+          {/* White to peach gradient background */}
+          <LinearGradient
+            colors={['#FFFFFF', '#FFE5D9']}
+            start={{x:0,y:0}} 
+            end={{x:0,y:1}}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+
           {/* Header */}
-          <View style={styles.headerRow}>
-            <Text style={styles.headerText}>Profile</Text>
-            <TouchableOpacity onPress={onClose}><Text style={styles.closeBtn}>×</Text></TouchableOpacity>
+          <View style={[styles.headerRow, {
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(186, 164, 235, 0.3)',
+            zIndex: 2,
+          }]}>
+            <Text style={[styles.headerText, { fontWeight: '700' }]}>Profile</Text>
+            <TouchableOpacity onPress={onClose}>
+              <View style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: '#ef4444',
+                justifyContent: 'center',
+                alignItems: 'center',
+                shadowColor: '#ef4444',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.4,
+                shadowRadius: 4,
+                elevation: 4,
+              }}>
+                <Ionicons name="close" size={18} color="#ffffff" />
+              </View>
+            </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: 16 }}>
-            <View style={styles.profileRow}>
-              <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+          <ScrollView contentContainerStyle={{ padding: 16, zIndex: 2 }}>
+            <View style={[styles.profileRow, {
+              backgroundColor: 'rgba(255, 255, 255, 0.85)',
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: '#BAA4EB',
+              shadowColor: '#BAA4EB',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 6,
+              padding: 16,
+            }]}>
+              <View style={{
+                shadowColor: '#BAA4EB',
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.4,
+                shadowRadius: 12,
+                elevation: 8,
+              }}>
+                <Image source={{ uri: avatarUrl }} style={[styles.avatar, {
+                  borderWidth: 2,
+                  borderColor: '#BAA4EB',
+                }]} />
+              </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{profile.name}</Text>
-                {profile.pronouns ? (<Text style={styles.pronouns}>{profile.pronouns}</Text>) : null}
-                <Text style={styles.statLine}>{stats.completed ?? 0} completed event{stats.completed === 1 ? '' : 's'} • {stats.cancels ?? 0} cancellation{stats.cancels === 1 ? '' : 's'} (last 6 mo)</Text>
+                <Text style={[styles.name, { fontWeight: '700' }]}>{profile.name}</Text>
+                {profile.pronouns ? (<Text style={[styles.pronouns, { fontWeight: '500' }]}>{profile.pronouns}</Text>) : null}
+                <Text style={[styles.statLine, { fontWeight: '500' }]}>{stats.completed ?? 0} completed event{stats.completed === 1 ? '' : 's'} • {stats.cancels ?? 0} cancellation{stats.cancels === 1 ? '' : 's'} (last 6 mo)</Text>
                 {profile.is_trusted && (
                   <View style={styles.verifiedContainer}>
                     <Ionicons name="checkmark-circle" size={16} color="#22c55e" />

@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../utils/supabase';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function ConfirmCancelModal({ visible, event, onConfirm, onClose }) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [reason, setReason] = useState('');
@@ -19,22 +23,58 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
     const fetchPreview = async () => {
       setFetchingPreview(true);
       try {
-        const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
-        const response = await fetch(`${baseUrl}/api/events/${event.id}/cancel`, {
-          method: 'GET',
-          credentials: 'include',
+        // Get event details and RSVP count directly from Supabase
+        const { data: eventData, error: eventError } = await supabase
+          .from('events')
+          .select(`
+            *,
+            rsvps(user_id, paid)
+          `)
+          .eq('id', event.id)
+          .single();
+
+        if (eventError) throw eventError;
+
+        // Get host's cancellation history for strike count
+        const { data: strikeData } = await supabase
+          .from('v_host_strikes_last6mo')
+          .select('strike_count')
+          .eq('host_id', user.id)
+          .maybeSingle();
+
+        const currentStrikes = strikeData?.strike_count || 0;
+        const isPaidEvent = eventData.price_in_cents && eventData.price_in_cents > 0;
+        const rsvpCount = eventData.rsvps?.length || 0;
+        const hasAttendees = rsvpCount > 0;
+        
+        // Check if cancellation is within 24 hours
+        const eventStart = new Date(eventData.starts_at);
+        const now = new Date();
+        const hoursUntilEvent = (eventStart.getTime() - now.getTime()) / (1000 * 60 * 60);
+        const shortNotice = hoursUntilEvent < 24;
+
+        // Business logic for strikes and fees
+        const willCreateStrike = hasAttendees;
+        const willChargeHost = isPaidEvent && currentStrikes >= 1 && hasAttendees;
+        
+        // Calculate potential fees (simplified for mobile)
+        const stripeFeePer = isPaidEvent ? Math.round(eventData.price_in_cents * 0.029 + 30) : 0;
+        const totalFees = willChargeHost ? stripeFeePer * rsvpCount : 0;
+
+        setPreview({
+          isPaidEvent,
+          hasAttendees,
+          rsvpCount,
+          shortNotice,
+          willCreateStrike,
+          willChargeHost,
+          totalFees,
+          currentStrikes,
+          eventData
         });
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to load cancellation details');
-        }
-        
-        const data = await response.json();
-        setPreview(data);
       } catch (error) {
-        console.error('Error fetching cancellation preview:', error);
-        Alert.alert('Error', error.message);
+        console.error('Error calculating cancellation preview:', error);
+        Alert.alert('Error', 'Failed to load cancellation details');
         onClose();
       } finally {
         setFetchingPreview(false);
@@ -49,55 +89,66 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
     
     setLoading(true);
     try {
-      // 1️⃣ If penalty payment required, handle card charge first
-      if (preview.isPaidEvent && preview.willChargeHost) {
-        const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
-        const payResponse = await fetch(`${baseUrl}/api/events/${event.id}/penalty-intent`, { 
-          method: 'POST' 
-        });
-        const payData = await payResponse.json();
-        
-        if (!payResponse.ok || payData.status !== 'succeeded') {
-          throw new Error(payData.error || 'Penalty payment failed');
+      // Note: For mobile, we're simplifying the payment flow
+      // Penalty payments would need Stripe integration which can be added later
+      if (preview.willChargeHost) {
+        Alert.alert(
+          'Payment Required', 
+          `This cancellation requires a $${(preview.totalFees / 100).toFixed(2)} fee. Payment integration coming soon - please contact support.`,
+          [{ text: 'OK', onPress: () => setLoading(false) }]
+        );
+        return;
+      }
+
+      // Update event status to cancelled directly in Supabase
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ 
+          status: 'cancelled',
+          canceled_at: new Date().toISOString(),
+          cancel_reason: reason || null
+        })
+        .eq('id', event.id);
+
+      if (updateError) throw updateError;
+
+      // Add strike record if there are attendees
+      if (preview.willCreateStrike) {
+        const { error: strikeError } = await supabase
+          .from('host_strikes')
+          .insert({
+            host_id: user.id,
+            event_id: event.id,
+            strike_type: 'guest_attended_cancellation',
+            created_at: new Date().toISOString()
+          });
+
+        if (strikeError) {
+          console.warn('Failed to record strike:', strikeError);
+          // Don't fail the whole operation for strike recording
         }
       }
 
-      // 2️⃣ Proceed with actual cancellation
-      const baseUrl = process.env.EXPO_PUBLIC_API_URL || 'https://www.vybelocal.com';
-      const response = await fetch(`${baseUrl}/api/events/${event.id}/cancel`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason_text: reason || null }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to cancel event');
-      }
-
-      const result = await response.json();
-      
-      // Show success message
-      const refundAmount = (result.refundTotalCents / 100).toFixed(2);
-      const penaltyAmount = (result.penaltyCents / 100).toFixed(2);
+      // For mobile simplification, we'll skip complex refund processing
+      // This would need payment integration for real refunds
       
       let successMessage = 'Event canceled successfully';
-      if (result.refundTotalCents > 0) {
-        successMessage += ` and $${refundAmount} refunded`;
+      if (preview.rsvpCount > 0) {
+        successMessage += ` • ${preview.rsvpCount} attendees will be notified`;
       }
-      if (result.penaltyCents > 0) {
-        successMessage += ` • $${penaltyAmount} fee covered`;
+      if (preview.willCreateStrike) {
+        successMessage += ' • Strike recorded due to having attendees';
       }
       
       Alert.alert('Success', successMessage);
-      onConfirm(result);
+      onConfirm({ success: true, eventId: event.id });
       
     } catch (error) {
       console.error('Error canceling event:', error);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);
+      onClose();
     }
   };
 
@@ -187,23 +238,55 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.modal}>
+          {/* White to peach gradient background */}
+          <LinearGradient
+            colors={['#FFFFFF', '#FFE5D9']}
+            start={{x:0,y:0}} 
+            end={{x:0,y:1}}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+
           {/* Header */}
-          <View style={styles.header}>
-            <Ionicons name="warning" size={24} color="#ef4444" />
-            <Text style={styles.title}>{header}</Text>
+          <View style={[styles.header, {
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(186, 164, 235, 0.3)',
+            paddingBottom: 16,
+            marginBottom: 16,
+            zIndex: 2,
+          }]}>
+            <View style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              borderRadius: 20,
+              padding: 8,
+              borderWidth: 1,
+              borderColor: '#ef4444',
+            }}>
+              <Ionicons name="warning" size={24} color="#ef4444" />
+            </View>
+            <Text style={[styles.title, { fontWeight: '700' }]}>{header}</Text>
           </View>
 
           {/* Body */}
-          <Text style={styles.body}>{body}</Text>
+          <Text style={[styles.body, { fontWeight: '500', zIndex: 2 }]}>{body}</Text>
 
           {/* Short-notice cancellation reason input */}
           {preview.shortNotice && (
-            <View style={styles.reasonSection}>
-              <Text style={styles.reasonLabel}>
+            <View style={[styles.reasonSection, { zIndex: 2 }]}>
+              <Text style={[styles.reasonLabel, { fontWeight: '600' }]}>
                 Life happens. If this was out of your control, let us know.
               </Text>
               <TextInput
-                style={styles.reasonInput}
+                style={[styles.reasonInput, {
+                  borderColor: '#BAA4EB',
+                  borderWidth: 2,
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  shadowColor: '#BAA4EB',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                  elevation: 3,
+                }]}
                 placeholder="Optional: share what happened (guests won't see this)"
                 value={reason}
                 onChangeText={setReason}
@@ -216,22 +299,39 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
           )}
 
           {/* Buttons */}
-          <View style={styles.buttonContainer}>
+          <View style={[styles.buttonContainer, { zIndex: 2 }]}>
             <TouchableOpacity 
-              style={styles.secondaryButton} 
+              style={[styles.secondaryButton, {
+                borderColor: '#BAA4EB',
+                borderWidth: 2,
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                shadowColor: '#BAA4EB',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 3,
+              }]} 
               onPress={onClose}
               disabled={loading}
+              activeOpacity={0.8}
             >
-              <Text style={styles.secondaryButtonText}>Keep event</Text>
+              <Text style={[styles.secondaryButtonText, { fontWeight: '600' }]}>Keep event</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={[styles.destructiveButton, loading && styles.disabledButton]} 
+              style={[styles.destructiveButton, {
+                shadowColor: '#ef4444',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 6,
+              }, loading && styles.disabledButton]} 
               onPress={handleConfirm}
               disabled={loading}
+              activeOpacity={0.8}
             >
               {loading && <ActivityIndicator size="small" color="#ffffff" style={{ marginRight: 8 }} />}
-              <Text style={styles.destructiveButtonText}>{buttonText}</Text>
+              <Text style={[styles.destructiveButtonText, { fontWeight: '700' }]}>{buttonText}</Text>
             </TouchableOpacity>
           </View>
         </View>

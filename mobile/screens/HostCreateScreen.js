@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Animated, Modal, Switch } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Animated, Modal, Switch, Image, FlatList } from 'react-native';
 import Slider from '@react-native-community/slider';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ import EventQuickModal from '../components/host/EventQuickModal';
 import HostEventActionsSheet from '../components/HostEventActionsSheet';
 import ConfirmCancelModal from '../components/ConfirmCancelModal';
 import EventChatModal from '../components/EventChatModal';
+import ProfileModal from '../components/ProfileModal';
 
 // Collapsible Section Component
 function HostSection({ title, children, defaultOpen = false, icon, headerRight=null }) {
@@ -101,6 +102,10 @@ function EventCard({ event, isPast = false }) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showRsvpModal, setShowRsvpModal] = useState(false);
+  const [attendees, setAttendees] = useState([]);
+  const [loadingAttendees, setLoadingAttendees] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [profileModal, setProfileModal] = useState({ visible: false, profile: null, stats: {} });
   
   const progress = (event.capacity > 0 && event.rsvp_count > 0) ? (event.rsvp_count / event.capacity) : 0;
   const progressAnim = React.useRef(new Animated.Value(0)).current;
@@ -125,6 +130,134 @@ function EventCard({ event, isPast = false }) {
   const badge = getStatusBadge(event.status);
   const eventDate = new Date(event.starts_at);
   const isToday = eventDate.toDateString() === new Date().toDateString();
+
+  // Load attendees when modal opens
+  const loadAttendees = async () => {
+    if (loadingAttendees || !event.id) return;
+    
+    setLoadingAttendees(true);
+    try {
+      // Get RSVP user IDs
+      const { data: rsvpData, error: rsvpError } = await supabase
+        .from('rsvps')
+        .select('user_id, paid, created_at')
+        .eq('event_id', event.id)
+        .eq('status', 'attending')
+        .order('created_at', { ascending: true });
+
+      if (rsvpError) throw rsvpError;
+
+      if (!rsvpData || rsvpData.length === 0) {
+        setAttendees([]);
+        return;
+      }
+
+      const userIds = rsvpData.map(rsvp => rsvp.user_id);
+
+      // Get user profiles
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .in('id', userIds);
+
+      if (profileError) throw profileError;
+
+      // Combine RSVP data with profile data and resolve avatar URLs
+      const attendeesList = await Promise.all(
+        rsvpData.map(async (rsvp) => {
+          const profile = profileData.find(p => p.id === rsvp.user_id);
+          let avatarUrl = 'https://placehold.co/40x40';
+          
+          if (profile?.avatar_url) {
+            if (profile.avatar_url.startsWith('http')) {
+              avatarUrl = profile.avatar_url;
+            } else {
+              try {
+                const { data: urlData } = await supabase.storage
+                  .from('profile-images')
+                  .createSignedUrl(profile.avatar_url, 3600);
+                avatarUrl = urlData?.signedUrl || 'https://placehold.co/40x40';
+              } catch {
+                avatarUrl = 'https://placehold.co/40x40';
+              }
+            }
+          }
+          
+          return {
+            id: rsvp.user_id,
+            name: profile?.name || 'Unknown User',
+            avatar_url: avatarUrl,
+            paid: rsvp.paid,
+            rsvp_date: rsvp.created_at
+          };
+        })
+      );
+
+      setAttendees(attendeesList);
+    } catch (error) {
+      console.error('Error loading attendees:', error);
+      setAttendees([]);
+    } finally {
+      setLoadingAttendees(false);
+    }
+  };
+
+  // Load attendees when modal opens
+  React.useEffect(() => {
+    if (showRsvpModal && attendees.length === 0) {
+      loadAttendees();
+    }
+  }, [showRsvpModal]);
+
+  // Pulse animation for close button
+  React.useEffect(() => {
+    if (showRsvpModal) {
+      const pulse = () => {
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.2,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ]).start(() => pulse());
+      };
+      pulse();
+    }
+  }, [showRsvpModal, pulseAnim]);
+
+  // Function to open profile modal for an attendee
+  const openProfile = async (userId) => {
+    try {
+      const { data: prof } = await supabase
+        .from('public_user_cards')
+        .select('*')
+        .eq('uuid', userId)
+        .single();
+        
+      // Get stats: completed events and cancellation strikes
+      const [{ count: completed }, { data: strikeRow }] = await Promise.all([
+        supabase.from('v_past_events').select('id', { count:'exact', head:true }).eq('host_id', userId),
+        supabase.from('v_host_strikes_last6mo').select('strike_count').eq('host_id', userId).maybeSingle(),
+      ]);
+      
+      setProfileModal({ 
+        visible: true, 
+        profile: prof, 
+        stats: { 
+          completed: completed || 0, 
+          cancels: Number(strikeRow?.strike_count || 0) 
+        } 
+      });
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      // Could show a toast or alert here if desired
+    }
+  };
 
   return (
     <>
@@ -252,35 +385,191 @@ function EventCard({ event, isPast = false }) {
       event={event}
     />
     
-    {/* Simple RSVP List Modal */}
-    <Modal visible={showRsvpModal} animationType="slide" presentationStyle="pageSheet">
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+    {/* RSVP List Modal */}
+    <Modal 
+      visible={showRsvpModal} 
+      animationType="slide" 
+      presentationStyle="pageSheet"
+      onRequestClose={() => setShowRsvpModal(false)}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
+        {/* White to peach gradient background */}
+        <LinearGradient
+          colors={['#FFFFFF', '#FFE5D9']}
+          start={{x:0,y:0}} 
+          end={{x:0,y:1}}
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          pointerEvents="none"
+        />
+
+        {/* Pulsing Red X Close Button */}
+        <Animated.View style={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          zIndex: 10,
+          transform: [{ scale: pulseAnim }]
+        }}>
+          <TouchableOpacity 
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: '#ef4444',
+              justifyContent: 'center',
+              alignItems: 'center',
+              borderWidth: 0.5,
+              borderColor: 'rgba(239, 68, 68, 0.3)',
+              shadowColor: '#ef4444',
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.6,
+              shadowRadius: 8,
+              elevation: 8,
+              opacity: 0.95,
+            }}
+            onPress={() => setShowRsvpModal(false)}
+          >
+            <Ionicons name="close" size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Header */}
         <View style={{ 
           flexDirection: 'row', 
           alignItems: 'center', 
-          justifyContent: 'space-between', 
+          justifyContent: 'center', 
           padding: 20, 
           borderBottomWidth: 1, 
-          borderBottomColor: '#e5e7eb' 
+          borderBottomColor: 'rgba(186, 164, 235, 0.3)',
+          zIndex: 2
         }}>
           <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>
-            RSVPs ({event.rsvp_count || 0})
-          </Text>
-          <TouchableOpacity onPress={() => setShowRsvpModal(false)}>
-            <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
-        </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="people-outline" size={48} color="#d1d5db" />
-          <Text style={{ fontSize: 16, color: '#6b7280', marginTop: 12 }}>
-            RSVP list coming soon
-          </Text>
-          <Text style={{ fontSize: 14, color: '#9ca3af', textAlign: 'center', marginTop: 8 }}>
-            This feature will show detailed attendee information
+            RSVPs ({attendees.length})
           </Text>
         </View>
+
+        {/* Content */}
+        {loadingAttendees ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+            <ActivityIndicator size="large" color="#BAA4EB" />
+            <Text style={{ fontSize: 16, color: '#6b7280', marginTop: 12, fontWeight: '600' }}>
+              Loading attendees...
+            </Text>
+          </View>
+        ) : attendees.length === 0 ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+            <View style={{
+              backgroundColor: 'rgba(186, 164, 235, 0.1)',
+              borderRadius: 50,
+              padding: 20,
+              marginBottom: 16,
+              borderWidth: 2,
+              borderColor: '#BAA4EB',
+            }}>
+              <Ionicons name="people-outline" size={48} color="#BAA4EB" />
+            </View>
+            <Text style={{ fontSize: 16, color: '#6b7280', marginTop: 12, fontWeight: '600' }}>
+              No RSVPs yet
+            </Text>
+            <Text style={{ fontSize: 14, color: '#9ca3af', textAlign: 'center', marginTop: 8, fontWeight: '500' }}>
+              When people RSVP to your event, they'll appear here
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={attendees}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ padding: 16, zIndex: 2 }}
+            renderItem={({ item, index }) => (
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                onPress={() => openProfile(item.id)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 14,
+                  paddingHorizontal: 18,
+                  backgroundColor: 'rgba(255, 255, 255, 0.85)',
+                  borderRadius: 16,
+                  marginBottom: 12,
+                  borderWidth: 1,
+                  borderColor: '#BAA4EB',
+                  shadowColor: '#BAA4EB',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 6,
+                }}
+              >
+                {/* Avatar */}
+                <View style={{
+                  shadowColor: '#BAA4EB',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 12,
+                  elevation: 8,
+                }}>
+                  <Image 
+                    source={{ uri: item.avatar_url }}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                      marginRight: 14,
+                      backgroundColor: '#e5e7eb',
+                      borderWidth: 2,
+                      borderColor: '#BAA4EB',
+                    }}
+                  />
+                </View>
+                
+                {/* User Info */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 2 }}>
+                    {item.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#6b7280', fontWeight: '500' }}>
+                    RSVP'd {new Date(item.rsvp_date).toLocaleDateString()}
+                  </Text>
+                </View>
+
+                {/* Payment Status */}
+                {event.price_in_cents && event.price_in_cents > 0 && (
+                  <View style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    borderRadius: 12,
+                    backgroundColor: item.paid ? '#d1fae5' : '#fee2e2',
+                    borderWidth: 1,
+                    borderColor: item.paid ? '#10b981' : '#ef4444',
+                    shadowColor: item.paid ? '#10b981' : '#ef4444',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 4,
+                    elevation: 3,
+                  }}>
+                    <Text style={{
+                      fontSize: 10,
+                      fontWeight: '700',
+                      color: item.paid ? '#10b981' : '#ef4444',
+                    }}>
+                      {item.paid ? 'PAID' : 'PENDING'}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        )}
       </SafeAreaView>
     </Modal>
+
+    <ProfileModal
+      visible={profileModal.visible}
+      profile={profileModal.profile}
+      stats={profileModal.stats}
+      onClose={() => setProfileModal({ ...profileModal, visible: false })}
+    />
     </>
   );
 }
@@ -2752,15 +3041,6 @@ export default function HostCreateScreen() {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* RSVP Management */}
-        <HostSection title="RSVP Management" icon="people">
-          <PlaceholderContent 
-            icon="people-outline"
-            title="RSVP Management"
-            description="Manage attendee lists, send messages, and handle cancellations"
-          />
-        </HostSection>
 
         {/* Payouts & Earnings */}
         <HostSection title="Payouts & Earnings" icon="card">

@@ -1,20 +1,38 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet, SafeAreaView, Image, Animated } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
 
 // ActionRow component for consistent action buttons
 function ActionRow({ icon, title, subtitle, onPress, color = '#1f2937', backgroundColor = '#f9fafb' }) {
   return (
-    <TouchableOpacity style={[styles.actionRow, { backgroundColor }]} onPress={onPress}>
-      <View style={styles.actionIcon}>
+    <TouchableOpacity 
+      style={[styles.actionRow, { 
+        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+        borderWidth: 1,
+        borderColor: '#BAA4EB',
+        shadowColor: '#BAA4EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+      }]} 
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <View style={[styles.actionIcon, {
+        backgroundColor: 'rgba(186, 164, 235, 0.15)',
+        borderWidth: 1,
+        borderColor: '#BAA4EB',
+      }]}>
         <Ionicons name={icon} size={20} color={color} />
       </View>
       <View style={styles.actionContent}>
-        <Text style={[styles.actionTitle, { color }]}>{title}</Text>
-        {subtitle && <Text style={styles.actionSubtitle}>{subtitle}</Text>}
+        <Text style={[styles.actionTitle, { color, fontWeight: '700' }]}>{title}</Text>
+        {subtitle && <Text style={[styles.actionSubtitle, { fontWeight: '500' }]}>{subtitle}</Text>}
       </View>
-      <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+      <Ionicons name="chevron-forward" size={16} color="#BAA4EB" />
     </TouchableOpacity>
   );
 }
@@ -64,6 +82,15 @@ export default function HostEventActionsSheet({
       onRequestClose={onClose}
     >
       <SafeAreaView style={styles.container}>
+        {/* White to peach gradient background */}
+        <LinearGradient
+          colors={['#FFFFFF', '#FFE5D9']}
+          start={{x:0,y:0}} 
+          end={{x:0,y:1}}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+
         {/* Close Button */}
         <Animated.View style={[styles.closeButtonContainer, { transform: [{ scale: pulseAnim }] }]}>
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
@@ -72,7 +99,15 @@ export default function HostEventActionsSheet({
         </Animated.View>
         
         {/* Event Image */}
-        <View style={styles.imageContainer}>
+        <View style={[styles.imageContainer, {
+          borderWidth: 2,
+          borderColor: '#BAA4EB',
+          shadowColor: '#BAA4EB',
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.4,
+          shadowRadius: 12,
+          elevation: 8,
+        }]}>
           {event.imageUrl ? (
             <Image 
               source={{ uri: event.imageUrl }} 
@@ -80,22 +115,27 @@ export default function HostEventActionsSheet({
               resizeMode="cover"
             />
           ) : (
-            <View style={[styles.eventImage, styles.placeholderImage]}>
-              <Ionicons name="image-outline" size={48} color="#9ca3af" />
+            <View style={[styles.eventImage, styles.placeholderImage, {
+              backgroundColor: 'rgba(186, 164, 235, 0.1)',
+            }]}>
+              <Ionicons name="image-outline" size={48} color="#BAA4EB" />
             </View>
           )}
         </View>
         
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, {
+          borderBottomWidth: 1,
+          borderBottomColor: 'rgba(186, 164, 235, 0.3)',
+        }]}>
           <View style={styles.headerContent}>
-            <Text style={styles.eventTitle} numberOfLines={2}>
+            <Text style={[styles.eventTitle, { fontWeight: '700' }]} numberOfLines={2}>
               {event.title}
             </Text>
-            <Text style={styles.eventDetails}>
+            <Text style={[styles.eventDetails, { fontWeight: '500' }]}>
               {format(eventDate, 'EEEE, MMM d • h:mm a')} • {event.vibe}
             </Text>
-            <Text style={styles.eventStats}>
+            <Text style={[styles.eventStats, { fontWeight: '500' }]}>
               {event.rsvp_count || 0} RSVPs • {event.rsvp_capacity || '∞'} capacity • {event.price_in_cents ? `$${(event.price_in_cents/100).toFixed(2)}` : 'Free'}
             </Text>
           </View>
@@ -149,7 +189,7 @@ export default function HostEventActionsSheet({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
   },
   imageContainer: {
     width: '95%',

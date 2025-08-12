@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Switch, Alert, ScrollView, LayoutAnimation, Platform, Animated } from 'react-native';
 import { format, differenceInMinutes } from 'date-fns';
+import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import RSVPButton from './RSVPButton';
 import { supabase } from '../utils/supabase';
@@ -12,6 +13,7 @@ import { useAuth } from '../auth/AuthProvider';
 
 export default function TimelineEvent({ event, onCancel }) {
   const { user } = useAuth();
+  const isHost = user?.id === event?.host_id;
   const minutesAway = differenceInMinutes(new Date(event.starts_at), new Date());
   const countdown = minutesAway <= 0 ? null : minutesAway < 60 ? `Starts in ${minutesAway}m` : `Starts in ${Math.round(minutesAway/60)}h`;
   const [remind, setRemind] = useState(true);
@@ -133,12 +135,7 @@ export default function TimelineEvent({ event, onCancel }) {
     return () => notifBus.off('chat_unread', handler);
   }, [event.id]);
 
-  const handleCancel = () => {
-    Alert.alert('Cancel RSVP', 'Are you sure you want to cancel? Fees may apply.', [
-      { text:'No' },
-      { text:'Yes, cancel', style:'destructive', onPress:()=> onCancel?.(event) }
-    ]);
-  };
+
 
   const toggleExpand = () => {
     LayoutAnimation.configureNext({ duration:300, update:{ type:'easeInEaseOut' } });
@@ -189,30 +186,36 @@ export default function TimelineEvent({ event, onCancel }) {
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={toggleExpand} style={styles.card}> 
-      {/* Row 1 - thumbnail & title */}
-      <View style={{ flexDirection:'row', alignItems:'center' }}>
-        {event.imageUrl ? (
-          <Image source={{ uri:event.imageUrl }} style={styles.thumb} />
-        ) : (
-          <View style={[styles.circle,{ backgroundColor:'#ddd' }]} />
-        )}
-        <View style={{ marginLeft:12, flex:1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title} numberOfLines={1}>{event.title}</Text>
-            <Text style={styles.time}>{format(new Date(event.starts_at), 'h:mm a')}</Text>
+      <LinearGradient
+        colors={['rgba(255, 255, 255, 0.95)', 'rgba(255, 200, 162, 0.8)']}
+        start={{x: 0, y: 0}}
+        end={{x: 0, y: 1}}
+        style={styles.gradientCard}
+      >
+        {/* Row 1 - thumbnail & title */}
+        <View style={{ flexDirection:'row', alignItems:'center' }}>
+          {event.imageUrl ? (
+            <Image source={{ uri:event.imageUrl }} style={styles.thumb} />
+          ) : (
+            <View style={[styles.circle,{ backgroundColor: 'rgba(186, 164, 235, 0.3)' }]} />
+          )}
+          <View style={{ marginLeft:12, flex:1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.title} numberOfLines={1}>{event.title}</Text>
+              <Text style={styles.time}>{format(new Date(event.starts_at), 'h:mm a')}</Text>
+            </View>
+            <TouchableOpacity onPress={openChatModal} style={styles.chatBubble}>
+              <Text style={styles.chatBubbleEmoji}>💬</Text>
+              {unreadCount > 0 && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>
+                    {unreadCount > 99 ? '99+' : unreadCount.toString()}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={openChatModal} style={styles.chatBubble}>
-            <Text style={styles.chatBubbleEmoji}>💬</Text>
-            {unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>
-                  {unreadCount > 99 ? '99+' : unreadCount.toString()}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
         </View>
-      </View>
       {/* Description */}
       {event.description ? (
         <Text style={styles.desc} numberOfLines={2}>
@@ -234,15 +237,23 @@ export default function TimelineEvent({ event, onCancel }) {
                 ))}
               </View>
             ) : null}
-            <Text style={styles.statusText}>Tap to meet locals</Text>
+            {(() => {
+              const attendeeCount = event.attendees?.count || 0;
+              
+              if (attendeeCount <= 0) {
+                return null;
+              } else if (attendeeCount === 1) {
+                return <Text style={styles.statusText}>1 Local going</Text>;
+              } else {
+                return <Text style={styles.statusText}>{attendeeCount} Locals going</Text>;
+              }
+            })()}
           </TouchableOpacity>
         )}
         {expanded && (
           <Text style={styles.localsLabel}>Locals going:</Text>
         )}
-        <TouchableOpacity onPress={handleCancel} style={styles.cancelBtn}>
-          <Text style={styles.cancelTxt}>Cancel RSVP</Text>
-        </TouchableOpacity>
+        <RSVPButton event={event} compact />
       </View>
 
       {expanded && (
@@ -268,10 +279,11 @@ export default function TimelineEvent({ event, onCancel }) {
       <View style={styles.footerRow}>
         {countdown && <Text style={styles.countdown}>{countdown}</Text>}
         <View style={{ flexDirection:'row', alignItems:'center' }}>
-          <Text style={{ color:'#fff', marginRight:6, fontSize:12 }}>Reminders</Text>
-          <Switch value={remind} onValueChange={setRemind} thumbColor={remind? colors.secondary: '#888'} trackColor={{ true: colors.secondary+'88', false:'#666' }} />
+          <Text style={{ color:'#374151', marginRight:6, fontSize:12, fontWeight:'600' }}>Reminders</Text>
+          <Switch value={remind} onValueChange={setRemind} thumbColor={remind? '#BAA4EB': '#888'} trackColor={{ true: '#BAA4EB88', false:'#cbd5e1' }} />
         </View>
       </View>
+      </LinearGradient>
       <ProfileModal
         visible={profileModal.visible}
         profile={profileModal.profile}
@@ -288,59 +300,149 @@ export default function TimelineEvent({ event, onCancel }) {
 }
 
 const styles = StyleSheet.create({
-  // Darker semi-transparent card for better contrast on light gradients
-  card:{ backgroundColor:'rgba(0,0,0,0.45)', borderRadius:20, padding:16, marginBottom:24 },
-  thumb:{ width:36, height:36, borderRadius:18 },
-  circle:{ width:36, height:36, borderRadius:18 },
-  title:{ fontSize:16, fontWeight:'700', color:'#fff' },
-  time:{ color:'#e0e0e0', fontSize:12 },
-  desc:{ color:'#fff', marginTop:8, fontStyle:'italic', fontSize:14 },
-  statusRow:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', borderTopWidth:1, borderColor:'rgba(255,255,255,0.15)', marginTop:12, paddingTop:12 },
-  statusText:{ color:'#ffffffcc', fontSize:14 },
-  attAvatar:{ width:28, height:28, borderRadius:14, backgroundColor:'#777', overflow:'hidden' },
-  localsLabel:{ color:'#ffffffcc', fontSize:14, fontWeight:'600' },
-  attendeeList:{ maxHeight: 6*48 },
-  attendeeRow:{ flexDirection:'row', alignItems:'center', marginBottom:8 },
-  attendeeAvatar:{ width:36, height:36, borderRadius:18, marginRight:8, backgroundColor:'#777' },
-  attendeeName:{ color:'#fff', fontSize:14 },
-  cancelBtn:{ backgroundColor:'rgba(255,255,255,0.25)', paddingHorizontal:12, paddingVertical:6, borderRadius:12 },
-  cancelTxt:{ color:'#fff', fontSize:12 },
-  footerRow:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:12 },
-  countdown:{ color:'#ffbc8b', fontSize:12, fontWeight:'600' },
+  // Enhanced card with gradient and shadows
+  card: { 
+    borderRadius: 20, 
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(186, 164, 235, 0.3)',
+  },
+  gradientCard: {
+    borderRadius: 20,
+    padding: 16,
+  },
+  thumb: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#BAA4EB',
+    shadowColor: '#BAA4EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  circle: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#BAA4EB',
+    shadowColor: '#BAA4EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  title: { fontSize: 16, fontWeight: '700', color: '#1f2937' },
+  time: { color: '#6b7280', fontSize: 12, fontWeight: '500' },
+  desc: { color: '#374151', marginTop: 8, fontStyle: 'italic', fontSize: 14, fontWeight: '500' },
+  statusRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    borderTopWidth: 1, 
+    borderColor: 'rgba(186, 164, 235, 0.3)', 
+    marginTop: 12, 
+    paddingTop: 12 
+  },
+  statusText: { color: '#6b7280', fontSize: 14, fontWeight: '600' },
+  attAvatar: { 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    backgroundColor: 'rgba(186, 164, 235, 0.2)', 
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#BAA4EB',
+  },
+  localsLabel: { color: '#374151', fontSize: 14, fontWeight: '700' },
+  attendeeList: { maxHeight: 6*48 },
+  attendeeRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 8,
+  },
+  attendeeAvatar: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    marginRight: 12, 
+    backgroundColor: 'rgba(186, 164, 235, 0.2)',
+    borderWidth: 2,
+    borderColor: '#BAA4EB',
+    shadowColor: '#BAA4EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  attendeeName: { color: '#1f2937', fontSize: 14, fontWeight: '600' },
+
+  footerRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderColor: 'rgba(186, 164, 235, 0.3)',
+    paddingTop: 12,
+  },
+  countdown: { 
+    color: '#F97316', 
+    fontSize: 12, 
+    fontWeight: '700',
+    backgroundColor: 'rgba(249, 115, 22, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F97316',
+  },
   joinChatButton: {
-    backgroundColor: colors.secondary,
+    backgroundColor: '#BAA4EB',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 20,
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: colors.secondary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowColor: '#BAA4EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(186, 164, 235, 0.5)',
   },
   joinChatText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   chatBubble: {
-    backgroundColor: colors.secondary,
+    backgroundColor: '#BAA4EB',
     width: 36,
     height: 36,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
-    shadowColor: colors.secondary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowColor: '#BAA4EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(186, 164, 235, 0.5)',
   },
   chatBubbleEmoji: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#fff',
   },
   unreadBadge: {
