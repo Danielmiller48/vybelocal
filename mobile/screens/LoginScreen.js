@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthProvider';
 import colors from '../theme/colors';
 
@@ -79,6 +80,8 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+
+
         {/* Link to Register */}
         <TouchableOpacity onPress={() => navigation.navigate('Register')} style={{ marginTop: 18 }}>
           <Text style={{ color:'#fff' }}>Don't have an account? <Text style={{ fontWeight:'700' }}>Register</Text></Text>
@@ -145,6 +148,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  oauthButton: {
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
   },
   error: {
     color: '#ffccd5',
