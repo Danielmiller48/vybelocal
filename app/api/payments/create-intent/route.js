@@ -62,6 +62,39 @@ export async function POST(request) {
       net_cents: platform,
     });
 
+    // Send paid RSVP / payment confirmation SMS (template G)
+    try {
+      // Fetch event basics for copy (title and start time)
+      const { data: ev } = await sb
+        .from('events')
+        .select('title, starts_at')
+        .eq('id', eventId)
+        .single();
+
+      const starts = ev?.starts_at ? new Date(ev.starts_at) : null;
+      const dateStr = starts ? starts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+      const timeStr = starts ? starts.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+
+      // Get user phone
+      const { data: prof } = await sb
+        .from('profiles')
+        .select('phone')
+        .eq('id', session.user.id)
+        .single();
+
+      if (prof?.phone) {
+        const dollars = (total / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+        const msg = `You’re set — ${ev?.title || 'your event'} ${dateStr} ${timeStr}; we got ${dollars} (#${paymentRow.stripe_payment_id.slice(-6)}).`;
+        await fetch(`https://vybelocal.com/api/phone/send-sms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: prof.phone, message: msg })
+        });
+      }
+    } catch (smsErr) {
+      console.warn('Payment SMS skipped:', smsErr?.message || smsErr);
+    }
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('simulate create-intent error:', err);
