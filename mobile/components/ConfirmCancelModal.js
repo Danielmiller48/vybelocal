@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../auth/AuthProvider';
+import Constants from 'expo-constants';
 
 export default function ConfirmCancelModal({ visible, event, onConfirm, onClose }) {
   const { user } = useAuth();
@@ -100,34 +101,20 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
         return;
       }
 
-      // Update event status to cancelled directly in Supabase
-      const { error: updateError } = await supabase
-        .from('events')
-        .update({ 
-          status: 'cancelled',
-          canceled_at: new Date().toISOString(),
-          cancel_reason: reason || null
-        })
-        .eq('id', event.id);
-
-      if (updateError) throw updateError;
+      // Cancel via backend
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error('Not authenticated');
+      const API_BASE_URL = (globalThis?.Constants?.expoConfig?.extra?.apiBaseUrl) || (typeof Constants !== 'undefined' ? Constants.expoConfig?.extra?.apiBaseUrl : undefined) || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+      const resp = await fetch(`${API_BASE_URL}/api/events/${event.id}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason_text: reason || null }),
+      });
+      if (!resp.ok) throw new Error('Failed to cancel event');
 
       // Add strike record if there are attendees
-      if (preview.willCreateStrike) {
-        const { error: strikeError } = await supabase
-          .from('host_strikes')
-          .insert({
-            host_id: user.id,
-            event_id: event.id,
-            strike_type: 'guest_attended_cancellation',
-            created_at: new Date().toISOString()
-          });
-
-        if (strikeError) {
-          console.warn('Failed to record strike:', strikeError);
-          // Don't fail the whole operation for strike recording
-        }
-      }
+      // Strike recording handled server-side
 
       // For mobile simplification, we'll skip complex refund processing
       // This would need payment integration for real refunds

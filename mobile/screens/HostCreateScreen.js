@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import useScreenGuards from '../utils/useScreenGuards';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Animated, Modal, Switch, Image, FlatList } from 'react-native';
 import Slider from '@react-native-community/slider';
 
@@ -10,6 +12,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import HostDrawerOverlay from '../components/HostDrawerOverlay';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
+import { apiFetch } from '../utils/api';
 import Svg, { Polyline } from 'react-native-svg';
 
 import AIInsightCard from '../components/analytics/AIInsightCard';
@@ -2548,6 +2551,19 @@ const AreaChart = ({ data, color }) => {
 };
 
 export default function HostCreateScreen() {
+  useScreenGuards({ largeRefs: [global.hostAnalyticsData] });
+  // Defensive cleanup: ensure any large analytics caches are released on blur/unmount
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        try {
+          if (global.hostAnalyticsData) {
+            global.hostAnalyticsData = undefined;
+          }
+        } catch {}
+      };
+    }, [])
+  );
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const tooltipBottom = insets.bottom + 33; // raised by 5px
@@ -2568,13 +2584,16 @@ export default function HostCreateScreen() {
   });
   const [calendarModal, setCalendarModal] = useState({ open:false, event:null });
   const [pastPage, setPastPage] = useState(1);
+  const [upcomingPage, setUpcomingPage] = useState(1);
+  const [upcomingHasMore, setUpcomingHasMore] = useState(false);
+  const [pastHasMore, setPastHasMore] = useState(false);
 
   useEffect(() => {
     if (user) {
       loadHostData();
       fetchJoinDate();
     }
-  }, [user]);
+  }, [user, upcomingPage, pastPage]);
 
   const fetchJoinDate = async () => {
     try {
@@ -2590,102 +2609,6 @@ export default function HostCreateScreen() {
   const loadHostData = async () => {
     try {
       setLoading(true);
-      const now = new Date().toISOString();
-      
-      // Fetch upcoming events
-      const { data: upcomingData, error: upcomingError } = await supabase
-        .from('events')
-        .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
-        .eq('host_id', user.id)
-        .gte('starts_at', now)
-        .order('starts_at', { ascending: true });
-
-      if (upcomingError) throw upcomingError;
-
-      // Fetch past events
-      const { data: pastData, error: pastError } = await supabase
-        .from('events')
-        .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
-        .eq('host_id', user.id)
-        .lt('starts_at', now)
-        .order('starts_at', { ascending: false });
-
-      if (pastError) throw pastError;
-
-      // Get advanced RSVP data for analytics
-      const allEventIds = [...(upcomingData || []), ...(pastData || [])].map(e => e.id);
-      let rsvpCounts = {};
-      let rsvpTimestamps = {};
-      let userRsvpHistory = {};
-      
-      if (allEventIds.length > 0) {
-        // Fetch RSVPs with timestamps for advanced analytics
-        const { data: rsvpData } = await supabase
-          .from('rsvps')
-          .select('event_id, status, user_id, created_at, paid')
-          .in('event_id', allEventIds)
-          .neq('user_id', user.id) // Exclude host's own RSVP
-          .eq('status', 'attending') // Only count attending RSVPs
-          .order('created_at');
-
-        // Fetch payment/refund data
-        const { data: paymentData } = await supabase
-          .from('payments')
-          .select(`
-            rsvp_id,
-            paid_at,
-            refunded,
-            refund_reason,
-            amount_paid,
-            rsvps!inner(event_id, user_id)
-          `)
-          .in('rsvps.event_id', allEventIds);
-
-        // Process RSVP data for basic counts and advanced analytics
-        rsvpData?.forEach(rsvp => {
-          const eventId = rsvp.event_id;
-          
-          // Basic counts (all are attending since we filtered)
-          if (!rsvpCounts[eventId]) {
-            rsvpCounts[eventId] = { attending: 0, total: 0 };
-          }
-          rsvpCounts[eventId].attending++;
-          rsvpCounts[eventId].total++;
-
-          // Timestamp tracking for sell-out speed and surge analysis
-          if (!rsvpTimestamps[eventId]) {
-            rsvpTimestamps[eventId] = [];
-          }
-          rsvpTimestamps[eventId].push({
-            created_at: rsvp.created_at,
-            status: rsvp.status,
-            user_id: rsvp.user_id
-          });
-
-          // User history for repeat guest tracking
-          if (!userRsvpHistory[rsvp.user_id]) {
-            userRsvpHistory[rsvp.user_id] = [];
-          }
-          userRsvpHistory[rsvp.user_id].push(eventId);
-        });
-
-        // Store analytics data for later use
-        global.hostAnalyticsData = {
-          rsvpTimestamps,
-          userRsvpHistory,
-          paymentData: paymentData || []
-        };
-      }
-
-      // Update events with RSVP counts
-      const updateEventsWithRsvps = (eventList) => {
-        return eventList.map(event => ({
-          ...event,
-          rsvp_count: rsvpCounts[event.id]?.attending || 0
-        }));
-      };
-
-      // Helper function to create event image URL
       const createEventImageUrl = async (imgPath) => {
         if (!imgPath) return null;
         if (imgPath.startsWith('http')) return imgPath;
@@ -2694,64 +2617,29 @@ export default function HostCreateScreen() {
             .from('event-images')
             .createSignedUrl(imgPath, 3600);
           return data?.signedUrl || null;
-        } catch {
-          return null;
-        }
+        } catch { return null; }
       };
 
-      // Add RSVP data to events
-      const enrichEvents = async (events) => {
-        if (!events) return [];
-        const enrichedEvents = await Promise.all(
-          events.map(async (event) => ({
-            ...event,
-            rsvp_count: rsvpCounts[event.id]?.attending || 0,
-            total_rsvps: rsvpCounts[event.id]?.total || 0,
-            capacity: event.rsvp_capacity, // Use actual capacity from DB (null/0 = no limit)
-            imageUrl: await createEventImageUrl(event.img_path),
-          }))
-        );
-        return enrichedEvents;
-      };
+      async function fetchOverview(type, page) {
+        const { items, hasMore } = await apiFetch(`/api/host/events/overview?type=${type}&page=${page}&limit=5`);
+        const enriched = await Promise.all((items || []).map(async (e) => ({
+          ...e,
+          imageUrl: await createEventImageUrl(e.img_path || null),
+        })));
+        if (type === 'upcoming') setUpcomingHasMore(!!hasMore); else setPastHasMore(!!hasMore);
+        return enriched;
+      }
 
-      const enrichedUpcoming = await enrichEvents(upcomingData);
-      const enrichedPast = await enrichEvents(pastData);
-      
-      setEvents(enrichedUpcoming);
-      setPastEvents(enrichedPast);
-      
-      // Show tooltip only if the user has never created any events
-      const hasAnyEvents = (enrichedUpcoming.length + enrichedPast.length) > 0;
-      setShowTooltip(!hasAnyEvents);
-      
-      // Calculate metrics
-      const totalRsvps = Object.values(rsvpCounts).reduce((sum, count) => sum + count.attending, 0);
-      
-      // Calculate RSVPs today (need to access from global analytics data)
-      const today = new Date().toDateString();
-      const allRsvpTimestamps = Object.values(rsvpTimestamps).flat();
-      const rsvpsToday = allRsvpTimestamps.filter(rsvp => 
-        new Date(rsvp.created_at).toDateString() === today
-      ).length || 0;
-      
-      // Calculate monthly revenue
-      const currentDate = new Date();
-      const currentMonth = currentDate.getMonth();
-      const currentYear = currentDate.getFullYear();
-      const monthlyRevenue = [...enrichedUpcoming, ...enrichedPast]
-        .filter(event => {
-          const eventDate = new Date(event.starts_at);
-          return eventDate.getMonth() === currentMonth && eventDate.getFullYear() === currentYear;
-        })
-        .reduce((sum, event) => sum + ((event.price_in_cents || 0) * (event.rsvp_count || 0) / 100), 0);
-      
-      setMetrics({
-        totalEvents: enrichedUpcoming.length + enrichedPast.length,
-        totalRsvps,
-        rsvpsToday,
-        monthlyRevenue
-      });
+      const [upcoming, past] = await Promise.all([
+        fetchOverview('upcoming', upcomingPage),
+        fetchOverview('past', pastPage),
+      ]);
 
+      setEvents(upcoming);
+      setPastEvents(past);
+
+      const totalRsvps = [...upcoming, ...past].reduce((sum, e) => sum + (e.rsvp_count || 0), 0);
+      setMetrics({ totalRsvps, rsvpsToday: 0, monthlyRevenue: 0 });
     } catch (error) {
       console.error('Error loading host data:', error);
     } finally {

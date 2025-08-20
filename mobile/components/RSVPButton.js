@@ -6,6 +6,8 @@ import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
 import realTimeChatManager from '../utils/realTimeChat';
 import colors from '../theme/colors';
+import Constants from 'expo-constants';
+import { apiFetch } from '../utils/api';
 
 export default function RSVPButton({ event, onCountChange, compact = false }) {
   const { user } = useAuth();
@@ -15,7 +17,6 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   const [busy, setBusy] = useState(false);
   const [rsvpCount, setRsvpCount] = useState(0);
   const capacity = event?.rsvp_capacity ?? null;
-  const isHost = user?.id === event?.host_id;
 
   // Fetch whether current user already RSVP'd
   useEffect(() => {
@@ -64,11 +65,6 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
       return;
     }
 
-    // Hosts can't RSVP to their own events
-    if (isHost) {
-      return;
-    }
-
     if (!joined && capacity && rsvpCount >= capacity) {
       Alert.alert('Capacity reached', 'This event is at maximum capacity.');
       return;
@@ -76,20 +72,18 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
 
     setBusy(true);
     if (!joined) {
-      // Insert RSVP row
-      const { error } = await supabase.from('rsvps').insert({ event_id: event.id, user_id: user.id }, { ignoreDuplicates: true });
-      if (error) {
-        console.error('RSVPButton: join error', error);
-        Alert.alert('Error', 'Something went wrong.');
-      } else {
+      try {
+        await apiFetch(`/api/events/${event.id}/rsvps/join`, { method: 'POST' });
         setJoined(true);
         const newCount = rsvpCount + 1;
         setRsvpCount(newCount);
         if (typeof onCountChange === 'function') onCountChange(newCount);
-
-        // Removed background auto-subscribe to conserve resources
+      } catch (e) {
+        console.error('RSVPButton: join error', e);
+        Alert.alert('Error', 'Something went wrong.');
+      } finally {
+        setBusy(false);
       }
-      setBusy(false);
     } else {
       // Confirm cancellation
       Alert.alert('Cancel RSVP', 'Are you sure you want to cancel?', [
@@ -102,19 +96,18 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
           text: 'Yes',
           style: 'destructive',
           onPress: async () => {
-            const { error } = await supabase.from('rsvps').delete().match({ event_id: event.id, user_id: user.id });
-            if (error) {
-              console.error('RSVPButton: cancel error', error);
-              Alert.alert('Error', 'Something went wrong.');
-            } else {
+            try {
+              await apiFetch(`/api/events/${event.id}/rsvps/cancel`, { method: 'POST' });
               setJoined(false);
               const newCount = rsvpCount - 1;
               setRsvpCount(newCount);
               if (typeof onCountChange === 'function') onCountChange(newCount);
-
-              // Removed background auto-unsubscribe (connection no longer created)
+            } catch (err) {
+              console.error('RSVPButton: cancel error', err);
+              Alert.alert('Error', 'Something went wrong.');
+            } finally {
+              setBusy(false);
             }
-            setBusy(false);
           },
         },
       ]);
@@ -124,9 +117,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   const disabled = (!joined && capacity && rsvpCount >= capacity) || busy;
 
   let label;
-  if (isHost) {
-    label = 'Hosting';
-  } else if (busy) {
+  if (busy) {
     label = '…';
   } else if (joined) {
     label = 'Cancel RSVP';
@@ -149,13 +140,13 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     <TouchableOpacity
       style={[
         styles.button,
-        isHost ? styles.hosting : (joined ? styles.joined : styles.notJoined),
+        joined ? styles.joined : styles.notJoined,
         disabled && styles.disabled,
         dynamicStyle,
       ]}
       onPress={(e) => { e.stopPropagation?.(); handlePress(); }}
-      disabled={disabled || isHost}
-      activeOpacity={isHost ? 1 : 0.8}
+      disabled={disabled}
+      activeOpacity={0.8}
     >
       {busy ? (
         <ActivityIndicator color="#fff" />
@@ -179,9 +170,6 @@ const styles = StyleSheet.create({
   },
   notJoined: {
     backgroundColor: colors.primary,
-  },
-  hosting: {
-    backgroundColor: '#BAA4EB',
   },
   disabled: {
     opacity: 0.55,

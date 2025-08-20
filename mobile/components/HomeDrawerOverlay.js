@@ -196,7 +196,7 @@ export default function HomeDrawerOverlay() {
                 icon: 'share-social-outline',
                 action: async () => {
                   closeSheet();
-                  await Share.share({ message: 'Join me on VybeLocal! https://vybelocal.com/app' });
+                  await Share.share({ message: `Join me on VybeLocal! ${(Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com')}/app` });
                 },
               },
               {

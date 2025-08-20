@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { Share } from 'react-native';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -149,41 +150,26 @@ class PushNotificationService {
 
   async savePushTokenToDatabase(userId, token) {
     try {
-      // Try UPDATE first
-      const { data: updateResult, error: updateError } = await supabase
-        .from('user_push_tokens')
-        .update({
-          push_token: token,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', userId)
-        .eq('platform', Platform.OS)
-        .select();
-
-      if (updateError) {
-        console.error('Error updating push token:', updateError);
+      if (this._savedOnce) return; // debounce once per session
+      const { data: sessionData } = await supabase.auth.getSession();
+      const access = sessionData?.session?.access_token;
+      if (!access) return;
+      const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+      const controller = new AbortController();
+      const to = setTimeout(()=>controller.abort(), 10000);
+      const resp = await fetch(`${API_BASE_URL}/api/push-tokens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access}` },
+        body: JSON.stringify({ push_token: token, platform: Platform.OS }),
+        signal: controller.signal,
+      });
+      clearTimeout(to);
+      if (!resp.ok) {
+        console.error('Error saving push token via API');
         return;
       }
-
-      // If UPDATE affected no rows, INSERT new record
-      if (!updateResult || updateResult.length === 0) {
-        const { error: insertError } = await supabase
-          .from('user_push_tokens')
-          .insert({
-            user_id: userId,
-            push_token: token,
-            platform: Platform.OS,
-            updated_at: new Date().toISOString()
-          });
-
-        if (insertError) {
-          console.error('Error inserting push token:', insertError);
-        } else {
-          console.log('Push token inserted to database');
-        }
-      } else {
-        console.log('Push token updated in database');
-      }
+      console.log('Push token saved via API');
+      this._savedOnce = true;
     } catch (error) {
       console.error('Error saving push token to database:', error);
     }
@@ -228,6 +214,15 @@ class PushNotificationService {
       if (data?.type === 'chat_message') {
         // Navigate to the specific chat/event
         this.handleChatNotificationTap(data);
+      } else if (data?.type === 'share_event') {
+        try {
+          const url = data?.url || '';
+          const title = data?.title || 'VybeLocal';
+          const message = data?.shareText || `Join my event on VybeLocal! ${url}`;
+          Share.share({ message, title });
+        } catch (e) {
+          console.warn('Share from notification failed:', e);
+        }
       }
     });
   }
@@ -239,12 +234,14 @@ class PushNotificationService {
   }
 
   removeNotificationListeners() {
-    if (this.notificationListener) {
-      Notifications.removeNotificationSubscription(this.notificationListener);
+    if (this.notificationListener && typeof this.notificationListener.remove === 'function') {
+      this.notificationListener.remove();
     }
-    if (this.responseListener) {
-      Notifications.removeNotificationSubscription(this.responseListener);
+    if (this.responseListener && typeof this.responseListener.remove === 'function') {
+      this.responseListener.remove();
     }
+    this.notificationListener = null;
+    this.responseListener = null;
   }
 
   async scheduleLocalNotification(title, body, data = {}) {

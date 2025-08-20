@@ -16,6 +16,7 @@ const VIBE_COLORS = {
 
 const hostProfileCache = {};
 const hostStatsCache = {};
+const imageUrlCache = {};
 
 function useAvatarUrl(path) {
   const [url, setUrl] = useState('https://placehold.co/40x40');
@@ -30,7 +31,7 @@ function useAvatarUrl(path) {
   return url;
 }
 
-export default function EventCard({ event, onPress }) {
+export default function EventCard({ event, onPress, light = false }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [hostProfile, setHostProfile] = useState(null);
@@ -39,6 +40,7 @@ export default function EventCard({ event, onPress }) {
   const isHost = user?.id === event?.host_id;
 
   useEffect(() => {
+    if (light) { setLoading(false); return; }
     let isMounted = true;
     async function fetchData() {
       const hostId = event.host_id;
@@ -113,9 +115,31 @@ export default function EventCard({ event, onPress }) {
     }
     fetchData();
     return () => { isMounted = false; };
-  }, [event.host_id]);
+  }, [event.host_id, light]);
 
-  const imageUrl = event.imageUrl || 'https://placehold.co/400x300';
+  const [imageUrl, setImageUrl] = useState(event.imageUrl || null);
+
+  // Lazily resolve event image signed URL with simple cache
+  useEffect(() => {
+    let isMounted = true;
+    if (event.imageUrl) { setImageUrl(event.imageUrl); return; }
+    const key = event.img_path || '';
+    if (!key) { setImageUrl(null); return; }
+    if (imageUrlCache[key]) { setImageUrl(imageUrlCache[key]); return; }
+    (async () => {
+      try {
+        const { data } = await supabase.storage
+          .from('event-images')
+          .createSignedUrl(key, 3600);
+        const url = data?.signedUrl || null;
+        if (url) imageUrlCache[key] = url;
+        if (isMounted) setImageUrl(url);
+      } catch {
+        if (isMounted) setImageUrl(null);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [event.img_path, event.imageUrl]);
 
   const avatarUrl = useAvatarUrl(hostProfile?.avatar_url);
 
@@ -126,7 +150,7 @@ export default function EventCard({ event, onPress }) {
         style={styles.card}
         activeOpacity={0.9}
       >
-        <Image source={{ uri: imageUrl }} style={styles.image} />
+        <Image source={{ uri: imageUrl || 'https://placehold.co/400x300' }} style={styles.image} />
         <View style={{ padding:12 }}>
           <View style={styles.rowWrap}>
             {/* LEFT COLUMN */}
@@ -154,33 +178,40 @@ export default function EventCard({ event, onPress }) {
           <View style={styles.divider} />
 
           {/* Host row */}
-          <TouchableOpacity
-            style={styles.hostRow}
-            onPress={(e) => { 
-              e.stopPropagation(); 
-              if (hostProfile && !isHost) setModalOpen(true); 
-            }}
-            activeOpacity={isHost ? 1 : 0.8}
-            disabled={isHost}
-          >
-            {loading ? (
-              <ActivityIndicator style={{ width: 32, height: 32, marginRight: 8 }} />
-            ) : (
-              <Image source={{ uri: avatarUrl }} style={styles.avatar} />
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.hostName}>{hostProfile?.name || 'Host'}</Text>
-              {hostProfile?.pronouns ? (
-                <Text style={styles.pronouns}>{hostProfile.pronouns}</Text>
-              ) : null}
-              {hostStats ? (
-                <Text style={styles.statLine}>
-                  {hostStats.completed} completed • {hostStats.cancels} cancels
-                </Text>
-              ) : null}
+          {light ? (
+            <View style={styles.hostRow}>
+              <View style={{ flex: 1 }} />
+              <RSVPButton event={event} compact />
             </View>
-            <RSVPButton event={event} compact />
-          </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.hostRow}
+              onPress={(e) => { 
+                e.stopPropagation(); 
+                if (hostProfile && !isHost) setModalOpen(true); 
+              }}
+              activeOpacity={isHost ? 1 : 0.8}
+              disabled={isHost}
+            >
+              {loading ? (
+                <ActivityIndicator style={{ width: 32, height: 32, marginRight: 8 }} />
+              ) : (
+                <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.hostName}>{hostProfile?.name || 'Host'}</Text>
+                {hostProfile?.pronouns ? (
+                  <Text style={styles.pronouns}>{hostProfile.pronouns}</Text>
+                ) : null}
+                {hostStats ? (
+                  <Text style={styles.statLine}>
+                    {hostStats.completed} completed • {hostStats.cancels} cancels
+                  </Text>
+                ) : null}
+              </View>
+              <RSVPButton event={event} compact />
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
 

@@ -1,0 +1,425 @@
+func_name,definition
+cleanup_expired_notifications(),"CREATE OR REPLACE FUNCTION public.cleanup_expired_notifications()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+BEGIN
+  -- Delete notifications where expires_at is in the past
+  DELETE FROM public.notifications
+  WHERE expires_at < now();
+  
+  -- Also delete notifications that are older than 7 days and have no expires_at set
+  DELETE FROM public.notifications
+  WHERE expires_at IS NULL AND created_at < (now() - interval '7 days');
+END;
+$function$
+"
+create_rsvp_notification(),"CREATE OR REPLACE FUNCTION public.create_rsvp_notification()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_host UUID;
+  v_guest_name text;
+BEGIN
+  SELECT host_id INTO v_host FROM public.events WHERE id = NEW.event_id;
+
+  -- Skip host auto‑RSVP
+  IF NEW.user_id = v_host THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT name INTO v_guest_name FROM public.profiles WHERE id = NEW.user_id;
+
+  INSERT INTO public.notifications (
+    user_id,               -- host gets the notification
+    type,
+    title,
+    message,
+    reference_id,
+    reference_table,
+    data
+  )
+  VALUES (
+    v_host,
+    'rsvp',
+    'New RSVP',
+    COALESCE(v_guest_name, 'Someone') || ' RSVP’d to your event',
+    NEW.event_id,
+    'events',
+    jsonb_build_object('guest_id', NEW.user_id)
+  );
+
+  RETURN NEW;
+END;
+$function$
+"
+delete_expired_notifs(),"CREATE OR REPLACE FUNCTION public.delete_expired_notifs()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.expires_at < NOW() THEN
+    RETURN NULL;  -- Skip insert for expired notifications
+  END IF;
+  RETURN NEW;
+END;
+$function$
+"
+delete_rsvp_notification(),"CREATE OR REPLACE FUNCTION public.delete_rsvp_notification()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    -- Delete notifications that reference this specific RSVP's event
+    -- We use both event_id and user_id to ensure we only delete the right notification
+    DELETE FROM notifications
+    WHERE 
+        reference_id = OLD.event_id
+        AND reference_table = 'rsvps'
+        AND created_at = (
+            -- Find the most recent notification for this event/user combination
+            SELECT MAX(created_at)
+            FROM notifications
+            WHERE reference_id = OLD.event_id
+            AND reference_table = 'rsvps'
+            -- Limit to notifications created around the same time as the RSVP
+            AND created_at >= OLD.created_at - interval '1 minute'
+            AND created_at <= OLD.created_at + interval '1 minute'
+        );
+    
+    RETURN OLD;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- If there's any error, log it but don't block the RSVP deletion
+        RAISE NOTICE 'Error deleting notification: %', SQLERRM;
+        RETURN OLD;
+END;
+$function$
+"
+enforce_rsvp_capacity(),"CREATE OR REPLACE FUNCTION public.enforce_rsvp_capacity()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  capacity int;
+  current_count int;
+BEGIN
+  SELECT rsvp_capacity
+  INTO   capacity
+  FROM   public.events
+  WHERE  id = NEW.event_id;
+
+  IF capacity IS NOT NULL THEN
+    SELECT COUNT(*)
+    INTO   current_count
+    FROM   public.rsvps
+    WHERE  event_id = NEW.event_id;
+
+    IF current_count >= capacity THEN
+      RAISE EXCEPTION
+        'RSVP capacity for this event (%s) has been reached', NEW.event_id;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$function$
+"
+lock_event_after_payment(),"CREATE OR REPLACE FUNCTION public.lock_event_after_payment()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.paid = true THEN
+    UPDATE events SET locked = true WHERE id = NEW.event_id AND locked = false;
+  END IF;
+  RETURN NEW;
+END;
+$function$
+"
+"mark_chat_notifications_read(uuid,uuid)","CREATE OR REPLACE FUNCTION public.mark_chat_notifications_read(target_user_id uuid, event_id uuid)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  deleted INT;
+BEGIN
+  DELETE FROM notifications
+  WHERE user_id      = target_user_id
+    AND type         = 'chat_message'
+    AND reference_id = event_id;
+  GET DIAGNOSTICS deleted = ROW_COUNT;
+  RETURN deleted;
+END;
+$function$
+"
+mark_rsvps_host_canceled(),"CREATE OR REPLACE FUNCTION public.mark_rsvps_host_canceled()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+   BEGIN
+     UPDATE rsvps
+        SET status = 'canceled_by_host'
+      WHERE event_id = OLD.id;
+     RETURN OLD;
+   END;
+   $function$
+"
+median_rsvps(),"CREATE OR REPLACE FUNCTION public.median_rsvps()
+ RETURNS numeric
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select percentile_cont(0.5) within group (order by rsvp_count)
+  from (
+    select count(*) as rsvp_count      -- count rows, not r.id
+    from events e
+    left join rsvps r on r.event_id = e.id
+    where e.status = 'approved'
+    group by e.id
+  ) t;
+$function$
+"
+median_rsvps_by_vibe(text),"CREATE OR REPLACE FUNCTION public.median_rsvps_by_vibe(p_vibe text DEFAULT NULL::text)
+ RETURNS TABLE(median numeric)
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select percentile_cont(0.5) within group (order by rsvp_count)
+  from (
+    select count(*) as rsvp_count
+    from events e
+    left join rsvps r on r.event_id = e.id
+    where e.status = 'approved'
+      and (p_vibe is null or e.vibe = p_vibe)
+    group by e.id
+  ) t;
+$function$
+"
+notify_trusted_change(),"CREATE OR REPLACE FUNCTION public.notify_trusted_change()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+begin
+  -- PROMOTION
+  if (not coalesce(old.is_trusted,false))
+     and new.is_trusted = true
+  then
+    insert into notifications (
+      user_id,
+      title,
+      message,
+      reference_id,
+      reference_table        -- <- correct column name
+    ) values (
+      new.id,
+      '🎉 You’re now a Verified Host!',
+      'After three successful Vybes with no flags, you’re officially trusted.',
+      new.id,
+      'profiles'
+    );
+
+  -- DEMOTION
+  elsif old.is_trusted = true
+     and new.is_trusted is not true
+  then
+    insert into notifications (
+      user_id,
+      title,
+      message,
+      reference_id,
+      reference_table
+    ) values (
+      new.id,
+      'Trusted-Host status removed',
+      'A recent flag or change in event history removed your verified badge.',
+      new.id,
+      'profiles'
+    );
+  end if;
+
+  return new;
+end;
+$function$
+"
+search_events_with_profiles(text),"CREATE OR REPLACE FUNCTION public.search_events_with_profiles(q text)
+ RETURNS TABLE(id uuid, title text, starts_at timestamp with time zone, vibe text, host_id uuid, host_name text, host_avatar_url text)
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT e.id, e.title, e.starts_at, e.vibe, e.host_id,
+         p.name AS host_name,
+         p.avatar_url AS host_avatar_url
+  FROM events e
+  JOIN profiles p ON p.id = e.host_id
+  WHERE e.status = 'approved'
+    AND e.starts_at >= now()
+    AND (
+      e.search_tsv @@ to_tsquery('english', q)
+      OR p.name_tsv @@ to_tsquery('english', q)
+    )
+  ORDER BY e.starts_at
+  LIMIT 10;
+$function$
+"
+set_rsvp_user(),"CREATE OR REPLACE FUNCTION public.set_rsvp_user()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+begin
+  new.user_id := auth.uid();
+  return new;
+end;
+$function$
+"
+"upsert_chat_notification(uuid,uuid,text,uuid,text,text)","CREATE OR REPLACE FUNCTION public.upsert_chat_notification(target_user_id uuid, event_id uuid, event_title text, sender_id uuid, sender_name text, message_text text)
+ RETURNS notifications
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  expiry_time   TIMESTAMPTZ := now() + interval '7 days';
+  batch_key_val TEXT        := 'chat_' || event_id::text;
+  rec           notifications;
+BEGIN
+  /*
+     Insert-or-update in one statement.
+     ON CONFLICT guarantees we never hit the unique_user_batch constraint.
+  */
+  INSERT INTO notifications (
+      user_id,
+      type,
+      title,
+      message,
+      batch_key,
+      batch_count,
+      contributor_ids,
+      reference_id,
+      reference_table,
+      expires_at,
+      is_dismissed,
+      is_pushed,
+      data
+  )
+  VALUES (
+      target_user_id,
+      'chat_message',
+      INITCAP(sender_name) || ' posted in ' || event_title || '!',
+      LEFT(message_text, 100) || CASE WHEN length(message_text) > 100 THEN '…' ELSE '' END,
+      batch_key_val,
+      1,
+      jsonb_build_array(sender_id),
+      event_id,
+      'events',
+      expiry_time,
+      FALSE,
+      FALSE,
+      jsonb_build_object(
+          'latest_sender_id',   sender_id,
+          'latest_sender_name', sender_name,
+          'latest_message',     message_text,
+          'event_id',           event_id
+      )
+  )
+  ON CONFLICT (user_id, batch_key)
+  DO UPDATE
+  SET
+      batch_count     = notifications.batch_count + 1,
+      contributor_ids = (
+          SELECT jsonb_agg(DISTINCT elem)
+          FROM   jsonb_array_elements(
+                   notifications.contributor_ids || jsonb_build_array(sender_id)
+                 ) AS elem
+      ),
+      title = CASE
+                WHEN notifications.batch_count + 1 = 1
+                  THEN INITCAP(sender_name) || ' posted in ' || event_title || '!'
+                ELSE (notifications.batch_count + 1)::text
+                     || ' new messages in ' || event_title || '!'
+              END,
+      message = CASE
+                  WHEN notifications.batch_count + 1 = 1
+                    THEN LEFT(message_text, 100)
+                         || CASE WHEN length(message_text) > 100 THEN '…' ELSE '' END
+                  ELSE 'Latest from ' || INITCAP(sender_name)
+                END,
+      created_at  = now(),
+      expires_at  = expiry_time,
+      is_pushed   = FALSE,    -- mark for re-push
+      data        = jsonb_build_object(
+                      'latest_sender_id',   sender_id,
+                      'latest_sender_name', sender_name,
+                      'latest_message',     message_text,
+                      'event_id',           event_id
+                    )
+  RETURNING * INTO rec;
+
+  RETURN rec;
+END;
+$function$
+"
+"upsert_rsvp_notification(uuid,uuid,text,uuid,text)","CREATE OR REPLACE FUNCTION public.upsert_rsvp_notification(target_user_id uuid, event_id uuid, event_title text, sender_id uuid, sender_name text)
+ RETURNS notifications
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  batch_key TEXT := 'rsvp_' || event_id::TEXT;
+  expiry    TIMESTAMPTZ := NOW() + INTERVAL '30 days';
+  rec       notifications;
+BEGIN
+  -- skip host’s own auto-RSVP
+  IF sender_id = target_user_id THEN
+    RETURN NULL;
+  END IF;
+
+  INSERT INTO notifications (
+    user_id, type, title, message,
+    batch_key, batch_count, contributor_ids,
+    reference_id, reference_table,
+    expires_at, is_dismissed, is_pushed
+  )
+  VALUES (
+    target_user_id,
+    'rsvp',
+    INITCAP(sender_name) || ' RSVP''d to ' || event_title || '!',
+    INITCAP(sender_name) || ' RSVP''d to ' || event_title || '!',
+    batch_key,
+    1,
+    jsonb_build_array(sender_id),
+    event_id, 'events',
+    expiry, FALSE, FALSE
+  )
+  ON CONFLICT (user_id, batch_key)
+  DO UPDATE
+  SET
+    batch_count     = notifications.batch_count + 1,
+    contributor_ids = (
+      SELECT jsonb_agg(DISTINCT elem)
+      FROM   jsonb_array_elements(
+               notifications.contributor_ids || jsonb_build_array(sender_id)
+             ) AS elem
+    ),
+    title = CASE
+              WHEN notifications.batch_count + 1 = 1
+                THEN INITCAP(sender_name) || ' RSVP''d to ' || event_title || '!'
+              ELSE INITCAP(sender_name) || ' and ' ||
+                   (notifications.batch_count)::text ||
+                   ' others RSVP''d to ' || event_title || '!'
+            END,
+    message     = title,
+    created_at  = NOW(),
+    expires_at  = expiry,
+    is_pushed   = FALSE
+  RETURNING * INTO rec;
+
+  RETURN rec;
+END;
+$function$
+"

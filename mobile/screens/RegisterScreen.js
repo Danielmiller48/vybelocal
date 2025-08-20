@@ -6,7 +6,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthProvider';
 import colors from '../theme/colors';
 // Base URL for backend API; adjust via env var if needed
-const API_BASE = process.env.EXPO_PUBLIC_WEB_URL || 'https://vybelocal.com';
+import Constants from 'expo-constants';
+const API_BASE = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_WEB_URL || 'https://vybelocal.com';
 
 export default function RegisterScreen() {
   const navigation = useNavigation();

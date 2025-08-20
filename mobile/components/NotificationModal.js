@@ -9,9 +9,12 @@ import {
   ActivityIndicator,
   Alert
 } from 'react-native';
+import { Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { notificationUtils } from '../utils/notifications';
+import Constants from 'expo-constants';
+import { apiFetch } from '../utils/api';
 import { supabase } from '../utils/supabase';
 
 export default function NotificationModal({ visible, onClose }) {
@@ -39,15 +42,7 @@ export default function NotificationModal({ visible, onClose }) {
 
   const deleteNotification = async (notificationId) => {
     try {
-      // Delete from Supabase
-      const { error } = await supabase
-        .from('notifications')
-        .delete()
-        .eq('id', notificationId);
-
-      if (error) throw error;
-
-      // Update local state
+      await apiFetch(`/api/notifications?id=${encodeURIComponent(notificationId)}`, { method: 'DELETE' });
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
       console.error('Error deleting notification:', error);
@@ -68,13 +63,7 @@ export default function NotificationModal({ visible, onClose }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error } = await supabase
-                .from('notifications')
-                .delete()
-                .eq('user_id', user.id);
-
-              if (error) throw error;
-
+              await apiFetch('/api/notifications?all=true', { method: 'DELETE' });
               setNotifications([]);
             } catch (error) {
               console.error('Error clearing notifications:', error);
@@ -183,6 +172,20 @@ export default function NotificationModal({ visible, onClose }) {
                   <Text style={{ fontSize: 12, color: '#9ca3af' }}>
                     {formatDate(notification.created_at)}
                   </Text>
+                  {notification?.data?.cta === 'share' && (
+                    <TouchableOpacity
+                      onPress={async () => {
+                        try {
+                          const url = notification?.data?.url || '';
+                          const text = notification?.data?.shareText || `Check this out: ${url}`;
+                          await Share.share({ message: text, title: 'Share Vybe' });
+                        } catch {}
+                      }}
+                      style={{ marginTop: 8, alignSelf: 'flex-start', backgroundColor:'#BAA4EB', paddingVertical:6, paddingHorizontal:10, borderRadius:8 }}
+                    >
+                      <Text style={{ color:'#fff', fontWeight:'700' }}>Share Event</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <TouchableOpacity
                   onPress={() => deleteNotification(notification.id)}

@@ -75,20 +75,18 @@ export const notificationUtils = {
   },
 
   // Mark chat notifications as read when user opens chat
-  markChatNotificationsRead: async (userId, eventId) => {
+  markChatNotificationsRead: async (_userId, eventId) => {
     try {
-      const { data, error } = await supabase
-        .rpc('mark_chat_notifications_read', {
-          target_user_id: userId,
-          event_id: eventId
-        });
-
-      if (error) {
-        return false;
-      }
-
-      // quiet success log
-      return true;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) return false;
+      const API_BASE_URL = (globalThis?.Constants?.expoConfig?.extra?.apiBaseUrl) || (typeof Constants !== 'undefined' ? Constants.expoConfig?.extra?.apiBaseUrl : undefined) || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+      const resp = await fetch(`${API_BASE_URL}/api/notifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ event_id: eventId })
+      });
+      return resp.ok;
     } catch (error) {
       return false;
     }

@@ -44,7 +44,8 @@ export default function HostEventActionsSheet({
   onOpenChat, 
   onViewRsvps, 
   onEdit, 
-  onCancelEvent 
+  onCancelEvent,
+  onShare
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -143,6 +144,15 @@ export default function HostEventActionsSheet({
 
         {/* Actions */}
         <View style={styles.actionsContainer}>
+          <ActionRow
+            icon="share-social"
+            title="Share Event"
+            subtitle="Send link to friends"
+            onPress={onShare}
+            color="#0ea5e9"
+            backgroundColor="#e0f2fe"
+          />
+
           <ActionRow
             icon="chatbubbles"
             title="Event Chat"
@@ -246,21 +256,22 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   actionsContainer: {
-    padding: 20,
-    gap: 12,
+    padding: 16,
+    gap: 10,
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.05)',
   },
   actionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.8)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -270,12 +281,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     marginBottom: 2,
   },
   actionSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#6b7280',
   },
   closeButtonContainer: {

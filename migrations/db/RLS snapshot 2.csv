@@ -1,0 +1,102 @@
+ddl
+CREATE POLICY cron_job_policy ON cron.job FOR ALL TO public USING ((username = CURRENT_USER));
+CREATE POLICY cron_job_run_details_policy ON cron.job_run_details FOR ALL TO public USING ((username = CURRENT_USER));
+"CREATE POLICY ""Users can cancel deletion requests"" ON public.account_deletion_requests FOR UPDATE TO public USING ((auth.uid() = user_id));"
+"CREATE POLICY ""Users can create deletion requests"" ON public.account_deletion_requests FOR INSERT TO public WITH CHECK ((auth.uid() = user_id));"
+"CREATE POLICY ""Users can view own deletion requests"" ON public.account_deletion_requests FOR SELECT TO public USING ((auth.uid() = user_id));"
+CREATE POLICY read_own_reviews ON public.ai_cancellation_reviews FOR SELECT TO public USING ((host_id = auth.uid()));
+"CREATE POLICY ""Users can create their own blocks"" ON public.blocks FOR INSERT TO authenticated WITH CHECK ((blocker_id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Users can delete their own blocks"" ON public.blocks FOR DELETE TO authenticated USING ((blocker_id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Users can view their own blocks"" ON public.blocks FOR SELECT TO authenticated USING ((blocker_id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""AI moderator can update status"" ON public.events FOR UPDATE TO public USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""Admins can view all events"" ON public.events FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.is_admin = true)))));"
+"CREATE POLICY ""Hide events from blocked users"" ON public.events FOR SELECT TO public USING ((NOT (EXISTS ( SELECT 1
+   FROM blocks
+  WHERE (((blocks.blocker_id = ( SELECT auth.uid() AS uid)) AND (blocks.target_type = 'user'::text) AND (blocks.target_id = events.host_id)) OR ((blocks.blocker_id = events.host_id) AND (blocks.target_type = 'user'::text) AND (blocks.target_id = ( SELECT auth.uid() AS uid))))))));"
+"CREATE POLICY ""Public approved events"" ON public.events FOR SELECT TO public USING ((status = 'approved'::text));"
+CREATE POLICY events_delete_admin_only ON public.events FOR DELETE TO public USING ((( SELECT auth.role() AS role) = 'service_role'::text));
+CREATE POLICY events_update ON public.events FOR UPDATE TO public USING ((host_id = ( SELECT auth.uid() AS uid))) WITH CHECK ((host_id = ( SELECT auth.uid() AS uid)));
+"CREATE POLICY ""hosts can insert events"" ON public.events FOR INSERT TO public WITH CHECK (((host_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid)))));"
+"CREATE POLICY ""hosts can read events"" ON public.events FOR SELECT TO public USING ((host_id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""hosts can update events"" ON public.events FOR UPDATE TO public USING (((host_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid))))) WITH CHECK (((host_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid)))));"
+"CREATE POLICY ""Admins can manage all flags"" ON public.flags FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""App admins can manage all flags"" ON public.flags FOR ALL TO authenticated USING (is_admin(( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Flags can access related profiles"" ON public.flags FOR SELECT TO authenticated USING (true);"
+"CREATE POLICY ""Users can create flags"" ON public.flags FOR INSERT TO authenticated WITH CHECK ((reporter_id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Users can view own flags"" ON public.flags FOR SELECT TO authenticated USING ((reporter_id = ( SELECT auth.uid() AS uid)));"
+CREATE POLICY host_read_own_strikes ON public.host_cancel_strikes FOR SELECT TO public USING ((auth.uid() = host_id));
+CREATE POLICY host_strike_admin_insert ON public.host_cancel_strikes FOR INSERT TO service_role WITH CHECK (true);
+"CREATE POLICY ""Users can follow hosts"" ON public.host_follows FOR INSERT TO public WITH CHECK ((auth.uid() = follower_id));"
+"CREATE POLICY ""Users can read relevant follows"" ON public.host_follows FOR SELECT TO public USING (((auth.uid() = follower_id) OR (auth.uid() = host_id) OR (EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = host_follows.host_id) AND (profiles.id IS NOT NULL))))));"
+"CREATE POLICY ""Users can unfollow hosts"" ON public.host_follows FOR DELETE TO public USING ((auth.uid() = follower_id));"
+"CREATE POLICY ""Admin access for mod_actions"" ON public.mod_actions FOR ALL TO authenticated USING (is_admin());"
+"CREATE POLICY ""Service role access for mod_actions"" ON public.mod_actions FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""Admins can view all notifications"" ON public.notifications FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.is_admin = true)))));"
+"CREATE POLICY ""Only admins can delete notifications"" ON public.notifications FOR DELETE TO public USING ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.is_admin = true)))));"
+"CREATE POLICY ""Only admins can insert notifications"" ON public.notifications FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.is_admin = true)))));"
+"CREATE POLICY ""Users can delete their own notifications"" ON public.notifications FOR DELETE TO public USING ((user_id = auth.uid()));"
+"CREATE POLICY ""Users can dismiss their own notifications"" ON public.notifications FOR UPDATE TO public USING ((user_id = ( SELECT auth.uid() AS uid))) WITH CHECK ((user_id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Users can view their own notifications"" ON public.notifications FOR SELECT TO public USING ((user_id = ( SELECT auth.uid() AS uid)));"
+CREATE POLICY notifications_insert_own ON public.notifications FOR INSERT TO authenticated WITH CHECK ((auth.uid() = user_id));
+"CREATE POLICY ""realtime select"" ON public.notifications FOR SELECT TO public USING ((user_id = auth.uid()));"
+CREATE POLICY realtime_select ON public.notifications FOR SELECT TO public USING ((user_id = auth.uid()));
+"CREATE POLICY ""no client delete"" ON public.payments FOR DELETE TO public USING (false);"
+"CREATE POLICY ""no client insert"" ON public.payments FOR INSERT TO public WITH CHECK (false);"
+"CREATE POLICY ""no client update"" ON public.payments FOR UPDATE TO public USING (false) WITH CHECK (false);"
+CREATE POLICY p_email_owner_read ON public.pending_email_changes FOR SELECT TO public USING ((auth.uid() = user_id));
+CREATE POLICY p_phone_owner_read ON public.pending_phone_changes FOR SELECT TO public USING ((auth.uid() = user_id));
+"CREATE POLICY ""Admin access for phone_blacklist"" ON public.phone_blacklist FOR ALL TO authenticated USING (is_admin());"
+"CREATE POLICY ""Service role access for phone_blacklist"" ON public.phone_blacklist FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""Admin access for phone_numbers"" ON public.phone_numbers FOR ALL TO authenticated USING (is_admin());"
+"CREATE POLICY ""Service role access for phone_numbers"" ON public.phone_numbers FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""Service role manages phone strikes"" ON public.phone_strikes FOR ALL TO public USING ((auth.role() = 'service_role'::text));"
+"CREATE POLICY ""Admins can manage all profiles"" ON public.profiles FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""App admins can manage all profiles"" ON public.profiles FOR ALL TO authenticated USING (is_admin(( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Enable users to view their own profile"" ON public.profiles FOR SELECT TO authenticated USING ((id = auth.uid()));"
+"CREATE POLICY ""Users can delete own profile"" ON public.profiles FOR DELETE TO authenticated USING ((id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Users can insert own profile"" ON public.profiles FOR INSERT TO authenticated WITH CHECK ((id = ( SELECT auth.uid() AS uid)));"
+"CREATE POLICY ""Users can update own profile"" ON public.profiles FOR UPDATE TO authenticated USING ((id = ( SELECT auth.uid() AS uid))) WITH CHECK ((id = ( SELECT auth.uid() AS uid)));"
+CREATE POLICY profile_owner_update_connect ON public.profiles FOR UPDATE TO public USING ((auth.uid() = id)) WITH CHECK ((auth.uid() = id));
+"CREATE POLICY ""Admins can view all rsvps"" ON public.rsvps FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.is_admin = true)))));"
+"CREATE POLICY ""Authenticated users can view rsvps"" ON public.rsvps FOR SELECT TO public USING ((auth.uid() IS NOT NULL));"
+"CREATE POLICY ""Event host can delete RSVPs for their event"" ON public.rsvps FOR DELETE TO public USING ((EXISTS ( SELECT 1
+   FROM events
+  WHERE ((events.id = rsvps.event_id) AND (events.host_id = ( SELECT auth.uid() AS uid))))));"
+"CREATE POLICY ""host can read rsvps for own events"" ON public.rsvps FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM events
+  WHERE ((events.id = rsvps.event_id) AND (events.host_id = ( SELECT auth.uid() AS uid))))));"
+"CREATE POLICY ""public event rsvps"" ON public.rsvps FOR SELECT TO public USING ((EXISTS ( SELECT 1
+   FROM events
+  WHERE ((events.id = rsvps.event_id) AND (events.status = 'approved'::text)))));"
+CREATE POLICY rsvps_delete ON public.rsvps FOR DELETE TO public USING (((user_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid)))));
+CREATE POLICY rsvps_insert ON public.rsvps FOR INSERT TO public WITH CHECK (((user_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid)))));
+CREATE POLICY rsvps_select ON public.rsvps FOR SELECT TO public USING ((user_id = ( SELECT auth.uid() AS uid)));
+CREATE POLICY rsvps_update ON public.rsvps FOR UPDATE TO public USING ((user_id = auth.uid())) WITH CHECK ((status = 'canceled_by_guest'::text));
+"CREATE POLICY ""Admin access for site_settings"" ON public.site_settings FOR ALL TO authenticated USING (is_admin());"
+"CREATE POLICY ""Service role access for site_settings"" ON public.site_settings FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""Service role can read all push tokens"" ON public.user_push_tokens FOR SELECT TO public USING (true);"
+"CREATE POLICY ""Users can manage their own push tokens"" ON public.user_push_tokens FOR ALL TO public USING ((auth.uid() = user_id));"
+"CREATE POLICY ""Admin access for user_status"" ON public.user_status FOR ALL TO authenticated USING (is_admin());"
+"CREATE POLICY ""Service role access for user_status"" ON public.user_status FOR ALL TO authenticated USING ((( SELECT auth.role() AS role) = 'service_role'::text));"
+"CREATE POLICY ""Allow insert/update for anonymous"" ON public.waitlist FOR ALL TO public USING (true);"
+"CREATE POLICY ""User can insert own avatar"" ON storage.objects FOR INSERT TO public WITH CHECK (((bucket_id = 'profile-images'::text) AND (split_part(name, '/'::text, 1) = (auth.uid())::text)));"
+"CREATE POLICY ""User can replace own avatar"" ON storage.objects FOR UPDATE TO public USING (((bucket_id = 'profile-images'::text) AND (split_part(name, '/'::text, 1) = (auth.uid())::text))) WITH CHECK (((bucket_id = 'profile-images'::text) AND (split_part(name, '/'::text, 1) = (auth.uid())::text)));"
+"CREATE POLICY avatar_insert ON storage.objects FOR INSERT TO public WITH CHECK (((bucket_id = 'profile-images'::text) AND (split_part(name, '/'::text, 1) = (auth.uid())::text)));"
+CREATE POLICY avatar_select ON storage.objects FOR SELECT TO public USING (((bucket_id = 'profile-images'::text) AND (auth.role() = 'authenticated'::text)));
+"CREATE POLICY avatar_update ON storage.objects FOR UPDATE TO public USING (((bucket_id = 'profile-images'::text) AND (split_part(name, '/'::text, 1) = (auth.uid())::text))) WITH CHECK (((bucket_id = 'profile-images'::text) AND (split_part(name, '/'::text, 1) = (auth.uid())::text)));"
+"CREATE POLICY ""event-images delete (owner/admin)"" ON storage.objects FOR DELETE TO public USING (((bucket_id = 'event-images'::text) AND (is_admin() OR (auth.uid() = owner))));"
+"CREATE POLICY ""event-images insert (owner/admin)"" ON storage.objects FOR INSERT TO public WITH CHECK (((bucket_id = 'event-images'::text) AND (is_admin() OR (auth.uid() = owner))));"
+"CREATE POLICY ""event-images read (auth only)"" ON storage.objects FOR SELECT TO public USING (((bucket_id = 'event-images'::text) AND (auth.role() = 'authenticated'::text)));"
+"CREATE POLICY ""event-images update (owner/admin)"" ON storage.objects FOR UPDATE TO public USING (((bucket_id = 'event-images'::text) AND (is_admin() OR (auth.uid() = owner)))) WITH CHECK (((bucket_id = 'event-images'::text) AND (is_admin() OR (auth.uid() = owner))));"

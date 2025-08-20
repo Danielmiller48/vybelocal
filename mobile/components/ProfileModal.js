@@ -4,6 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../auth/AuthProvider';
+import Constants from 'expo-constants';
+import { apiFetch } from '../utils/api';
 
 function useAvatarUrl(path) {
   const [url, setUrl] = useState('https://placehold.co/80x80');
@@ -97,14 +99,9 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
       if (isFollowing) {
         // Unfollow
         console.log('Attempting to unfollow...');
-        const { error } = await supabase
-          .from('host_follows')
-          .delete()
-          .eq('follower_id', user.id)
-          .eq('host_id', hostId);
-        
-        if (error) {
-          console.error('Unfollow error:', error);
+        const resp = await apiFetch(`/api/follows?host_id=${encodeURIComponent(hostId)}`, { method: 'DELETE' });
+        if (!resp) {
+          console.error('Unfollow error: failed response');
           throw error;
         }
         console.log('Unfollow successful');
@@ -115,18 +112,10 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
         console.log('Attempting to follow...');
         console.log('Insert data:', { follower_id: user.id, host_id: hostId });
         
-        const { data, error } = await supabase
-          .from('host_follows')
-          .insert({
-            follower_id: user.id,
-            host_id: hostId
-          })
-          .select();
-        
-        if (error) {
-          console.error('Follow error:', error);
-          console.error('Error details:', JSON.stringify(error, null, 2));
-          throw error;
+        const resp = await apiFetch('/api/follows', { method: 'POST', body: { host_id: hostId } });
+        if (!resp) {
+          console.error('Follow error: failed response');
+          throw new Error('Follow failed');
         }
         console.log('Follow successful, inserted data:', data);
         setIsFollowing(true);
@@ -411,36 +400,21 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
                       const reportedUserId = profile?.uuid || profile?.id;
                       
                       // Submit the report
-                      const { error: reportError } = await supabase
-                        .from('flags') // Assuming this is the table name
-                        .insert({
-                          target_type: 'user',
-                          target_id: reportedUserId,
-                          reporter_id: user.id,
-                          user_id: reportedUserId, // Same as target_id since we're reporting a user
-                          reason_code: reportReason,
-                          details: reportReason !== 'no_interaction' ? reportExplanation : null,
-                          severity: 1,
-                          status: 'pending',
-                          source: 'user'
-                        });
-
-                      if (reportError) {
-                        console.error('Report submission error:', reportError);
-                        throw reportError;
-                      }
+                      await apiFetch('/api/flags', { method: 'POST', body: {
+                        target_type: 'user',
+                        target_id: reportedUserId,
+                        user_id: reportedUserId,
+                        reason_code: reportReason,
+                        details: reportReason !== 'no_interaction' ? reportExplanation : null,
+                        severity: 1,
+                      }});
 
                       // If user also wants to block, handle that
                       if (shouldBlock) {
-                        const { error: blockError } = await supabase
-                          .from('blocks')
-                          .insert({
-                            blocker_id: user.id,
-                            blocked_id: reportedUserId
-                          });
-
-                        if (blockError) {
-                          console.error('Block submission error:', blockError);
+                        try {
+                          await apiFetch('/api/blocks', { method: 'POST', body: { target_id: reportedUserId } });
+                        } catch (err) {
+                          console.error('Block submission error: failed response');
                           // Don't throw here - report was successful, blocking failed
                           Alert.alert('Report Submitted', 'Your report was submitted, but there was an issue blocking the user. Please try blocking separately.');
                           return;

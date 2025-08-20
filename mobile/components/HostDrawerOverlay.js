@@ -414,7 +414,8 @@ export default function HostDrawerOverlay({ onCreated }) {
       const token = sessionData?.session?.access_token;
       if (!token) throw new Error('Not authenticated');
       // console.log('[createEvent] POST /api/events payload', payload);
-      const resp = await fetch('https://vybelocal.com/api/events', {
+      const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+      const resp = await fetch(`${API_BASE_URL}/api/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
@@ -494,7 +495,7 @@ export default function HostDrawerOverlay({ onCreated }) {
             const contentType = blob.type || 'image/jpeg';
 
             // Presign request
-            const presignResp = await fetch('https://vybelocal.com/api/events/images/presign', {
+            const presignResp = await fetch(`${API_BASE_URL}/api/events/images/presign`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ eventId: data.id, contentType })
@@ -528,7 +529,7 @@ export default function HostDrawerOverlay({ onCreated }) {
             if (uploadRes?.error) throw uploadRes.error;
 
             // Commit to attach to event
-            const commitResp = await fetch('https://vybelocal.com/api/events/images/commit', {
+            const commitResp = await fetch(`${API_BASE_URL}/api/events/images/commit`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ eventId: data.id, path: signedPath })

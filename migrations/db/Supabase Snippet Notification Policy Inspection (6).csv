@@ -1,0 +1,9 @@
+trigger_name,table_name,function_name,trigger_def
+trg_event_canceled,events,mark_rsvps_host_canceled,CREATE TRIGGER trg_event_canceled AFTER UPDATE OF status ON public.events FOR EACH ROW WHEN (((new.status = 'canceled'::text) AND (old.status <> 'canceled'::text))) EXECUTE FUNCTION mark_rsvps_host_canceled()
+trg_lower_vibe,events,enforce_lowercase_vibe,CREATE TRIGGER trg_lower_vibe BEFORE INSERT OR UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION enforce_lowercase_vibe()
+notif_expiry,notifications,delete_expired_notifs,CREATE TRIGGER notif_expiry BEFORE INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION delete_expired_notifs()
+after_rsvp_delete,rsvps,delete_rsvp_notification,CREATE TRIGGER after_rsvp_delete AFTER DELETE ON public.rsvps FOR EACH ROW EXECUTE FUNCTION delete_rsvp_notification()
+after_rsvp_insert,rsvps,create_rsvp_notification,CREATE TRIGGER after_rsvp_insert AFTER INSERT ON public.rsvps FOR EACH ROW EXECUTE FUNCTION create_rsvp_notification()
+enforce_rsvp_capacity,rsvps,enforce_rsvp_capacity,CREATE TRIGGER enforce_rsvp_capacity BEFORE INSERT OR UPDATE ON public.rsvps FOR EACH ROW EXECUTE FUNCTION enforce_rsvp_capacity()
+trg_lock_event_after_payment,rsvps,lock_event_after_payment,CREATE TRIGGER trg_lock_event_after_payment AFTER UPDATE OF paid ON public.rsvps FOR EACH ROW EXECUTE FUNCTION lock_event_after_payment()
+trg_set_rsvp_user,rsvps,set_rsvp_user,CREATE TRIGGER trg_set_rsvp_user BEFORE INSERT ON public.rsvps FOR EACH ROW EXECUTE FUNCTION set_rsvp_user()

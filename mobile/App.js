@@ -16,6 +16,7 @@ import HomeDashboard from './screens/HomeScreen';
 import { StatusBar } from 'expo-status-bar';
 import SplashScreen from './components/SplashScreen';
 import 'react-native-gesture-handler';
+import { enableFreeze } from 'react-native-screens';
 import React from 'react';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import HostCreateScreen from './screens/HostCreateScreen';
@@ -23,6 +24,13 @@ import CalendarScreen from './screens/CalendarScreen';
 import GuidelinesScreen from './screens/GuidelinesScreen';
 import PastVybesScreen from './screens/PastVybesScreen';
 import TrackedHostsScreen from './screens/TrackedHostsScreen';
+import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
+import BlockedProfilesScreen from './screens/BlockedProfilesScreen';
+const PaymentMethodsScreen = () => (
+  <View style={{flex:1,alignItems:'center',justifyContent:'center'}}>
+    <Text style={{color:'#fff'}}>Payment Methods (coming soon)</Text>
+  </View>
+);
 import PushNotificationService from './utils/pushNotifications';
 
 // Make PushNotificationService available globally for testing
@@ -34,6 +42,7 @@ if (__DEV__) {
 
 const Stack = createNativeStackNavigator();
 const HomeStack = createNativeStackNavigator();
+const AccountStack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
 function Login() {
@@ -117,6 +126,7 @@ function RootNavigator() {
       {user ? (
         <>
           <Stack.Screen name="Tabs" component={AuthedTabs} />
+          {/* Keep Account stack only if we need no-tab views; profile lives in HomeStack to show bottom tabs */}
         </>
       ) : (
         <>
@@ -134,13 +144,25 @@ function GradientTabBackground() {
 
 function HomeStackScreen() {
   return (
-    <HomeStack.Navigator screenOptions={{ headerShown:false }}>
+    <HomeStack.Navigator screenOptions={{ headerShown:false, unmountOnBlur: true }}>
       <HomeStack.Screen name="HomeMain" component={HomeDashboard} />
       <HomeStack.Screen name="Calendar" component={CalendarScreen} />
       <HomeStack.Screen name="Guidelines" component={GuidelinesScreen} />
       <HomeStack.Screen name="PastVybes" component={PastVybesScreen} />
       <HomeStack.Screen name="TrackedHosts" component={TrackedHostsScreen} />
+      <HomeStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+      <HomeStack.Screen name="BlockedProfiles" component={BlockedProfilesScreen} />
     </HomeStack.Navigator>
+  );
+}
+
+function AccountStackScreen() {
+  return (
+    <AccountStack.Navigator screenOptions={{ headerShown:false, unmountOnBlur: true }}>
+      <AccountStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+      <AccountStack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+      <AccountStack.Screen name="BlockedProfiles" component={BlockedProfilesScreen} />
+    </AccountStack.Navigator>
   );
 }
 
@@ -153,6 +175,9 @@ function AuthedTabs() {
         tabBarInactiveTintColor:'#ffffffaa',
         tabBarStyle:{ backgroundColor: '#000', borderTopWidth:0, overflow:'visible' },
         tabBarBackground: () => <GradientTabBackground />,
+        unmountOnBlur: true,
+        detachInactiveScreens: true,
+        freezeOnBlur: true,
         tabBarIcon: ({ color, size }) => {
           let icon;
           if(route.name==='Home') icon='home';
@@ -162,15 +187,25 @@ function AuthedTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeStackScreen} options={{ headerShown:false }} />
-      <Tab.Screen name="Discover" component={DiscoverScreen} />
-      <Tab.Screen name="Host" component={HostCreateScreen} />
+      <Tab.Screen
+        name="Home"
+        component={HomeStackScreen}
+        options={{ headerShown:false }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('Home', { screen: 'HomeMain' });
+          },
+        })}
+      />
+      <Tab.Screen name="Discover" component={DiscoverScreen} options={{ unmountOnBlur: true, lazy: true }} />
+      <Tab.Screen name="Host" component={HostCreateScreen} options={{ unmountOnBlur: true, lazy: true }} />
     </Tab.Navigator>
   );
 }
 
 export default function App() {
   const [splashDone, setSplashDone] = React.useState(false);
+  React.useEffect(() => { try { enableFreeze(true); } catch {} }, []);
 
   return (
     <SafeAreaProvider>

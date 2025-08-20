@@ -1,0 +1,43 @@
+table_name,column_name,data_type,is_nullable,column_default
+events,id,uuid,NO,gen_random_uuid()
+events,host_id,uuid,NO,auth.uid()
+events,title,text,NO,null
+events,description,text,YES,null
+events,vibe,text,NO,null
+events,address,text,YES,null
+events,starts_at,timestamp with time zone,NO,null
+events,ends_at,timestamp with time zone,YES,null
+events,status,text,NO,'pending'::text
+events,img_path,text,YES,null
+events,created_at,timestamp with time zone,YES,now()
+events,ai_score,double precision,YES,null
+events,updated_at,timestamp without time zone,YES,null
+events,search_tsv,tsvector,YES,null
+events,rsvp_capacity,integer,YES,null
+events,price_in_cents,integer,YES,0
+events,refund_policy,text,NO,'no_refund'::text
+events,locked,boolean,NO,false
+events,canceled_at,timestamp with time zone,YES,null
+events,latitude,numeric,YES,null
+events,longitude,numeric,YES,null
+notifications,id,uuid,NO,gen_random_uuid()
+notifications,user_id,uuid,YES,null
+notifications,title,text,YES,null
+notifications,message,text,YES,null
+notifications,created_at,timestamp with time zone,YES,now()
+notifications,expires_at,timestamp with time zone,YES,(now() + '7 days'::interval)
+notifications,is_dismissed,boolean,YES,false
+notifications,reference_id,uuid,YES,null
+notifications,reference_table,text,YES,null
+notifications,type,character varying,YES,'rsvp'::character varying
+notifications,batch_key,text,YES,null
+notifications,batch_count,integer,YES,1
+notifications,contributor_ids,jsonb,YES,'[]'::jsonb
+notifications,is_pushed,boolean,YES,false
+notifications,data,jsonb,YES,'{}'::jsonb
+notifications,is_hidden,boolean,NO,false
+rsvps,event_id,uuid,NO,null
+rsvps,user_id,uuid,NO,null
+rsvps,created_at,timestamp with time zone,YES,now()
+rsvps,paid,boolean,YES,false
+rsvps,status,text,YES,'attending'::text

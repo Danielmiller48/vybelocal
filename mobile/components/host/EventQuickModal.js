@@ -6,7 +6,7 @@ export default function EventQuickModal({ visible, event, onClose, onCancel }){
   if (!visible || !event) return null;
   const openChat = () => {
     // assuming web chat route; replace with native navigation if available
-    if (event?.id) Linking.openURL(`https://vybelocal.com/events/${event.id}/chat`);
+    if (event?.id) Linking.openURL(`${(Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com')}/events/${event.id}/chat`);
   };
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>

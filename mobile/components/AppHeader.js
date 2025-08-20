@@ -196,7 +196,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
           )}
         </TouchableOpacity>
         {avatar && (
-          <TouchableOpacity onPress={onAvatarPress} style={{ marginRight:16 }} accessibilityLabel="Profile">
+          <TouchableOpacity onPress={() => { onAvatarPress(); navigation.navigate('Home', { screen: 'ProfileSettings' }); }} style={{ marginRight:16 }} accessibilityLabel="Profile">
             <Image source={{ uri: avatar }} style={{ width:34, height:34, borderRadius:17, borderWidth:2, borderColor:'#fff' }} />
           </TouchableOpacity>
         )}
@@ -220,29 +220,29 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingTop:6, paddingBottom:4 }}>Quick Actions</Text>
               <MenuItem icon="search" label="Find a Vybe" onPress={() => { closeMenu(); navigation.navigate('Discover'); }} />
               <MenuItem icon="add-circle-outline" label="Host a Vybe" onPress={() => { closeMenu(); globalThis?.HostDrawerToggle?.(); navigation.navigate('Host'); }} />
-              <MenuItem icon="calendar-outline" label="Upcoming Vybes" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
+              <MenuItem icon="calendar-outline" label="Upcoming Vybes" onPress={() => { closeMenu(); navigation.navigate('Home', { screen: 'HomeMain' }); }} />
 
               {/* Account & Tools */}
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Account & Tools</Text>
-              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); onAvatarPress(); }} />
-              <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
-              <MenuItem icon="card-outline" label="Payment Methods" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/app/payments'); }} />
+              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); onAvatarPress(); navigation.navigate('Home', { screen: 'ProfileSettings' }); }} />
+              <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home', { screen: 'BlockedProfiles' }); }} />
+              <MenuItem icon="card-outline" label="Payment Methods" onPress={() => { closeMenu(); Linking.openURL((Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com') + '/app/payments'); }} />
 
               {/* Info & Support */}
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Info & Support</Text>
-              <MenuItem icon="information-circle-outline" label="About VybeLocal" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/learn'); }} />
+              <MenuItem icon="information-circle-outline" label="About VybeLocal" onPress={() => { closeMenu(); Linking.openURL((Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com') + '/learn'); }} />
               <MenuItem icon="shield-checkmark-outline" label="Trust & Safety" onPress={() => { closeMenu(); navigation.navigate('Guidelines'); }} />
-              <MenuItem icon="refresh-circle-outline" label="Refund Policy" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/refund'); }} />
-              <MenuItem icon="lock-closed-outline" label="Privacy Policy" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/privacy'); }} />
+              <MenuItem icon="refresh-circle-outline" label="Refund Policy" onPress={() => { closeMenu(); Linking.openURL((Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com') + '/refund'); }} />
+              <MenuItem icon="lock-closed-outline" label="Privacy Policy" onPress={() => { closeMenu(); Linking.openURL((Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com') + '/privacy'); }} />
               <MenuItem icon="help-buoy-outline" label="Contact Support" onPress={() => { closeMenu(); Linking.openURL('mailto:support@vybelocal.com'); }} />
 
               {/* Brand / Extra */}
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Extra</Text>
               <MenuItem icon="star-outline" label="Become a paid event Host" onPress={() => { closeMenu(); navigation.navigate('Host'); }} />
-              <MenuItem icon="heart-outline" label="Support VybeLocal" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/patron'); }} />
+              <MenuItem icon="heart-outline" label="Support VybeLocal" onPress={() => { closeMenu(); Linking.openURL((Constants?.expoConfig?.extra?.apiBaseUrl || 'https://vybelocal.com') + '/patron'); }} />
               <MenuItem icon="logo-instagram" label="Follow Us" onPress={() => { closeMenu(); Linking.openURL('https://instagram.com/joinvybelocal'); }} />
 
               {/* Sign out */}
@@ -259,11 +259,13 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
         </Modal>
       )}
 
-      {/* Notification Modal */}
-      <NotificationModal 
-        visible={showNotificationModal}
-        onClose={() => setShowNotificationModal(false)}
-      />
+      {/* Notification Modal (mount only when needed) */}
+      {showNotificationModal && (
+        <NotificationModal 
+          visible
+          onClose={() => setShowNotificationModal(false)}
+        />
+      )}
     </View>
   );
 } 

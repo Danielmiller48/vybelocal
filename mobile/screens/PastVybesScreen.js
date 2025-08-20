@@ -11,6 +11,8 @@ import AppHeader from '../components/AppHeader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
+import { apiFetch } from '../utils/api';
 
 export default function PastVybesScreen() {
   const { user } = useAuth();
@@ -142,8 +144,7 @@ export default function PastVybesScreen() {
         source: 'user',
       };
 
-      const { error } = await supabase.from('flags').insert(payload);
-      if (error) throw error;
+      await apiFetch('/api/flags', { method: 'POST', body: payload });
 
       setReportVisible(false);
       setReportEvent(null);

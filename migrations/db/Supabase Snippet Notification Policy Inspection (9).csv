@@ -1,0 +1,46 @@
+policy_name,table_name,command,using_expr,check_expr
+AI moderator can update status,events,w,(( SELECT auth.role() AS role) = 'service_role'::text),null
+Admins can view all events,events,r,"(EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.is_admin = true))))",null
+Hide events from blocked users,events,r,"(NOT (EXISTS ( SELECT 1
+   FROM blocks
+  WHERE (((blocks.blocker_id = ( SELECT auth.uid() AS uid)) AND (blocks.target_type = 'user'::text) AND (blocks.target_id = events.host_id)) OR ((blocks.blocker_id = events.host_id) AND (blocks.target_type = 'user'::text) AND (blocks.target_id = ( SELECT auth.uid() AS uid)))))))",null
+Public approved events,events,r,(status = 'approved'::text),null
+events_delete_admin_only,events,d,(( SELECT auth.role() AS role) = 'service_role'::text),null
+events_update,events,w,(host_id = ( SELECT auth.uid() AS uid)),(host_id = ( SELECT auth.uid() AS uid))
+hosts can insert events,events,a,null,((host_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid))))
+hosts can read events,events,r,(host_id = ( SELECT auth.uid() AS uid)),null
+hosts can update events,events,w,((host_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid)))),((host_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid))))
+Admins can view all notifications,notifications,r,"(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.is_admin = true))))",null
+Only admins can delete notifications,notifications,d,"(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.is_admin = true))))",null
+Only admins can insert notifications,notifications,a,null,"(EXISTS ( SELECT 1
+   FROM profiles p
+  WHERE ((p.id = auth.uid()) AND (p.is_admin = true))))"
+Users can delete their own notifications,notifications,d,(user_id = auth.uid()),null
+Users can dismiss their own notifications,notifications,w,(user_id = ( SELECT auth.uid() AS uid)),(user_id = ( SELECT auth.uid() AS uid))
+Users can view their own notifications,notifications,r,(user_id = ( SELECT auth.uid() AS uid)),null
+notifications_insert_own,notifications,a,null,(auth.uid() = user_id)
+realtime select,notifications,r,(user_id = auth.uid()),null
+realtime_select,notifications,r,(user_id = auth.uid()),null
+Admins can view all rsvps,rsvps,r,"(EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.is_admin = true))))",null
+Authenticated users can view rsvps,rsvps,r,(auth.uid() IS NOT NULL),null
+Event host can delete RSVPs for their event,rsvps,d,"(EXISTS ( SELECT 1
+   FROM events
+  WHERE ((events.id = rsvps.event_id) AND (events.host_id = ( SELECT auth.uid() AS uid)))))",null
+host can read rsvps for own events,rsvps,r,"(EXISTS ( SELECT 1
+   FROM events
+  WHERE ((events.id = rsvps.event_id) AND (events.host_id = ( SELECT auth.uid() AS uid)))))",null
+public event rsvps,rsvps,r,"(EXISTS ( SELECT 1
+   FROM events
+  WHERE ((events.id = rsvps.event_id) AND (events.status = 'approved'::text))))",null
+rsvps_delete,rsvps,d,((user_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid)))),null
+rsvps_insert,rsvps,a,null,((user_id = ( SELECT auth.uid() AS uid)) AND (NOT is_banned(( SELECT auth.uid() AS uid))))
+rsvps_select,rsvps,r,(user_id = ( SELECT auth.uid() AS uid)),null
+rsvps_update,rsvps,w,(user_id = auth.uid()),(status = 'canceled_by_guest'::text)

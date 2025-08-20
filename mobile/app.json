@@ -38,6 +38,7 @@
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "YOUR_ANON_KEY",
       "EXPO_PUBLIC_EVENT_BUCKET": "event-images",
       "EXPO_PUBLIC_MAPBOX_TOKEN": "YOUR_MAPBOX_TOKEN",
+      "apiBaseUrl": "https://vybelocal.com",
       "UPSTASH_REDIS_REST_URL": "https://enough-quagga-52942.upstash.io",
       "UPSTASH_REDIS_REST_TOKEN": "Ac7OAAIjcDExMDYwMTg1NTg0ZTI0ODgyOTA5YjgzNjg1ZmZlMzFhYXAxMA",
       "eas": {
