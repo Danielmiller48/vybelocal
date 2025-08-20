@@ -89,9 +89,7 @@ export default function TrackedHostsScreen() {
               } else {
                 const { data: imgData } = await supabase.storage
                   .from('event-images')
-                  .createSignedUrl(event.img_path, 3600, {
-                    transform: { width: 800, height: 600, resize: 'cover' },
-                  });
+                  .createSignedUrl(event.img_path, 3600);
                 imageUrl = imgData?.signedUrl || null;
               }
             } catch {}

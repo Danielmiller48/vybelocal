@@ -49,9 +49,7 @@ function TimelineEvent({ event, onCancel }) {
     try {
       const { data } = await supabase.storage
         .from('profile-images')
-        .createSignedUrl(path, 3600, {
-          transform: { width: 64, height: 64, resize: 'cover', quality: 60 },
-        });
+        .createSignedUrl(path, 3600);
       return data?.signedUrl || null;
     } catch {
       return null;

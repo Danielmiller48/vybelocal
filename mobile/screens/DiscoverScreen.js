@@ -214,13 +214,26 @@ export default function DiscoverScreen() {
   // ref so we can snap the list back to top when vibe changes
   const listRef = useRef(null);
 
+  // Hoist animated value so it is not recreated every render
+  const pickerTranslateY = useRef(new Animated.Value(0)).current;
+
   const scrollToTop = () => {
-    if (!listRef.current) return;
-    if (typeof listRef.current.scrollToLocation === 'function') {
-      listRef.current.scrollToLocation({ sectionIndex:0, itemIndex:0, animated:false });
-    } else if (typeof listRef.current.scrollToOffset === 'function') {
-      listRef.current.scrollToOffset({ offset:0, animated:false });
+    const list = listRef.current;
+    if (!list) return;
+    const sections = makeSections(events);
+    if (!sections.length || !sections[0]?.data?.length) {
+      if (typeof list.scrollToOffset === 'function') {
+        try { list.scrollToOffset({ offset: 0, animated: false }); } catch {}
+      }
+      return;
     }
+    try {
+      if (typeof list.scrollToLocation === 'function') {
+        list.scrollToLocation({ sectionIndex: 0, itemIndex: 0, animated: false, viewPosition: 0 });
+      } else if (typeof list.scrollToOffset === 'function') {
+        list.scrollToOffset({ offset: 0, animated: false });
+      }
+    } catch {}
   };
 
   const slideToVibe = (dir) => {
@@ -285,28 +298,14 @@ export default function DiscoverScreen() {
     }
     if(rangeStart) query = query.gte('starts_at', rangeStart.toISOString());
     if(rangeEnd) query = query.lte('starts_at', rangeEnd.toISOString());
-    const { data: rows, error } = await query.order('starts_at');
+    const { data: rows, error } = await query
+      .order('starts_at', { ascending: true })
+      .limit(200);
     if (error) setError(error.message);
-    const eventsWithImgs = await Promise.all(
-      (rows||[]).map(async ev => {
-        if (ev.img_path) {
-          try {
-            const { data: imgData } = await supabase.storage
-              .from('event-images')
-              .createSignedUrl(ev.img_path, 3600, {
-                transform: { width: 800, height: 600, resize: 'cover' },
-              });
-            return { ...ev, imageUrl: imgData?.signedUrl || null };
-          } catch {
-            return { ...ev, imageUrl: null };
-          }
-        }
-        return { ...ev, imageUrl: null };
-      })
-    );
-
-    eventsCache.current[`${vibe}-${filterKey}`] = eventsWithImgs;
-    return eventsWithImgs;
+    // Do not pre-sign all images here; defer to item components with local cache
+    const processed = (rows || []).map(ev => ({ ...ev, imageUrl: null }));
+    eventsCache.current[`${vibe}-${filterKey}`] = processed;
+    return processed;
   };
 
   const loadEvents = useCallback(async (vibe, filterKey, skipLoading = false) => {
@@ -356,7 +355,9 @@ export default function DiscoverScreen() {
     );
   }
 
-  const renderItem = ({ item }) => (<EventCard event={item} onPress={() => setSelected(item)} />);
+  const renderItem = useCallback(({ item }) => (
+    <EventCard event={item} onPress={() => setSelected(item)} light={true} />
+  ), []);
   const renderSectionHeader = ({ section:{title} }) => (
     <View style={{ paddingHorizontal:16, paddingTop:20 }}>
       <View style={{ alignSelf:'flex-start', backgroundColor:colors.secondary, borderRadius:20, paddingHorizontal:18, paddingVertical:6 }}>
@@ -412,6 +413,11 @@ export default function DiscoverScreen() {
           renderSectionHeader={renderSectionHeader}
           refreshing={refreshing}
           onRefresh={onRefresh}
+          windowSize={5}
+          maxToRenderPerBatch={8}
+          initialNumToRender={6}
+          removeClippedSubviews={true}
+          updateCellsBatchingPeriod={50}
           scrollEventThrottle={16}
           contentContainerStyle={{ paddingHorizontal:16, paddingVertical: 16, paddingBottom: 120 }}
           ListEmptyComponent={() => (
@@ -420,7 +426,7 @@ export default function DiscoverScreen() {
           )}
           />
         </Animated.View>
-        <VibePicker active={activeVibe} onChange={setActiveVibe} translateY={new Animated.Value(0)} />
+        <VibePicker active={activeVibe} onChange={setActiveVibe} translateY={pickerTranslateY} />
       </SafeAreaView>
       </LinearGradient>
       {loading && (

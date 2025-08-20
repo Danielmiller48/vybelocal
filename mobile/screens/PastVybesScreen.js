@@ -50,9 +50,7 @@ export default function PastVybesScreen() {
           try {
             const { data: imgData } = await supabase.storage
               .from('event-images')
-              .createSignedUrl(ev.img_path, 3600, {
-                transform: { width: 800, height: 600, resize: 'cover' },
-              });
+              .createSignedUrl(ev.img_path, 3600);
             imageUrl = imgData?.signedUrl || null;
           } catch { /* ignore */ }
         }
