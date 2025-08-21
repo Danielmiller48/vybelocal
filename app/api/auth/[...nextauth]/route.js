@@ -1,4 +1,5 @@
 // ── app/api/auth/[...nextauth]/route.js ──
+
 export const runtime = "nodejs";
 
 import NextAuth from "next-auth";
@@ -45,7 +46,11 @@ export const authOptions = {
         return {
           id: data.user.id,
           email: data.user.email,
-          supabase: data.session           // { access_token, refresh_token, ... }
+                  // Send only the two strings the bridge needs
+        supabase: {
+          access_token:  data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        },           // { access_token, refresh_token, ... }
         };
       }
     })

@@ -1,41 +1,36 @@
-// utils/supabase/middleware.js
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse } from 'next/server'
+// utils/supabase/server.js
+// -----------------------------------------------------------------------------
+// Helper for server components / API routes.
+// • Default   → anon key  (RLS ON)
+// • admin:true → service key (RLS OFF – use only in trusted scripts)
+// -----------------------------------------------------------------------------
+
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+
+const URL   = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const ANON  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SR    = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 /**
- * Refresh the user’s session on every request and sync cookies
- * @param {import('next/server').NextRequest} request
+ * createSupabaseServer({ admin = false })
+ * --------------------------------------
+ * @param {boolean} admin  – when true, uses service key (bypasses RLS)
+ * @returns Supabase server client
  */
-export async function updateSession(request) {
-  // 1️⃣ set up a response we can mutate
-  let response = NextResponse.next({
-    request: { headers: request.headers },
-  })
+export async function createSupabaseServer({ admin = false } = {}) {
+  const jar = await cookies();                       // Next.js cookies helper
 
-  // 2️⃣ build a Supabase client wired to read + write cookies
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        // read cookies coming *in* from the browser
-        getAll() {
-          return request.cookies.getAll()
-        },
-        // write refreshed cookies to both the incoming request
-        // (for server components) and the outgoing response
-        setAll(cookies) {
-          cookies.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value, options)    // for the server
-            response.cookies.set(name, value, options)   // for the browser
-          })
-        },
-      },
+  // Choose the key: anon by default, service key only when explicitly requested
+  const KEY = admin && SR ? SR : ANON;
+
+  return createServerClient(URL, KEY, {
+    cookies: {
+      get:      (name)      => jar.get(name)?.value,
+      getAll:   async ()    => jar.getAll().map(c => ({ name: c.name, value: c.value })),
+      set:      (name, val, opt) => jar.set({ name, value: val, ...opt }),
+      setAll:   async arr   => arr.forEach(c => jar.set(c)),
+      remove:   (name, opt) => jar.delete({ name, ...opt }),
     },
-  )
-
-  // 3️⃣ this call refreshes the JWT if it’s stale and triggers setAll()
-  await supabase.auth.getUser()
-
-  return response
+  });
 }
