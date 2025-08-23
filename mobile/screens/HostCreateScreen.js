@@ -1057,22 +1057,40 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     let cancelled = false;
     (async () => {
       try {
+        const debugHostId = (events && events[0]?.host_id) || null;
+        console.log('[analytics.host_monthly] hostId candidate from events[0]:', debugHostId);
         const { data: rows } = await supabase
           .schema('analytics')
           .from('host_monthly')
-          .select('year,month,rsvps_total,events_count,revenue_cents')
+          .select('year,month,rsvps_total,events_count,revenue_cents,gross_revenue_cents')
           .eq('host_id', hostId)
           .gte('year', startAll.getFullYear())
           .lte('year', now.getFullYear())
           .order('year', { ascending: true })
           .order('month', { ascending: true });
 
+        console.log('[analytics.host_monthly] fetched rows:', (rows||[]).length, (rows||[]).slice(0, 3));
+
+        let effectiveRows = rows || [];
+        if ((effectiveRows).length === 0) {
+          console.log('[analytics.host_monthly] retry without year filter');
+          const { data: retry } = await supabase
+            .schema('analytics')
+            .from('host_monthly')
+            .select('year,month,rsvps_total,events_count,revenue_cents,gross_revenue_cents')
+            .eq('host_id', hostId)
+            .order('year', { ascending: true })
+            .order('month', { ascending: true });
+          effectiveRows = retry || [];
+          console.log('[analytics.host_monthly] retry rows:', effectiveRows.length);
+        }
+
         if (cancelled) return;
         const periods = ['month','6months','ytd','all'];
         const map = {};
         periods.forEach(p => {
           const startDate = boundsFor(p);
-          map[p] = { series: fillMonthly(rows, startDate, endDate) };
+          map[p] = { series: fillMonthly(effectiveRows, startDate, endDate) };
         });
         setRsvpMonthlyByPeriod(map);
 
@@ -1083,19 +1101,21 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           return d >= start && d <= end;
         };
         const calcAgg = (startDate) => {
-          let events = 0; let revenueCents = 0;
-          (rows || []).forEach(r => {
+          let events = 0; let revenueCents = 0; let gross = 0;
+          (effectiveRows || []).forEach(r => {
             if (within(r.year, r.month, startDate, endDate)) {
               events += Number(r.events_count || 0);
-              revenueCents += Number(r.revenue_cents || 0);
+              revenueCents += Number(r.revenue_cents || 0); // legacy if present
+              gross += Number(r.gross_revenue_cents || 0);
             }
           });
-          return { events, revenueCents };
+          return { events, revenueCents, gross_revenue_cents: gross };
         };
         aggregates['month'] = calcAgg(boundsFor('month'));
         aggregates['6months'] = calcAgg(boundsFor('6months'));
         aggregates['ytd'] = calcAgg(boundsFor('ytd'));
         aggregates['all'] = calcAgg(boundsFor('all'));
+        console.log('[analytics.host_monthly] aggregates:', aggregates);
         setHostMonthly({ rows: rows || [], aggregates });
       } catch {}
     })();
@@ -1921,11 +1941,11 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
       <MetricCard
         title="Avg Revenue per Event (Last 6 Months)"
-        value={`$${((hostMonthly.aggregates?.['6months']?.revenueCents || 0) / 100 / Math.max(hostMonthly.aggregates?.['6months']?.events || 0, 1)).toFixed(2)}`}
+        value={`$${((hostMonthly.aggregates?.['6months']?.revenueCents || hostMonthly.aggregates?.['6months']?.gross_revenue_cents || 0) / 100 / Math.max(hostMonthly.aggregates?.['6months']?.events || 0, 1)).toFixed(2)}`}
         subtitle={`Across ${hostMonthly.aggregates?.['6months']?.events || 0} ${paidOnly ? 'paid ' : ''}events`}
         icon="cash"
         color="#f59e0b"
-        metricType="topEarning"
+        metricType="avgRevenue"
         disabled={!paidOnly}
         disabledNote="Verify your account to start earning for real."
       />
