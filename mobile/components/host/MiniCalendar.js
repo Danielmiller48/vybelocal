@@ -6,7 +6,7 @@ function startOfMonth(date){ const d=new Date(date); d.setDate(1); d.setHours(0,
 function endOfMonth(date){ const d=new Date(date); d.setMonth(d.getMonth()+1); d.setDate(0); d.setHours(23,59,59,999); return d; }
 function sameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
-export default function MiniCalendar({ events = [], onSelectEvent }){
+export default function MiniCalendar({ events = [], onSelectEvent, onMonthChange }){
   const [monthOffset, setMonthOffset] = useState(0);
   const base = new Date(); base.setDate(1);
   const currentMonth = new Date(base.getFullYear(), base.getMonth()+monthOffset, 1);
@@ -38,6 +38,14 @@ export default function MiniCalendar({ events = [], onSelectEvent }){
   while(cells.length % 7 !== 0) cells.push(null);
 
   const monthLabel = currentMonth.toLocaleString(undefined, { month:'long', year:'numeric' });
+
+  // Notify parent when visible month changes
+  React.useEffect(() => {
+    try {
+      onMonthChange?.({ first: first.toISOString(), last: last.toISOString(), month: currentMonth });
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthOffset]);
 
   return (
     <View style={{ backgroundColor:'white', borderRadius:12, padding:12, borderWidth:1, borderColor:'#e5e7eb' }}>

@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import RSVPButton from './RSVPButton';
 import { supabase } from '../utils/supabase';
+import { getHostStats } from '../utils/hostStatsCache';
 import ProfileModal from './ProfileModal';
 import EventChatModal from './EventChatModal';
 import { notificationUtils } from '../utils/notifications';
@@ -47,12 +48,11 @@ function TimelineEvent({ event, onCancel }) {
     if (!path) return null;
     if (path.startsWith('http')) return path;
     try {
-      const { data } = await supabase.storage
-        .from('profile-images')
-        .createSignedUrl(path, 3600, {
-          transform: { width: 64, height: 64, resize: 'cover', quality: 60 },
-        });
-      return data?.signedUrl || null;
+      const { getSignedUrl } = await import('../utils/signedUrlCache');
+      const signed = await getSignedUrl(supabase, 'profile-images', path, 3600, {
+        transform: { width: 64, height: 64, resize: 'cover', quality: 60 },
+      });
+      return signed || null;
     } catch {
       return null;
     }
@@ -186,12 +186,8 @@ function TimelineEvent({ event, onCancel }) {
         .select('*')
         .eq('uuid', uuid)
         .single();
-      // stats: completed & cancels reuse same queries as earlier minimal
-      const [{ count: completed }, { data: strikeRow }] = await Promise.all([
-        supabase.from('v_past_events').select('id', { count:'exact', head:true }).eq('host_id', uuid),
-        supabase.from('v_host_strikes_last6mo').select('strike_count').eq('host_id', uuid).maybeSingle(),
-      ]);
-      setProfileModal({ visible:true, profile: prof, stats:{ completed: completed||0, cancels: Number(strikeRow?.strike_count||0) } });
+      const stats = await getHostStats(uuid);
+      setProfileModal({ visible:true, profile: prof, stats });
     } catch {
       // ignore
     }

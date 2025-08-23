@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { format } from 'date-fns';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import ProfileModal from './ProfileModal';
 import RSVPButton from './RSVPButton';
 
@@ -18,10 +19,8 @@ function useAvatarUrl(path) {
   useEffect(() => {
     if (!path) { setUrl('https://placehold.co/40x40'); return; }
     if (path.startsWith('http')) { setUrl(path); return; }
-    supabase.storage.from('profile-images').createSignedUrl(path, 3600)
-      .then(({ data }) => {
-        if (data?.signedUrl) setUrl(data.signedUrl);
-      });
+    getSignedUrl(supabase, 'profile-images', path, 3600)
+      .then((signed) => { if (signed) setUrl(signed); });
   }, [path]);
   return url;
 }

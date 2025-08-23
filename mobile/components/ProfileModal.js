@@ -3,6 +3,7 @@ import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Ani
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import { useAuth } from '../auth/AuthProvider';
 
 function useAvatarUrl(path) {
@@ -10,7 +11,7 @@ function useAvatarUrl(path) {
   useEffect(() => {
     if (!path) { setUrl('https://placehold.co/80x80'); return; }
     if (path.startsWith('http')) { setUrl(path); return; }
-    supabase.storage.from('profile-images').createSignedUrl(path, 3600).then(({ data }) => { if (data?.signedUrl) setUrl(data.signedUrl); });
+    getSignedUrl(supabase, 'profile-images', path, 3600).then((signed) => { if (signed) setUrl(signed); });
   }, [path]);
   return url;
 }

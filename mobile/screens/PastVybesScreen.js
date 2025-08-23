@@ -5,6 +5,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import TimelineEvent from '../components/TimelineEvent';
 import TimelineSectionHeader from '../components/TimelineSectionHeader';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import { useAuth } from '../auth/AuthProvider';
 import { format } from 'date-fns';
 import AppHeader from '../components/AppHeader';
@@ -48,23 +49,32 @@ export default function PastVybesScreen() {
         let imageUrl = null;
         if (ev.img_path) {
           try {
-            const { data: imgData } = await supabase.storage
-              .from('event-images')
-              .createSignedUrl(ev.img_path, 3600, {
-                transform: { width: 800, height: 600, resize: 'cover' },
-              });
-            imageUrl = imgData?.signedUrl || null;
+            const signed = await getSignedUrl(
+              supabase,
+              'event-images',
+              ev.img_path,
+              3600,
+              { transform: { width: 800, height: 600, resize: 'cover' } }
+            );
+            imageUrl = signed || null;
           } catch { /* ignore */ }
         }
 
         // Get attendee avatars (limit 3 for display)
-        const { data: avatarRows } = await supabase
+        const { data: avatarIds } = await supabase
           .from('rsvps')
-          .select('profiles!inner(avatar_url)')
+          .select('user_id')
           .eq('event_id', ev.id)
           .limit(3);
-
-        const avatars = (avatarRows || []).map(r => r.profiles?.avatar_url).filter(Boolean);
+        const aIds = (avatarIds || []).map(r => r.user_id);
+        let avatars = [];
+        if (aIds.length) {
+          const { data: aCards } = await supabase
+            .from('public_user_cards')
+            .select('avatar_url')
+            .in('uuid', aIds);
+          avatars = (aCards || []).map(c => c.avatar_url).filter(Boolean);
+        }
 
         // Get total attendee count
         const { count } = await supabase

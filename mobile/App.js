@@ -24,6 +24,7 @@ import GuidelinesScreen from './screens/GuidelinesScreen';
 import PastVybesScreen from './screens/PastVybesScreen';
 import TrackedHostsScreen from './screens/TrackedHostsScreen';
 import PushNotificationService from './utils/pushNotifications';
+import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 
 // Make PushNotificationService available globally for testing
 if (__DEV__) {
@@ -140,6 +141,7 @@ function HomeStackScreen() {
       <HomeStack.Screen name="Guidelines" component={GuidelinesScreen} />
       <HomeStack.Screen name="PastVybes" component={PastVybesScreen} />
       <HomeStack.Screen name="TrackedHosts" component={TrackedHostsScreen} />
+      <HomeStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
     </HomeStack.Navigator>
   );
 }

@@ -101,7 +101,7 @@ async function getInsightCached(chartType, data, context = {}) {
   const minimal = {
     t: chartType,
     d: (data?.data || []).map(({ label, value }) => [label, value]),
-    extras: { title: data?.title, r: data?.refundRate, p: context?.timePeriod || 'current' },
+    extras: { title: data?.title, r: data?.refundRate, p: context?.timePeriod || 'current', h: context?.hostId || null },
   };
   const key = `ai:insight:${chartType}:${stableHash(minimal)}`;
 
@@ -445,8 +445,7 @@ const callOpenAI = async (chartType, data, context) => {
     throw new Error('OpenAI disabled or key missing');
   }
 
-  const prompt = createVybeLocalPrompt(chartType, data, context);
-  
+  const payload = buildFeatureSummary(chartType, data, context);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -458,27 +457,39 @@ const callOpenAI = async (chartType, data, context) => {
       messages: [
         {
           role: "system",
-          content: `You're an analytics assistant for VybeLocal, a community-driven event platform. 
+          content: `You are VybeLocal's analytics voice.
 
-VOICE & STYLE:
-- Avoid corporate or overly polished language
-- Use contractions: "you're" not "you are"  
-- Friendly but not fake. Gritty but not rude
-- Write like you're texting someone cool
-- Rooted in real community
-- Slightly defiant
-- Warm, confident, and anti-cringe
-- Human above all
+TONE
+- Grounded, not gimmicky. No forced slang.
+- Confident, not performative. Plain, direct, city-smart.
+- Alive, not corporate. Real pulse, no cheerleader fluff.
 
-Respond with JSON: {"message": "insight about their data", "recommendation": "actionable advice", "confidence": 0.8}`
+CORE STYLE FILTERS
+- Weight over fluff: street poster energy, not ad campaign.
+- Edge + clarity: a little rebellious, never cartoonish.
+- Everyday speech: how locals talk at a bar, run, or gym.
+
+ANTI-CAMP RULES
+- Never use filler hype words (no “fam,” “lit,” “squad goals”).
+- No exaggerated punctuation unless it truly fits.
+- No faux slang you wouldn’t say in El Paso.
+
+LITMUS TEST
+- Could I say this at a coffee shop without sounding like a clown? If yes → keep. If no → delete.
+
+STYLE
+- Keep lines tight (< 16 words). Use contractions. Verbs first.
+- Occasional desert cues (horizon, heat, night, flow) only when natural.
+- Micro-rituals: Vybe, Circle, unlocked, in, local, start here.
+
+OUTPUT
+Return STRICT JSON with keys: message, recommendation, confidence. Use provided KPIs/highlights and units to deliver 1–2 sharp, valuable takeaways that drive action.`
         },
-        {
-          role: "user", 
-          content: prompt
-        }
+        { role: "user", content: JSON.stringify(payload) }
       ],
-      max_tokens: 200,
-      temperature: 0.7
+      response_format: { type: "json_object" },
+      max_tokens: 160,
+      temperature: 0.6
     })
   });
 
@@ -499,125 +510,165 @@ Respond with JSON: {"message": "insight about their data", "recommendation": "ac
 };
 
 /**
- * Create VybeLocal-specific prompts for different chart types
+ * Build a compact but information-dense feature summary for the model
  */
-const createVybeLocalPrompt = (chartType, data, context) => {
-  const baseContext = `User is a VybeLocal host analyzing their ${chartType} analytics.`;
-  
+const buildFeatureSummary = (chartType, data, context) => {
+  const round = (n, d = 2) => Number((n || 0).toFixed(d));
+  let series = Array.isArray(data?.data) ? data.data : [];
+  // Deduplicate identical consecutive labels/values to avoid weird reads
+  series = series.filter((pt, idx, arr) => idx === 0 || !(pt.label === arr[idx-1].label && Number(pt.value||0) === Number(arr[idx-1].value||0)));
+
+  const summarizeSeries = (points) => {
+    if (!points.length) return { n: 0 };
+    const values = points.map(p => Number(p.value || 0));
+    const n = values.length;
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / n;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const first = values[0];
+    const last = values[n - 1];
+    const delta = last - first;
+    const pct = first > 0 ? (delta / Math.abs(first)) : null;
+    const variance = values.reduce((acc, v) => acc + Math.pow(v - avg, 2), 0) / n;
+    const std = Math.sqrt(variance);
+    let sx = 0, sy = 0, sxy = 0, sxx = 0;
+    for (let i = 0; i < n; i++) { sx += i; sy += values[i]; sxy += i * values[i]; sxx += i * i; }
+    const denom = (n * sxx - sx * sx) || 1;
+    const slope = (n * sxy - sx * sy) / denom;
+    const top = points
+      .map(p => ({ l: p.label, v: Number(p.value || 0) }))
+      .sort((a, b) => b.v - a.v)
+      .slice(0, 3);
+    const firstLabel = points[0]?.label || null;
+    const lastLabel = points[n - 1]?.label || null;
+    return { n, first: round(first), last: round(last), delta: round(delta), pct: pct == null ? null : round(pct, 3), min: round(min), max: round(max), avg: round(avg), std: round(std), slope: round(slope, 3), top, firstLabel, lastLabel };
+  };
+
+  const payload = { t: chartType, p: context?.timePeriod || 'current', hostId: context?.hostId || null };
+
   switch (chartType) {
-    case 'capacity':
-      return `${baseContext}
-      
-Their capacity fill rate data: ${JSON.stringify(data)}
-Average fill rate: ${((data.avg || 0) * 100).toFixed(1)}%
-
-Analyze their venue sizing and RSVP performance. Give them real talk about their capacity strategy - are they booking spaces too big? Too small? What should they do differently?`;
-
-    case 'revenue':
-      return `${baseContext}
-      
-Revenue data: ${JSON.stringify(data)}
-Total revenue from top events: $${data.totalRevenue || 0}
-
-Look at their earning potential. Are they leaving money on the table? Should they raise prices? Try premium events? Give them honest advice about monetizing their community.`;
-
-    case 'rsvpGrowth':
-      return `${baseContext}
-      
-RSVP growth data: ${JSON.stringify(data)}
-Total RSVPs: ${data.totalRsvps || 0}
-
-How's their community building going? Are they gaining momentum or stuck? What should they focus on to grow their VybeLocal presence?`;
-
-    case 'revenueTimeline':
-      return `${baseContext}
-      
-Revenue timeline: ${JSON.stringify(data)}
-Total revenue: $${data.totalRevenue || 0}
-Milestones hit: ${data.achievedMilestones?.length || 0}
-Next milestone: $${data.nextMilestone || 'N/A'}
-
-Analyze their revenue journey. Are they crushing it? Building steady momentum? What's their next move to hit that next milestone?`;
-
-    case 'sellOut':
-      return `${baseContext}
-      
-Sell-out status: ${JSON.stringify(data.data)}
-
-Look at their event demand patterns. Are they consistently selling out? Having trouble filling spots? What does this tell them about their audience and pricing?`;
-
-    case 'repeatGuest':
-      return `${baseContext}
-      
-Repeat attendance: ${JSON.stringify(data.data)}
-
-How loyal is their community? Are people coming back for more or just one-and-done? What can they do to build deeper connections?`;
-
-    case 'peakTiming':
-      return `${baseContext}
-      
-RSVP timing patterns: ${JSON.stringify(data.data)}
-
-When do people actually book their events? Last minute? Way in advance? How should they adjust their promotion strategy?`;
-
-    case 'refund':
-      return `${baseContext}
-      
-Refund data: ${JSON.stringify(data)}
-
-What's their refund situation telling them? Too many cancellations might mean unclear expectations or event quality issues.`;
-
-    case 'sellOutSpeed':
-      return `${baseContext}
-      
-Sell-out timing: ${JSON.stringify(data)}
-Average time to sell out: ${data.avgSellOutSpeed} hours
-
-How fast are they selling out? Is this showing killer demand or slow momentum? What should they do about it?`;
-
-    case 'community':
-      return `${baseContext}
-      
-Community loyalty: ${JSON.stringify(data)}
-Repeat guest rate: ${(data.repeatGuestRate * 100).toFixed(1)}%
-
-How loyal is their community? Are people coming back or just one-and-done? What can they do to build deeper connections?`;
-
-    case 'satisfaction':
-      return `${baseContext}
-      
-Satisfaction metrics: ${JSON.stringify(data)}
-Refund rate: ${(data.refundRate * 100).toFixed(1)}%
-
-What's their refund rate telling them about satisfaction? Any red flags or things they should address?`;
-
-    case 'monetization':
-      return `${baseContext}
-      
-Revenue metrics: ${JSON.stringify(data)}
-Revenue per attendee: $${data.revenuePerAttendee}
-
-Are they maximizing revenue per person? Leaving money on the table? What monetization strategies should they try?`;
-
-    case 'venueSize':
-      return `${baseContext}
-      
-Venue utilization: ${JSON.stringify(data)}
-Capacity fill rate: ${(data.capacityFillRate * 100).toFixed(1)}%
-
-Are they sizing their venues right? Too big? Too small? What should they adjust about their space strategy?`;
-
-    case 'newHost':
-      return `${baseContext}
-      
-New host data: ${JSON.stringify(data)}
-Total events: ${data.totalEvents}, Total RSVPs: ${data.totalRsvps}
-
-They're just getting started. What encouragement and next steps should they focus on to build momentum?`;
-
-    default:
-      return `${baseContext} Data: ${JSON.stringify(data)}. Give them insights about their event performance.`;
+    case 'capacity': {
+      // Expect series as bucket counts: labels ["0-25%","26-50%","51-75%","76-99%","100%","No Capacity"]
+      const bucketMap = Object.fromEntries((series || []).map(d => [d.label, Number(d.value || 0)]));
+      const nWithCap = ['0-25%','26-50%','51-75%','76-99%','100%'].reduce((s,k)=> s + (bucketMap[k]||0), 0);
+      const noCap = bucketMap['No Capacity'] || 0;
+      const soldOut = bucketMap['100%'] || 0;
+      const nearFull = bucketMap['76-99%'] || 0;
+      const underHalf = (bucketMap['0-25%']||0) + (bucketMap['26-50%']||0);
+      payload.kpis = { avg: round(data?.avg ?? 0, 3), nWithCap, noCap, soldOut, nearFull, underHalf };
+      payload.highlights = { dist: bucketMap };
+      payload.units = { avg: 'ratio' };
+      payload.guide = 'Fill rate = RSVPs ÷ capacity per event. avg is the mean of event fill rates in this window. Buckets count events by fill. 100% = sold out. “No Capacity” means unlimited/unspecified and should not affect avg. Read: high 76–99%/100% → raise capacity/price; many 0–50% → smaller venues/promo; lots of No Capacity → set capacity to create urgency.';
+      break;
+    }
+    case 'revenue': {
+      payload.kpis = { tr: round(data?.totalRevenue ?? 0, 2) };
+      payload.highlights = { top: series.sort((a,b)=>b.value-a.value).slice(0,3).map(d=>({ l:d.label, v: round(d.value,2) })) };
+      break;
+    }
+    case 'rsvpGrowth': {
+      const s = summarizeSeries(series);
+      // Distinguish lifetime vs period totals to avoid confusion
+      payload.kpis = {
+        lifetimeTotal: typeof data?.totalRsvps === 'number' ? data.totalRsvps : null,
+        periodStart: s.first,
+        periodEnd: s.last,
+        periodTotal: s.last,
+        periodDelta: s.delta,
+        growthPct: s.pct, // null when starting from zero
+        growthFromZero: s.first === 0 && s.last > 0,
+        slope: s.slope
+      };
+      payload.window = { start: s.firstLabel, end: s.lastLabel };
+      payload.highlights = { top: s.top };
+      break;
+    }
+    case 'revenueTimeline': {
+      const s = summarizeSeries(series);
+      payload.kpis = { periodTotal: round(s.last, 2), delta: s.delta, pct: s.pct, slope: s.slope, mh: (data?.achievedMilestones || []).length, nm: data?.nextMilestone ?? null };
+      payload.window = { start: s.firstLabel, end: s.lastLabel };
+      payload.highlights = { top: s.top };
+      break;
+    }
+    case 'sellOut': {
+      const map = Object.fromEntries(series.map(d => [d.label, Number(d.value || 0)]));
+      const total = (map['Sold Out'] || 0) + (map['Available'] || 0) + (map['No Limit'] || 0);
+      const rate = total ? (map['Sold Out'] || 0) / total : 0;
+      payload.kpis = { total, soldOut: map['Sold Out'] || 0, rate: round(rate, 3) };
+      break;
+    }
+    case 'repeatGuest': {
+      const one = series.find(d => d.label === '1 Event')?.value || 0;
+      const multi = series.filter(d => d.label !== '1 Event').reduce((s, d) => s + (d.value || 0), 0);
+      const total = one + multi;
+      payload.kpis = { total, repeatRate: total ? round(multi / total, 3) : 0 };
+      break;
+    }
+    case 'peakTiming': {
+      const top = series.slice().sort((a,b)=>b.value-a.value).slice(0,2).map(d=>({ l:d.label, v:d.value }));
+      payload.kpis = { dominant: top[0]?.l || null };
+      payload.highlights = { top };
+      break;
+    }
+    case 'refund': {
+      payload.kpis = { rr: round(data?.refundRate ?? 0, 3) };
+      break;
+    }
+    case 'sellOutSpeed': {
+      payload.kpis = { avgHrs: round(data?.avgSellOutSpeed ?? 0, 2) };
+      break;
+    }
+    case 'community': {
+      payload.kpis = { repeatGuestRate: round(data?.repeatGuestRate ?? 0, 3) };
+      break;
+    }
+    case 'satisfaction': {
+      payload.kpis = { rr: round(data?.refundRate ?? 0, 3) };
+      break;
+    }
+    case 'monetization': {
+      payload.kpis = { rpa: round(data?.revenuePerAttendee ?? 0, 2) };
+      break;
+    }
+    case 'venueSize': {
+      payload.kpis = { cfr: round(data?.capacityFillRate ?? 0, 3) };
+      break;
+    }
+    case 'newHost': {
+      payload.kpis = { te: data?.totalEvents ?? 0, trv: data?.totalRsvps ?? 0 };
+      break;
+    }
+    default: {
+      payload.kpis = { hasData: !!series.length };
+    }
   }
+
+  // Optional extras that are cheap but useful
+  const extras = {};
+  if (typeof data?.avgTicketPrice === 'number') extras.atp = round(data.avgTicketPrice, 2);
+  if (typeof data?.capacityFillRate === 'number') extras.cfr = round(data.capacityFillRate, 3);
+  if (typeof data?.afterTaxRevenue === 'number') extras.atr = round(data.afterTaxRevenue, 2);
+  if (Object.keys(extras).length) payload.extras = extras;
+
+  // Units help the model interpret KPIs correctly
+  const units = {
+    capacity: { avg: 'ratio' },
+    revenue: { tr: 'usd' },
+    rsvpGrowth: { periodTotal: 'count', lifetimeTotal: 'count' },
+    revenueTimeline: { periodTotal: 'usd' },
+    sellOut: { rate: 'ratio' },
+    repeatGuest: { repeatRate: 'ratio' },
+    refund: { rr: 'ratio' },
+    sellOutSpeed: { avgHrs: 'hours' },
+    community: { repeatGuestRate: 'ratio' },
+    satisfaction: { rr: 'ratio' },
+    monetization: { rpa: 'usd' },
+    venueSize: { cfr: 'ratio' }
+  };
+  if (units[chartType]) payload.units = units[chartType];
+
+  return payload;
 };
 
 /**

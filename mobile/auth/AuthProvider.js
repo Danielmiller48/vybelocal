@@ -2,11 +2,12 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
 
-const AuthContext = createContext({ user: null, session: null });
+const AuthContext = createContext({ user: null, session: null, profile: null });
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
 
   // Bootstrap session and subscribe to changes
   useEffect(() => {
@@ -28,6 +29,26 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  // Load minimal profile when session present
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uid = session?.user?.id;
+      if (!uid) { setProfile(null); return; }
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id,name,avatar_url,stripe_account_id')
+          .eq('id', uid)
+          .maybeSingle();
+        if (!cancelled) setProfile(data || null);
+      } catch {
+        if (!cancelled) setProfile(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
   const signIn = (email, password) =>
     supabase.auth.signInWithPassword({ email, password });
 
@@ -37,6 +58,7 @@ export function AuthProvider({ children }) {
   const value = {
     session,
     user: session?.user ?? null,
+    profile,
     signIn,
     signUp,
     signOut: () => supabase.auth.signOut(),

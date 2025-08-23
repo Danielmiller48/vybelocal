@@ -7,6 +7,7 @@ import HomeDrawerOverlay from '../components/HomeDrawerOverlay';
 import TimelineEvent from '../components/TimelineEvent';
 import TimelineSectionHeader from '../components/TimelineSectionHeader';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import { useAuth } from '../auth/AuthProvider';
 import colors from '../theme/colors';
 import { format } from 'date-fns';
@@ -16,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const insets = useSafeAreaInsets();
   const [events, setEvents] = useState([]);
   // drawer handled by HomeDrawerOverlay
@@ -38,23 +39,47 @@ export default function HomeScreen() {
         let imageUrl = null;
         if (ev.img_path) {
           try {
-            const { data: imgData } = await supabase.storage
-              .from('event-images')
-              .createSignedUrl(ev.img_path, 3600, {
-                transform: { width: 800, height: 600, resize: 'cover' },
-              });
-            imageUrl = imgData?.signedUrl || null;
+            const signed = await getSignedUrl(
+              supabase,
+              'event-images',
+              ev.img_path,
+              3600,
+              { transform: { width: 800, height: 600, resize: 'cover' } }
+            );
+            imageUrl = signed || null;
           } catch { /* ignore */ }
         }
 
         // fetch avatars & count (limit 3 avatars)
-        const { data: avatarRows } = await supabase
+        // Fetch up to 3 attendee avatar paths via two-step pattern (fixes 400 on join)
+        const { data: attendeeIds } = await supabase
           .from('rsvps')
-          .select('profiles!inner(avatar_url)')
+          .select('user_id')
           .eq('event_id', ev.id)
           .limit(3);
-
-        const avatars = (avatarRows || []).map(r => r.profiles?.avatar_url).filter(Boolean);
+        const ids = (attendeeIds || []).map(r => r.user_id);
+        let avatars = [];
+        if (ids.length) {
+          const { data: cardRows } = await supabase
+            .from('public_user_cards')
+            .select('avatar_url')
+            .in('uuid', ids);
+          avatars = (cardRows || []).map(c => c.avatar_url).filter(Boolean);
+        }
+        const { data: avatarIds } = await supabase
+          .from('rsvps')
+          .select('user_id')
+          .eq('event_id', ev.id)
+          .limit(3);
+        const aIds = (avatarIds || []).map(r => r.user_id);
+        let avatars2 = [];
+        if (aIds.length) {
+          const { data: aCards } = await supabase
+            .from('public_user_cards')
+            .select('avatar_url')
+            .in('uuid', aIds);
+          avatars2 = (aCards || []).map(c => c.avatar_url).filter(Boolean);
+        }
 
         const { count } = await supabase
           .from('rsvps')
@@ -70,12 +95,8 @@ export default function HomeScreen() {
 
   useEffect(()=>{
     if(!user) return;
-
-    // fetch profile name once
-    supabase.from('profiles').select('name').eq('id',user.id).maybeSingle().then(({data})=>{
-      if(data?.name){ setFirst(data.name.split(' ')[0]); }
-    });
-  },[user?.id]);
+    if (profile?.name) setFirst(profile.name.split(' ')[0]);
+  },[user?.id, profile?.name]);
 
   // load on mount & whenever screen regains focus
   useEffect(()=>{

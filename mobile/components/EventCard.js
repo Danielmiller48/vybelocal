@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { format } from 'date-fns';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
+import { getHostStats } from '../utils/hostStatsCache';
 import { useAuth } from '../auth/AuthProvider';
 import ProfileModal from './ProfileModal';
 import RSVPButton from './RSVPButton';
@@ -22,10 +24,11 @@ function useAvatarUrl(path) {
   useEffect(() => {
     if (!path) { setUrl('https://placehold.co/40x40'); return; }
     if (path.startsWith('http')) { setUrl(path); return; }
-    supabase.storage.from('profile-images').createSignedUrl(path, 3600)
-      .then(({ data }) => {
-        if (data?.signedUrl) setUrl(data.signedUrl);
-      });
+    getSignedUrl(supabase, 'profile-images', path, 1800)
+      .then((signed) => {
+        if (signed) setUrl(signed);
+      })
+      .catch(() => {});
   }, [path]);
   return url;
 }
@@ -78,37 +81,9 @@ export default function EventCard({ event, onPress }) {
         }
       }
 
-      // stats
-      if (hostStatsCache[hostId]) {
-        setHostStats(hostStatsCache[hostId]);
-      } else {
-        const { count: completed } = await supabase
-          .from('v_past_events')
-          .select('id', { count: 'exact', head: true })
-          .eq('host_id', hostId);
-        // Fallback to events table if view not accessible
-        let completedCount = completed;
-        if (completedCount === null || completedCount === undefined) {
-          const { count: alt } = await supabase
-            .from('events')
-            .select('id', { count: 'exact', head: true })
-            .eq('host_id', hostId)
-            .lt('starts_at', new Date().toISOString());
-          completedCount = alt || 0;
-        }
-
-        const { data: strikeRow } = await supabase
-          .from('v_host_strikes_last6mo')
-          .select('strike_count')
-          .eq('host_id', hostId)
-          .maybeSingle();
-
-        const stats = { completed: completedCount || 0, cancels: Number(strikeRow?.strike_count ?? 0) };
-        if (isMounted) {
-          setHostStats(stats);
-          hostStatsCache[hostId] = stats;
-        }
-      }
+      // stats via batched cache
+      const stats = await getHostStats(hostId);
+      if (isMounted) setHostStats(stats);
       if (isMounted) setLoading(false);
     }
     fetchData();

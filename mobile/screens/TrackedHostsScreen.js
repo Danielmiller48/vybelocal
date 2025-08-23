@@ -8,6 +8,7 @@ import TimelineSectionHeader from '../components/TimelineSectionHeader';
 import AppHeader from '../components/AppHeader';
 import HomeDrawerOverlay from '../components/HomeDrawerOverlay';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import { useAuth } from '../auth/AuthProvider';
 import { format } from 'date-fns';
 
@@ -87,12 +88,14 @@ export default function TrackedHostsScreen() {
               if (event.img_path.startsWith('http')) {
                 imageUrl = event.img_path;
               } else {
-                const { data: imgData } = await supabase.storage
-                  .from('event-images')
-                  .createSignedUrl(event.img_path, 3600, {
-                    transform: { width: 800, height: 600, resize: 'cover' },
-                  });
-                imageUrl = imgData?.signedUrl || null;
+                const signed = await getSignedUrl(
+                  supabase,
+                  'event-images',
+                  event.img_path,
+                  3600,
+                  { transform: { width: 800, height: 600, resize: 'cover' } }
+                );
+                imageUrl = signed || null;
               }
             } catch {}
           }
@@ -112,10 +115,8 @@ export default function TrackedHostsScreen() {
                   if (profile.avatar_url.startsWith('http')) {
                     avatarUrl = profile.avatar_url;
                   } else {
-                    const { data } = await supabase.storage
-                      .from('profile-images')
-                      .createSignedUrl(profile.avatar_url, 3600);
-                    if (data?.signedUrl) avatarUrl = data.signedUrl;
+                    const signed = await getSignedUrl(supabase, 'profile-images', profile.avatar_url, 3600);
+                    if (signed) avatarUrl = signed;
                   }
                 }
                 return { ...profile, avatarUrl };

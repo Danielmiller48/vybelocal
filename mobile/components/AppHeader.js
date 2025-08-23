@@ -8,11 +8,12 @@ import colors from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import { notificationUtils } from '../utils/notifications';
 import NotificationModal from './NotificationModal';
 
-export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () => {}, onAvatarPress = () => {} }) {
-  const { user } = useAuth();
+export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () => {}, onAvatarPress }) {
+  const { user, profile } = useAuth();
   const navigation = useNavigation();
   const [avatar, setAvatar] = useState(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -22,36 +23,17 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
   useEffect(() => {
     let cancelled = false;
     if (!user) { setAvatar(null); return; }
-
     (async () => {
-      // Attempt to read avatar_url from profiles table
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('avatar_url')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      const path = data?.avatar_url;
-      if (!path) { setAvatar(null); return; }
-
-      if (path.startsWith('http')) {
-        setAvatar(path);
-      } else {
-        try {
-          const { data: urlData } = await supabase.storage
-            .from('profile-images')
-            .createSignedUrl(path, 3600);
-          setAvatar(urlData?.signedUrl ?? null);
-        } catch {
-          setAvatar(null);
-        }
-      }
+      const raw = profile?.avatar_url || profile?.avatar_path || null;
+      if (!raw) { setAvatar(null); return; }
+      if (typeof raw === 'string' && raw.startsWith('http')) { setAvatar(raw); return; }
+      try {
+        const signed = await getSignedUrl(supabase, 'profile-images', raw, 3600);
+        if (!cancelled) setAvatar(signed ?? null);
+      } catch { if (!cancelled) setAvatar(null); }
     })();
-
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [user?.id, profile?.avatar_url, profile?.avatar_path]);
 
   // Load unread notifications count
   useEffect(() => {
@@ -196,7 +178,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
           )}
         </TouchableOpacity>
         {avatar && (
-          <TouchableOpacity onPress={onAvatarPress} style={{ marginRight:16 }} accessibilityLabel="Profile">
+          <TouchableOpacity onPress={() => { (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('ProfileSettings'); }} style={{ marginRight:16 }} accessibilityLabel="Profile">
             <Image source={{ uri: avatar }} style={{ width:34, height:34, borderRadius:17, borderWidth:2, borderColor:'#fff' }} />
           </TouchableOpacity>
         )}
@@ -225,7 +207,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
               {/* Account & Tools */}
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Account & Tools</Text>
-              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); onAvatarPress(); }} />
+              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('ProfileSettings'); }} />
               <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
               <MenuItem icon="card-outline" label="Payment Methods" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/app/payments'); }} />
 

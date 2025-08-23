@@ -8,6 +8,7 @@ import AppHeader from '../components/AppHeader';
 import DateFilterBar from '../components/DateFilterBar';
 import colors from '../theme/colors';
 import { supabase } from '../utils/supabase';
+import { getSignedUrl } from '../utils/signedUrlCache';
 import { format, endOfWeek, startOfWeek, addDays, set as setTime } from 'date-fns';
 import { useIsFocused } from '@react-navigation/native';
 import RSVPButton from '../components/RSVPButton';
@@ -291,12 +292,14 @@ export default function DiscoverScreen() {
       (rows||[]).map(async ev => {
         if (ev.img_path) {
           try {
-            const { data: imgData } = await supabase.storage
-              .from('event-images')
-              .createSignedUrl(ev.img_path, 3600, {
-                transform: { width: 800, height: 600, resize: 'cover' },
-              });
-            return { ...ev, imageUrl: imgData?.signedUrl || null };
+            const signed = await getSignedUrl(
+              supabase,
+              'event-images',
+              ev.img_path,
+              3600,
+              { transform: { width: 800, height: 600, resize: 'cover' } }
+            );
+            return { ...ev, imageUrl: signed || null };
           } catch {
             return { ...ev, imageUrl: null };
           }

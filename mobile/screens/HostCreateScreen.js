@@ -819,6 +819,267 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
   const aiEnabled = !!paidOnly; // disable AI when Paid Only is off
 
+  // Analytics (host-level) fetched from analytics schema
+  const [hostAnalytics, setHostAnalytics] = useState({ totalRsvps: null, last30DayRsvps: null });
+  const [rsvpSeriesByPeriod, setRsvpSeriesByPeriod] = useState({});
+  const [rsvpMonthlyByPeriod, setRsvpMonthlyByPeriod] = useState({});
+  const [capacityByPeriod, setCapacityByPeriod] = useState({});
+
+  useEffect(() => {
+    const hostId = (events && events[0]?.host_id) || null;
+    if (!hostId) return;
+
+    (async () => {
+      try {
+        // lifetime totals
+        const { data: hl } = await supabase
+          .schema('analytics')
+          .from('host_live')
+          .select('total_rsvps')
+          .eq('host_id', hostId)
+          .maybeSingle();
+
+        // last 30 days rsvps (sum)
+        const since = new Date(); since.setDate(since.getDate()-30);
+        const sinceStr = since.toISOString().slice(0,10);
+        const { data: dailies } = await supabase
+          .schema('analytics')
+          .from('event_daily')
+          .select('rsvps_total, day')
+          .eq('host_id', hostId)
+          .gte('day', sinceStr);
+        const last30 = (dailies||[]).reduce((s,r)=> s + (r.rsvps_total||0), 0);
+
+        setHostAnalytics({ totalRsvps: hl?.total_rsvps ?? null, last30DayRsvps: last30 });
+      } catch (e) { /* ignore */ }
+    })();
+  }, [events?.[0]?.host_id]);
+
+  // Preload capacity data with minimal pulls: one events id list (all time) + one analytics.event_live fetch
+  useEffect(() => {
+    const hostId = (events && events[0]?.host_id) || null;
+    if (!hostId) return;
+
+    let cancelled = false;
+    const now = new Date();
+    const startAll = new Date(2020, 0, 1);
+
+    const windows = {
+      month: (d => new Date(d.getFullYear(), d.getMonth(), 1))(now),
+      six: (d => new Date(d.getFullYear(), d.getMonth() - 5, 1))(now),
+      ytd: new Date(now.getFullYear(), 0, 1),
+      all: startAll,
+    };
+
+    (async () => {
+      try {
+        // 1) Fetch all event ids since startAll
+        const { data: evs } = await supabase
+          .from('events')
+          .select('id,starts_at')
+          .eq('host_id', hostId)
+          .gte('starts_at', startAll.toISOString())
+          .lte('starts_at', now.toISOString())
+          .order('starts_at', { ascending: true });
+
+        const eventIds = (evs || []).map(e => e.id);
+        if (eventIds.length === 0) { if (!cancelled) setCapacityByPeriod({}); return; }
+
+        // 2) Fetch live counters for those ids
+        const { data: liveRows } = await supabase
+          .schema('analytics')
+          .from('event_live')
+          .select('event_id,rsvps_total,capacity')
+          .in('event_id', eventIds);
+
+        const idToLive = new Map((liveRows || []).map(r => [r.event_id, { rsvps: r.rsvps_total || 0, cap: r.capacity || 0 }]));
+
+        const buildFor = (startDate) => {
+          const endDate = now;
+          const items = (evs || []).filter(e => {
+            const t = new Date(e.starts_at);
+            return t >= startDate && t <= endDate;
+          }).map(e => {
+            const live = idToLive.get(e.id) || { rsvps: 0, cap: e.rsvp_capacity || 0 };
+            return { capacity: live.cap || 0, rsvps: live.rsvps || 0 };
+          });
+          // Compute buckets and avg
+          const buckets = {
+            '0-25%': 0,
+            '26-50%': 0,
+            '51-75%': 0,
+            '76-99%': 0,
+            '100%': 0,
+            'No Capacity': 0,
+          };
+          let sumRatio = 0, n = 0;
+          items.forEach(it => {
+            const cap = Number(it.capacity || 0);
+            const r = Number(it.rsvps || 0);
+            if (!cap) { buckets['No Capacity']++; return; }
+            const ratio = Math.max(0, Math.min(1, r / cap));
+            sumRatio += ratio; n++;
+            if (ratio >= 1) buckets['100%']++;
+            else if (ratio >= 0.76) buckets['76-99%']++;
+            else if (ratio >= 0.51) buckets['51-75%']++;
+            else if (ratio >= 0.26) buckets['26-50%']++;
+            else buckets['0-25%']++;
+          });
+          const avg = n > 0 ? sumRatio / n : 0;
+          // Transform to chart data
+          const data = Object.entries(buckets).map(([label, value]) => ({ label, value }));
+          return { chart: { data, type: 'bar', title: 'Capacity Fill Rate' , avg }, meta: { count: n } };
+        };
+
+        if (cancelled) return;
+        setCapacityByPeriod({
+          month: buildFor(windows.month),
+          '6months': buildFor(windows.six),
+          ytd: buildFor(windows.ytd),
+          all: buildFor(windows.all),
+        });
+      } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [events?.[0]?.host_id]);
+
+  // Preload RSVP growth series for all tabs for smooth transitions
+  useEffect(() => {
+    const hostId = (events && events[0]?.host_id) || null;
+    if (!hostId) return;
+
+    const nowLocal = new Date();
+    const end = nowLocal.toISOString().slice(0, 10);
+
+    const boundsFor = (period) => {
+      if (period === 'month') return new Date(nowLocal.getFullYear(), nowLocal.getMonth(), 1);
+      if (period === '6months') return new Date(nowLocal.getFullYear(), nowLocal.getMonth() - 5, 1);
+      if (period === 'ytd') return new Date(nowLocal.getFullYear(), 0, 1);
+      return new Date(2020, 0, 1);
+    };
+
+    const periods = ['month', '6months', 'ytd', 'all'];
+    let cancelled = false;
+
+    const fetchFor = async (period) => {
+      const startDate = boundsFor(period);
+      const startStr = startDate.toISOString().slice(0, 10);
+      const { data: rows } = await supabase
+        .schema('analytics')
+        .from('event_daily')
+        .select('day,rsvps_total')
+        .eq('host_id', hostId)
+        .gte('day', startStr)
+        .lte('day', end)
+        .order('day', { ascending: true });
+
+      // Build cumulative series anchored to the 1st and end date for stable axes
+      let cumulative = 0;
+      // For 'all' period, offset baseline to match lifetime total from host_live
+      const periodIsAll = period === 'all';
+      const sumWithinWindow = (rows || []).reduce((s, r) => s + (r.rsvps_total || 0), 0);
+      const lifetime = hostAnalytics.totalRsvps ?? null;
+      const baseOffset = periodIsAll && typeof lifetime === 'number' && lifetime > sumWithinWindow
+        ? (lifetime - sumWithinWindow)
+        : 0;
+
+      // Collapse multiple events per day: sum per unique day
+      const dayTotals = {};
+      (rows || []).forEach(r => {
+        const d = r.day;
+        const v = Number(r.rsvps_total || 0);
+        dayTotals[d] = (dayTotals[d] || 0) + v;
+      });
+      const sortedDays = Object.keys(dayTotals).sort();
+
+      const built = [{ label: startStr, value: baseOffset }];
+      sortedDays.forEach(d => {
+        cumulative += dayTotals[d];
+        built.push({ label: d, value: baseOffset + cumulative });
+      });
+      const lastLabel = built[built.length - 1]?.label;
+      if (lastLabel !== end) {
+        built.push({ label: end, value: baseOffset + cumulative });
+      }
+      return built;
+    };
+
+    (async () => {
+      try {
+        const results = await Promise.allSettled(periods.map(p => fetchFor(p)));
+        if (cancelled) return;
+        const map = {};
+        periods.forEach((p, i) => {
+          if (results[i].status === 'fulfilled') {
+            map[p] = { series: results[i].value, totalRsvps: hostAnalytics.totalRsvps ?? null };
+          }
+        });
+        setRsvpSeriesByPeriod(map);
+      } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [events?.[0]?.host_id, hostAnalytics.totalRsvps]);
+
+  // Preload host_monthly for monthly/YTD table views and build period maps
+  useEffect(() => {
+    const hostId = (events && events[0]?.host_id) || null;
+    if (!hostId) return;
+
+    const now = new Date();
+    const endDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startAll = new Date(2020, 0, 1);
+
+    const boundsFor = (period) => {
+      if (period === 'month') return new Date(now.getFullYear(), now.getMonth(), 1);
+      if (period === '6months') return new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      if (period === 'ytd') return new Date(now.getFullYear(), 0, 1);
+      return startAll;
+    };
+
+    const fillMonthly = (rows, startDate, endDateInclusive) => {
+      const map = new Map((rows || []).map(r => [
+        `${r.year}-${String(r.month).padStart(2,'0')}`,
+        r.rsvps_total || 0
+      ]));
+      const series = [];
+      const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      while (cursor <= endDateInclusive) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,'0')}`;
+        series.push({ label: key, value: map.get(key) || 0 });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+      return series;
+    };
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: rows } = await supabase
+          .schema('analytics')
+          .from('host_monthly')
+          .select('year,month,rsvps_total')
+          .eq('host_id', hostId)
+          .gte('year', startAll.getFullYear())
+          .lte('year', now.getFullYear())
+          .order('year', { ascending: true })
+          .order('month', { ascending: true });
+
+        if (cancelled) return;
+        const periods = ['month','6months','ytd','all'];
+        const map = {};
+        periods.forEach(p => {
+          const startDate = boundsFor(p);
+          map[p] = { series: fillMonthly(rows, startDate, endDate) };
+        });
+        setRsvpMonthlyByPeriod(map);
+      } catch {}
+    })();
+
+    return () => { cancelled = true; };
+  }, [events?.[0]?.host_id]);
+
   // Calculate advanced analytics metrics
   const calculateAnalytics = () => {
     const relevantEvents = paidOnly ? (events || []).filter(e=>e.price_in_cents>0) : (events || []);
@@ -980,21 +1241,27 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
     const now = new Date();
     let startDate;
-    
+
     switch(period) {
-      case 'month':
-        startDate = new Date();
-        startDate.setMonth(startDate.getMonth() - 1);
+      case 'month': {
+        // Start at the 1st of the current month
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
-      case '6months':
-        startDate = new Date();
-        startDate.setMonth(startDate.getMonth() - 6);
+      }
+      case '6months': {
+        // Start at the 1st of the month 5 months ago (inclusive of current month = 6 months)
+        startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
         break;
-      case 'ytd':
+      }
+      case 'ytd': {
+        // Start at Jan 1 of current year
         startDate = new Date(now.getFullYear(), 0, 1);
         break;
-      default: // 'all'
+      }
+      default: { // 'all'
+        // Anchor to a known earliest bound (already first of month)
         startDate = new Date(2020, 0, 1);
+      }
     }
     // Remove join date filtering - show all historical data
     // if(joinDateParam && startDate < joinDateParam && joinDateParam <= now) {
@@ -1009,23 +1276,50 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     
     switch(metricType) {
       case 'rsvps':
-        const rsvpChart = generateRSVPLineChart(filteredEvents, period);
-        rsvpChart.totalRsvps = analytics.totalRsvps;
-        rsvpChart.last30DayRsvps = analytics.last30DayRsvps;
-        return rsvpChart;
+        if (period === 'month') {
+          // Daily table from event_daily (differences of cumulative)
+          const daily = rsvpSeriesByPeriod['month']?.series || [];
+          const rows = [];
+          // Derive per-day increments from collapsed cumulative series
+          for (let i = 1; i < daily.length; i++) {
+            const curr = daily[i];
+            const prev = daily[i-1];
+            const currInc = Math.max(0, Number(curr.value || 0) - Number(prev.value || 0));
+            if (currInc === 0) continue; // remove zero rows
+            const dt = new Date(curr.label);
+            const label = isNaN(dt.getTime()) ? curr.label : dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            const prevInc = i > 1 ? Math.max(0, Number(prev.value || 0) - Number(daily[i-2].value || 0)) : null;
+            const delta = prevInc == null ? null : (currInc - prevInc);
+            const pct = prevInc && prevInc !== 0 ? (delta / prevInc) : null;
+            rows.push({ label, value: currInc, delta, pct });
+          }
+          return { data: rows, type: 'table', title: 'RSVPs by Day (This Month)' };
+        }
+        // Monthly table from host_monthly for other windows
+        const monthBucket = rsvpMonthlyByPeriod[period];
+        const series = monthBucket?.series || [];
+        const rows = series.map((pt, idx) => {
+          const prev = idx > 0 ? series[idx-1].value : null;
+          const delta = prev == null ? null : (pt.value - prev);
+          const pct = prev && prev !== 0 ? (delta / prev) : null;
+          const [y, m] = pt.label.split('-');
+          const dt = new Date(Number(y), Number(m)-1, 1);
+          const label = isNaN(dt.getTime()) ? pt.label : dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          return { label, value: Number(pt.value || 0), delta, pct };
+        }).filter(r => r.value > 0);
+        return { data: rows, type: 'table', title: 'RSVPs by Month' };
       case 'capacity':
-        // For capacity chart, use ALL events regardless of time period for now
+        // Serve from preloaded analytics.event_live derived dataset
+        const bucketed = capacityByPeriod[period];
+        if (bucketed?.chart) return bucketed.chart;
+        // Fallback to local computation from events list
         const allEventsForCapacity = [...(events || []), ...(pastEventsParam || pastEvents || [])];
         const capacityEvents = paidOnly ? allEventsForCapacity.filter(e => e.price_in_cents > 0) : allEventsForCapacity;
         const chart = generateCapacityBarChart(capacityEvents);
-        // Calculate fill rate for filtered period only
         const eventsWithCapacity = capacityEvents.filter(e => e.rsvp_capacity && e.rsvp_capacity > 0);
-        if (eventsWithCapacity.length > 0) {
-          chart.avg = eventsWithCapacity.reduce((sum, event) => 
-            sum + ((event.rsvp_count || 0) / event.rsvp_capacity), 0) / eventsWithCapacity.length;
-        } else {
-          chart.avg = 0;
-        }
+        chart.avg = eventsWithCapacity.length > 0 ? (
+          eventsWithCapacity.reduce((sum, event) => sum + ((event.rsvp_count || 0) / event.rsvp_capacity), 0) / eventsWithCapacity.length
+        ) : 0;
         return chart;
       case 'revenueTimeline':
         const revEvents = paidOnly ? filteredEvents.filter(e=>e.price_in_cents>0) : filteredEvents;
@@ -1586,8 +1880,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       
       <MetricCard
         title="Total RSVPs (30 days)"
-        value={analytics.last30DayRsvps.toString()}
-        subtitle={`${analytics.totalRsvps} total across ${paidOnly ? 'paid' : 'all'} events`}
+        value={(hostAnalytics.last30DayRsvps ?? analytics.last30DayRsvps).toString()}
+        subtitle={`${hostAnalytics.totalRsvps ?? analytics.totalRsvps} total across ${paidOnly ? 'paid' : 'all'} events`}
         icon="people"
         color="#3b82f6"
         metricType="rsvps"
@@ -1595,8 +1889,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
       <MetricCard
         title="Capacity Fill Rate"
-        value={`${(analytics.capacityFillRate * 100).toFixed(1)}%`}
-        subtitle={`${analytics.sellOutCount} ${paidOnly ? 'paid ' : ''}events sold out`}
+        value={`${(((capacityByPeriod?.all?.chart?.avg) ?? analytics.capacityFillRate) * 100).toFixed(1)}%`}
+        subtitle={`${(capacityByPeriod?.all?.chart?.data?.find(d=>d.label==='100%')?.value) ?? analytics.sellOutCount} ${paidOnly ? 'paid ' : ''}events sold out`}
         icon="speedometer"
         color="#10b981"
         metricType="capacity"
@@ -1679,7 +1973,11 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
       {/* AI-powered insights based on real data (only when Paid Only is on) */}
       {aiEnabled ? (
-        <AnalyticsDrawerInsights analytics={analytics} />
+        <AnalyticsDrawerInsights analytics={{
+          ...analytics,
+          totalRsvps: hostAnalytics.totalRsvps ?? analytics.totalRsvps,
+          last30DayRsvps: hostAnalytics.last30DayRsvps ?? analytics.last30DayRsvps,
+        }} />
       ) : (
         <View style={{ backgroundColor: 'white', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb' }}>
           <Text style={{ fontSize: 13, color: '#6b7280' }}>
@@ -1807,6 +2105,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
               chartData={selectedMetric ? generateChartData(selectedMetric.metricType, timePeriod, paidOnly, joinDate, pastEvents) : null}
               color={selectedMetric?.color}
               aiEnabled={aiEnabled}
+              timePeriod={timePeriod}
             />
           </ScrollView>
         </SafeAreaView>
@@ -1816,7 +2115,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 }
 
 // Simple Chart Container Component
-const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
+const ChartContainer = ({ chartData, color, aiEnabled=true, timePeriod }) => {
   if (!chartData || !chartData.data || chartData.data.length === 0) {
     return (
       <View style={{ 
@@ -1836,7 +2135,9 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
     );
   }
 
-  const maxValue = Math.max(...chartData.data.map(d => d.value));
+  const maxValue = chartData.type === 'bar'
+    ? Math.max(0, ...chartData.data.map(d => Number(d.value || 0)))
+    : 0;
   
   return (
     <View style={{ backgroundColor: 'white', borderRadius: 12, padding: 16, minHeight: 'auto' }}>
@@ -1925,6 +2226,31 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
       {(chartData.type === 'pie' || chartData.type === 'doughnut') && (
         <PieChart data={chartData.data} color={color} isDoughnut={chartData.type === 'doughnut'} />
       )}
+
+      {chartData.type === 'table' && (
+        <View style={{ marginTop: 8 }}>
+          {chartData.data.map((row, idx) => {
+            const sign = typeof row.delta === 'number' ? (row.delta > 0 ? '+' : row.delta < 0 ? '−' : '') : '';
+            const pct = typeof row.pct === 'number' ? `${(row.pct * 100).toFixed(1)}%` : '—';
+            return (
+              <View key={idx} style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                paddingVertical: 8,
+                borderBottomWidth: idx === chartData.data.length - 1 ? 0 : 1,
+                borderBottomColor: '#f3f4f6'
+              }}>
+                <Text style={{ fontSize: 12, color: '#6b7280', width: 110 }}>{row.label}</Text>
+                <Text style={{ fontSize: 13, color: '#1f2937', fontWeight: '600', textAlign: 'right', width: 60 }}>{Number(row.value || 0)}</Text>
+                <Text style={{ fontSize: 12, color: row.delta > 0 ? '#10b981' : row.delta < 0 ? '#ef4444' : '#6b7280', textAlign: 'right', width: 70 }}>
+                  {typeof row.delta === 'number' ? `${sign}${Math.abs(row.delta)}` : '—'}
+                </Text>
+                <Text style={{ fontSize: 12, color: row.pct > 0 ? '#10b981' : row.pct < 0 ? '#ef4444' : '#6b7280', textAlign: 'right', width: 60 }}>{pct}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
       
       
 
@@ -1959,13 +2285,24 @@ const ChartContainer = ({ chartData, color, aiEnabled=true }) => {
         </View>
       )}
 
-      {/* AI Insight for RSVP Growth Chart */}
-      {aiEnabled && chartData.type === 'line' && chartData.title.includes('RSVP Growth') && (
+      {/* AI Insight for RSVP Growth Chart (line) */}
+      {aiEnabled && chartData.type === 'line' && chartData.title.includes('RSVP') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="rsvpGrowth"
             chartData={chartData}
-            context={{ timePeriod: 'current' }}
+            context={{ timePeriod }}
+          />
+        </View>
+      )}
+
+      {/* AI Insight for RSVP Tables (day/month) */}
+      {aiEnabled && chartData.type === 'table' && chartData.title.includes('RSVP') && (
+        <View style={{ marginTop: 20 }}>
+          <AIInsightCard 
+            chartType="rsvpGrowth"
+            chartData={chartData}
+            context={{ timePeriod }}
           />
         </View>
       )}
@@ -2071,7 +2408,9 @@ const BarChart = ({ data, maxValue, color }) => (
     {/* Bars */}
     <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', paddingLeft: 80, paddingRight: 16, paddingBottom: 40 }}>
       {data.map((item, index) => {
-        const barHeight = Math.max((item.value / maxValue) * 160, 4);
+        const safeMax = Math.max(1, Number(maxValue) || 0);
+        const val = Math.max(0, Number(item.value || 0));
+        const barHeight = Math.max((val / safeMax) * 160, 4);
         return (
           <View key={index} style={{ flex: 1, alignItems: 'center', marginHorizontal: 2 }}>
             <View style={{
@@ -2129,9 +2468,17 @@ const BarChart = ({ data, maxValue, color }) => (
 // Beautiful SVG Line Chart
 const LineChart = ({ data, color }) => {
   if (!data || data.length === 0) return null;
+  if (data.length < 2) {
+    return (
+      <View style={{ padding: 16 }}>
+        <Text style={{ fontSize: 12, color: '#6b7280' }}>Not enough points to draw a trend yet.</Text>
+      </View>
+    );
+  }
   
-  const maxValue = Math.max(...data.map(d => d.value));
-  const minValue = Math.min(...data.map(d => d.value));
+  const values = data.map(d => Number(d.value || 0));
+  const maxValue = Math.max(...values);
+  const minValue = Math.min(...values);
   const range = maxValue - minValue || 1;
   
   const chartWidth = 280;
@@ -2141,7 +2488,7 @@ const LineChart = ({ data, color }) => {
   // Calculate points for the line
   const points = data.map((item, index) => {
     const x = padding + (index / (data.length - 1)) * (chartWidth - 2 * padding);
-    const y = chartHeight - padding - ((item.value - minValue) / range) * (chartHeight - 2 * padding);
+    const y = chartHeight - padding - (((Number(item.value || 0) - minValue) / range) * (chartHeight - 2 * padding));
     return `${x},${y}`;
   }).join(' ');
   
@@ -2553,8 +2900,10 @@ export default function HostCreateScreen() {
   const tooltipBottom = insets.bottom + 33; // raised by 5px
   const [events, setEvents] = useState([]);
   const [pastEvents, setPastEvents] = useState([]);
+  const [upcomingPage, setUpcomingPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'calendar'
+  const [calendarRange, setCalendarRange] = useState(null); // {first, last}
   const [showPastEvents, setShowPastEvents] = useState(false); // toggle between current and past
   const [pastSortBy, setPastSortBy] = useState('date'); // 'date' or 'rsvps'
   const [showTooltip, setShowTooltip] = useState(false);
@@ -2566,7 +2915,7 @@ export default function HostCreateScreen() {
     rsvpsToday: 0,
     monthlyRevenue: 0
   });
-  const [calendarModal, setCalendarModal] = useState({ open:false, event:null });
+  const [calendarSheet, setCalendarSheet] = useState({ open:false, event:null });
   const [pastPage, setPastPage] = useState(1);
 
   useEffect(() => {
@@ -2592,23 +2941,33 @@ export default function HostCreateScreen() {
       setLoading(true);
       const now = new Date().toISOString();
       
-      // Fetch upcoming events
-      const { data: upcomingData, error: upcomingError } = await supabase
+      // Fetch upcoming events (or calendar month slice if requested)
+      let upcomingQuery = supabase
         .from('events')
         .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
         .eq('host_id', user.id)
-        .gte('starts_at', now)
         .order('starts_at', { ascending: true });
+      if (viewMode === 'calendar' && calendarRange?.first && calendarRange?.last) {
+        upcomingQuery = upcomingQuery.gte('starts_at', calendarRange.first).lte('starts_at', calendarRange.last);
+      } else {
+        upcomingQuery = upcomingQuery.gte('starts_at', now);
+      }
+      const { data: upcomingData, error: upcomingError } = await upcomingQuery;
 
       if (upcomingError) throw upcomingError;
 
-      // Fetch past events
-      const { data: pastData, error: pastError } = await supabase
+      // Fetch past events (or same month slice for calendar)
+      let pastQuery = supabase
         .from('events')
         .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
         .eq('host_id', user.id)
-        .lt('starts_at', now)
         .order('starts_at', { ascending: false });
+      if (viewMode === 'calendar' && calendarRange?.first && calendarRange?.last) {
+        pastQuery = pastQuery.gte('starts_at', calendarRange.first).lte('starts_at', calendarRange.last);
+      } else {
+        pastQuery = pastQuery.lt('starts_at', now);
+      }
+      const { data: pastData, error: pastError } = await pastQuery;
 
       if (pastError) throw pastError;
 
@@ -2628,18 +2987,8 @@ export default function HostCreateScreen() {
           .eq('status', 'attending') // Only count attending RSVPs
           .order('created_at');
 
-        // Fetch payment/refund data
-        const { data: paymentData } = await supabase
-          .from('payments')
-          .select(`
-            rsvp_id,
-            paid_at,
-            refunded,
-            refund_reason,
-            amount_paid,
-            rsvps!inner(event_id, user_id)
-          `)
-          .in('rsvps.event_id', allEventIds);
+        // Skip payments join on first paint (was causing 400s under RLS). Optional later.
+        const paymentData = [];
 
         // Process RSVP data for basic counts and advanced analytics
         rsvpData?.forEach(rsvp => {
@@ -2734,7 +3083,7 @@ export default function HostCreateScreen() {
         new Date(rsvp.created_at).toDateString() === today
       ).length || 0;
       
-      // Calculate monthly revenue
+      // Calculate monthly revenue (fallback until payments analytics is wired)
       const currentDate = new Date();
       const currentMonth = currentDate.getMonth();
       const currentYear = currentDate.getFullYear();
@@ -2744,12 +3093,32 @@ export default function HostCreateScreen() {
           return eventDate.getMonth() === currentMonth && eventDate.getFullYear() === currentYear;
         })
         .reduce((sum, event) => sum + ((event.price_in_cents || 0) * (event.rsvp_count || 0) / 100), 0);
-      
+
+      // Read host-level analytics (O(1) counters)
+      // Determine which host_id to read analytics for (prefer events' host)
+      const inferredHostId = (enrichedUpcoming[0]?.host_id) || (enrichedPast[0]?.host_id) || user?.id;
+      let analyticsTotals = null;
+      try {
+        const { data: hl, error: hlErr } = await supabase
+          .schema('analytics')
+          .from('host_live')
+          .select('total_events,total_rsvps,total_revenue_cents')
+          .eq('host_id', inferredHostId)
+          .maybeSingle();
+        if (hlErr) console.log('[analytics.host_live] error', hlErr);
+        console.log('[analytics.host_live] host_id', inferredHostId, 'data', hl);
+        analyticsTotals = hl || null;
+      } catch (e) {
+        console.log('[analytics.host_live] exception', e);
+      }
+
       setMetrics({
-        totalEvents: enrichedUpcoming.length + enrichedPast.length,
-        totalRsvps,
+        totalEvents: analyticsTotals?.total_events ?? (enrichedUpcoming.length + enrichedPast.length),
+        totalRsvps: analyticsTotals?.total_rsvps ?? totalRsvps,
         rsvpsToday,
-        monthlyRevenue
+        monthlyRevenue: analyticsTotals?.total_revenue_cents != null
+          ? (analyticsTotals.total_revenue_cents / 100)
+          : monthlyRevenue,
       });
 
     } catch (error) {
@@ -2848,16 +3217,56 @@ export default function HostCreateScreen() {
                         📆 Current & Upcoming Events
                       </Text>
                       {viewMode === 'list' ? (
-                        events.slice(0, 10).map(event => (
-                          <EventCard key={event.id} event={event} />
-                        ))
+                        (() => {
+                          const pageSize = 5;
+                          const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
+                          const safePage = Math.min(Math.max(1, upcomingPage), totalPages);
+                          if (safePage !== upcomingPage) {
+                            setTimeout(()=> setUpcomingPage(safePage), 0);
+                          }
+                          const start = (safePage - 1) * pageSize;
+                          const pageItems = events.slice(start, start + pageSize);
+                          return (
+                            <>
+                              {pageItems.map(event => (
+                                <EventCard key={event.id} event={event} />
+                              ))}
+                              <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop: 12 }}>
+                                <TouchableOpacity
+                                  onPress={()=> setUpcomingPage(Math.max(1, safePage - 1))}
+                                  disabled={safePage <= 1}
+                                  style={{
+                                    paddingHorizontal:12, paddingVertical:8, borderRadius:8,
+                                    backgroundColor: safePage<=1 ? '#f3f4f6' : '#eef2ff',
+                                    borderWidth:1, borderColor: '#e5e7eb'
+                                  }}
+                                >
+                                  <Text style={{ color: safePage<=1 ? '#9ca3af' : '#4f46e5', fontWeight:'600' }}>Prev</Text>
+                                </TouchableOpacity>
+                                <Text style={{ fontSize:12, color:'#6b7280' }}>Page {safePage} of {totalPages}</Text>
+                                <TouchableOpacity
+                                  onPress={()=> setUpcomingPage(Math.min(totalPages, safePage + 1))}
+                                  disabled={safePage >= totalPages}
+                                  style={{
+                                    paddingHorizontal:12, paddingVertical:8, borderRadius:8,
+                                    backgroundColor: safePage>=totalPages ? '#f3f4f6' : '#eef2ff',
+                                    borderWidth:1, borderColor: '#e5e7eb'
+                                  }}
+                                >
+                                  <Text style={{ color: safePage>=totalPages ? '#9ca3af' : '#4f46e5', fontWeight:'600' }}>Next</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </>
+                          );
+                        })()
                       ) : (
                         <MiniCalendar
+                          onMonthChange={({ first, last }) => setCalendarRange({ first, last })}
                           events={[...events, ...pastEvents].map(ev=>({
                             ...ev,
                             _isPast: new Date(ev.starts_at) < new Date()
                           }))}
-                          onSelectEvent={(ev)=> setCalendarModal({ open:true, event: ev })}
+                          onSelectEvent={(ev)=> setCalendarSheet({ open:true, event: ev })}
                         />
                       )}
                     </View>
@@ -3186,12 +3595,27 @@ export default function HostCreateScreen() {
       )}
       
       <HostDrawerOverlay />
-      <EventQuickModal
-        visible={calendarModal.open}
-        event={calendarModal.event}
-        onClose={()=> setCalendarModal({ open:false, event:null })}
-        onCancel={(ev)=> {/* TODO: wire cancellation flow */ setCalendarModal({ open:false, event:null }); }}
-      />
+      {/* Calendar-tap actions sheet (same as EventCard) */}
+      {calendarSheet.open && (
+        <HostEventActionsSheet
+          visible={calendarSheet.open}
+          onClose={() => setCalendarSheet({ open:false, event:null })}
+          event={calendarSheet.event}
+          onOpenChat={() => {
+            setCalendarSheet({ open:false, event:null });
+            // Navigate to chat modal for this event
+            // Reuse existing state flow by temporarily rendering EventChatModal inline
+            // For now, open quick modal path
+            // TODO: unify modal lifting if needed
+          }}
+          onViewRsvps={() => {
+            setCalendarSheet({ open:false, event:null });
+            // Trigger same RSVP list modal path as EventCard (handled per-card)
+          }}
+          onEdit={() => setCalendarSheet({ open:false, event:null })}
+          onCancelEvent={() => setCalendarSheet({ open:false, event:null })}
+        />
+      )}
     </SafeAreaView>
     </LinearGradient>
   );
