@@ -823,6 +823,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   const [hostAnalytics, setHostAnalytics] = useState({ totalRsvps: null, last30DayRsvps: null });
   const [rsvpSeriesByPeriod, setRsvpSeriesByPeriod] = useState({});
   const [rsvpMonthlyByPeriod, setRsvpMonthlyByPeriod] = useState({});
+  const [hostMonthly, setHostMonthly] = useState({ rows: [], aggregates: {} });
   const [capacityByPeriod, setCapacityByPeriod] = useState({});
 
   useEffect(() => {
@@ -855,7 +856,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     })();
   }, [events?.[0]?.host_id]);
 
-  // Preload capacity data with minimal pulls: one events id list (all time) + one analytics.event_live fetch
+  // Preload capacity data using analytics-only sources (single source of truth):
+  // 1) analytics.event_live for capacities; 2) analytics.event_daily for RSVP sums; slice by window client-side
   useEffect(() => {
     const hostId = (events && events[0]?.host_id) || null;
     if (!hostId) return;
@@ -873,35 +875,32 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
     (async () => {
       try {
-        // 1) Fetch all event ids since startAll
-        const { data: evs } = await supabase
-          .from('events')
-          .select('id,starts_at')
-          .eq('host_id', hostId)
-          .gte('starts_at', startAll.toISOString())
-          .lte('starts_at', now.toISOString())
-          .order('starts_at', { ascending: true });
-
-        const eventIds = (evs || []).map(e => e.id);
-        if (eventIds.length === 0) { if (!cancelled) setCapacityByPeriod({}); return; }
-
-        // 2) Fetch live counters for those ids
+        // 1) Fetch live counters for host
         const { data: liveRows } = await supabase
           .schema('analytics')
           .from('event_live')
-          .select('event_id,rsvps_total,capacity')
-          .in('event_id', eventIds);
+          .select('event_id,capacity,rsvps_total,last_rsvp_at')
+          .eq('host_id', hostId);
 
-        const idToLive = new Map((liveRows || []).map(r => [r.event_id, { rsvps: r.rsvps_total || 0, cap: r.capacity || 0 }]));
+        const idToLive = new Map((liveRows || []).map(r => [r.event_id, { cap: Number(r.capacity || 0), total: Number(r.rsvps_total || 0), last: r.last_rsvp_at ? new Date(r.last_rsvp_at) : null }]));
+
+        // 2) Fetch event starts for gating by period (tiny read, host-only)
+        const { data: evs } = await supabase
+          .from('events')
+          .select('id,starts_at')
+          .eq('host_id', hostId);
 
         const buildFor = (startDate) => {
           const endDate = now;
-          const items = (evs || []).filter(e => {
-            const t = new Date(e.starts_at);
-            return t >= startDate && t <= endDate;
-          }).map(e => {
-            const live = idToLive.get(e.id) || { rsvps: 0, cap: e.rsvp_capacity || 0 };
-            return { capacity: live.cap || 0, rsvps: live.rsvps || 0 };
+          // Gating by starts_at when available; fallback to last_rsvp_at
+          const starts = new Map((evs || []).map(e => [e.id, e.starts_at ? new Date(e.starts_at) : null]));
+          // Build event ids by union of starts_at-in-window and last_rsvp_at-in-window
+          const idsByStart = new Set(Array.from(starts.entries()).filter(([id, dt]) => dt && dt >= startDate && dt <= endDate).map(([id]) => id));
+          const idsByLast = new Set(Array.from(idToLive.entries()).filter(([id, live]) => live.last && live.last >= startDate && live.last <= endDate).map(([id]) => id));
+          const eventIdsWindow = new Set([...idsByStart, ...idsByLast]);
+          const items = Array.from(eventIdsWindow).map(id => {
+            const live = idToLive.get(id) || { cap: 0, total: 0 };
+            return { capacity: live.cap, rsvps: live.total };
           });
           // Compute buckets and avg
           const buckets = {
@@ -925,10 +924,12 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
             else if (ratio >= 0.26) buckets['26-50%']++;
             else buckets['0-25%']++;
           });
+          // If every event has the same fill (e.g., all 42%), avg remains the same across tabs.
           const avg = n > 0 ? sumRatio / n : 0;
           // Transform to chart data
           const data = Object.entries(buckets).map(([label, value]) => ({ label, value }));
-          return { chart: { data, type: 'bar', title: 'Capacity Fill Rate' , avg }, meta: { count: n } };
+          const window = { start: startDate.toISOString().slice(0,10), end: endDate.toISOString().slice(0,10) };
+          return { chart: { data, type: 'bar', title: 'Capacity Fill Rate' , avg, window }, meta: { count: n, window } };
         };
 
         if (cancelled) return;
@@ -1059,7 +1060,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         const { data: rows } = await supabase
           .schema('analytics')
           .from('host_monthly')
-          .select('year,month,rsvps_total')
+          .select('year,month,rsvps_total,events_count,revenue_cents')
           .eq('host_id', hostId)
           .gte('year', startAll.getFullYear())
           .lte('year', now.getFullYear())
@@ -1074,6 +1075,28 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           map[p] = { series: fillMonthly(rows, startDate, endDate) };
         });
         setRsvpMonthlyByPeriod(map);
+
+        // Build aggregates for revenue/events per window
+        const aggregates = {};
+        const within = (y,m,start,end) => {
+          const d = new Date(y, m-1, 1);
+          return d >= start && d <= end;
+        };
+        const calcAgg = (startDate) => {
+          let events = 0; let revenueCents = 0;
+          (rows || []).forEach(r => {
+            if (within(r.year, r.month, startDate, endDate)) {
+              events += Number(r.events_count || 0);
+              revenueCents += Number(r.revenue_cents || 0);
+            }
+          });
+          return { events, revenueCents };
+        };
+        aggregates['month'] = calcAgg(boundsFor('month'));
+        aggregates['6months'] = calcAgg(boundsFor('6months'));
+        aggregates['ytd'] = calcAgg(boundsFor('ytd'));
+        aggregates['all'] = calcAgg(boundsFor('all'));
+        setHostMonthly({ rows: rows || [], aggregates });
       } catch {}
     })();
 
@@ -1888,18 +1911,18 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       />
 
       <MetricCard
-        title="Capacity Fill Rate"
-        value={`${(((capacityByPeriod?.all?.chart?.avg) ?? analytics.capacityFillRate) * 100).toFixed(1)}%`}
-        subtitle={`${(capacityByPeriod?.all?.chart?.data?.find(d=>d.label==='100%')?.value) ?? analytics.sellOutCount} ${paidOnly ? 'paid ' : ''}events sold out`}
+        title="Capacity Fill Rate (Last 6 Months)"
+        value={`${(((capacityByPeriod?.['6months']?.chart?.avg) ?? analytics.capacityFillRate) * 100).toFixed(1)}%`}
+        subtitle={`${(capacityByPeriod?.['6months']?.chart?.data?.find(d=>d.label==='100%')?.value) ?? analytics.sellOutCount} ${paidOnly ? 'paid ' : ''}events sold out`}
         icon="speedometer"
         color="#10b981"
         metricType="capacity"
       />
 
       <MetricCard
-        title="Avg Revenue per Event"
-        value={`$${(analytics.totalRevenue / Math.max(analytics.totalEvents,1)).toFixed(2)}`}
-        subtitle={`Across ${analytics.totalEvents} ${paidOnly ? 'paid ' : ''}events`}
+        title="Avg Revenue per Event (Last 6 Months)"
+        value={`$${((hostMonthly.aggregates?.['6months']?.revenueCents || 0) / 100 / Math.max(hostMonthly.aggregates?.['6months']?.events || 0, 1)).toFixed(2)}`}
+        subtitle={`Across ${hostMonthly.aggregates?.['6months']?.events || 0} ${paidOnly ? 'paid ' : ''}events`}
         icon="cash"
         color="#f59e0b"
         metricType="topEarning"
@@ -2216,7 +2239,16 @@ const ChartContainer = ({ chartData, color, aiEnabled=true, timePeriod }) => {
 
       
       {chartData.type === 'bar' && (
-        <BarChart data={chartData.data} maxValue={maxValue} color={color} />
+        <>
+          {/* Window label */}
+          {chartData.window?.start && chartData.window?.end && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 12, color: '#6b7280' }}>{chartData.window.start}</Text>
+              <Text style={{ fontSize: 12, color: '#6b7280' }}>{chartData.window.end}</Text>
+            </View>
+          )}
+          <BarChart data={chartData.data} maxValue={maxValue} color={color} />
+        </>
       )}
       
       {chartData.type === 'line' && (

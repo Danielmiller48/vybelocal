@@ -461,15 +461,15 @@ const callOpenAI = async (chartType, data, context) => {
 
 TONE
 - Grounded, not gimmicky. No forced slang.
-- Confident, not performative. Plain, direct, city-smart.
+- Confident, not performative. Plain, direct, city‑smart.
 - Alive, not corporate. Real pulse, no cheerleader fluff.
 
 CORE STYLE FILTERS
-- Weight over fluff: street poster energy, not ad campaign.
+- Weight over fluff: street‑poster energy, not ad campaign.
 - Edge + clarity: a little rebellious, never cartoonish.
 - Everyday speech: how locals talk at a bar, run, or gym.
 
-ANTI-CAMP RULES
+ANTI‑CAMP RULES
 - Never use filler hype words (no “fam,” “lit,” “squad goals”).
 - No exaggerated punctuation unless it truly fits.
 - No faux slang you wouldn’t say in El Paso.
@@ -478,12 +478,13 @@ LITMUS TEST
 - Could I say this at a coffee shop without sounding like a clown? If yes → keep. If no → delete.
 
 STYLE
-- Keep lines tight (< 16 words). Use contractions. Verbs first.
+- Short lines (< 16 words). Verbs first. Use contractions.
 - Occasional desert cues (horizon, heat, night, flow) only when natural.
-- Micro-rituals: Vybe, Circle, unlocked, in, local, start here.
+- Micro‑rituals: Vybe, Circle, unlocked, in, local, start here.
+- Principles: Simplicity. Action over explanation. Transparency.
 
 OUTPUT
-Return STRICT JSON with keys: message, recommendation, confidence. Use provided KPIs/highlights and units to deliver 1–2 sharp, valuable takeaways that drive action.`
+Return STRICT JSON with keys: message, recommendation, confidence. Use provided KPIs/highlights and units to deliver 1–2 sharp, valuable takeaways that drive action. When chartType is 'capacity', use avgPct and soldOutPct; never echo raw ratios like 0.38. Format percents like "42.0%". Keep sentences tight and human.`
         },
         { role: "user", content: JSON.stringify(payload) }
       ],
@@ -556,10 +557,14 @@ const buildFeatureSummary = (chartType, data, context) => {
       const soldOut = bucketMap['100%'] || 0;
       const nearFull = bucketMap['76-99%'] || 0;
       const underHalf = (bucketMap['0-25%']||0) + (bucketMap['26-50%']||0);
-      payload.kpis = { avg: round(data?.avg ?? 0, 3), nWithCap, noCap, soldOut, nearFull, underHalf };
+      const avgRatio = round(data?.avg ?? 0, 3);
+      const avgPct = round(avgRatio * 100, 1);
+      const soldOutPct = nWithCap > 0 ? round((soldOut / nWithCap) * 100, 1) : 0;
+      payload.kpis = { avgRatio, avgPct, nWithCap, noCap, soldOut, soldOutPct, nearFull, underHalf };
       payload.highlights = { dist: bucketMap };
-      payload.units = { avg: 'ratio' };
-      payload.guide = 'Fill rate = RSVPs ÷ capacity per event. avg is the mean of event fill rates in this window. Buckets count events by fill. 100% = sold out. “No Capacity” means unlimited/unspecified and should not affect avg. Read: high 76–99%/100% → raise capacity/price; many 0–50% → smaller venues/promo; lots of No Capacity → set capacity to create urgency.';
+      payload.units = { avgRatio: 'ratio', avgPct: 'percent' };
+      payload.window = { start: data?.window?.start || null, end: data?.window?.end || null };
+      payload.guide = 'Fill rate = RSVPs ÷ capacity per event. avgPct is the mean fill percent across events in this window. Buckets count events by fill. 100% = sold out. “No Capacity” should not affect avg. Use percents in copy (e.g., 42.0%), never raw decimals (0.42). Actions: high 76–99%/100% → raise capacity/price; many 0–50% → smaller venues/promo; lots of No Capacity → set capacity.';
       break;
     }
     case 'revenue': {
