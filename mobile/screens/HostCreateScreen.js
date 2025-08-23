@@ -879,28 +879,38 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         const { data: liveRows } = await supabase
           .schema('analytics')
           .from('event_live')
-          .select('event_id,capacity,rsvps_total,last_rsvp_at')
+          .select('event_id,capacity,rsvps_total,last_rsvp_at,gross_revenue_cents,price_cents_snapshot')
           .eq('host_id', hostId);
 
-        const idToLive = new Map((liveRows || []).map(r => [r.event_id, { cap: Number(r.capacity || 0), total: Number(r.rsvps_total || 0), last: r.last_rsvp_at ? new Date(r.last_rsvp_at) : null }]));
+        const idToLive = new Map((liveRows || []).map(r => [
+          r.event_id,
+          {
+            cap: Number(r.capacity || 0),
+            total: Number(r.rsvps_total || 0),
+            last: r.last_rsvp_at ? new Date(r.last_rsvp_at) : null,
+            gross: Number(r.gross_revenue_cents || 0),
+            price: Number(r.price_cents_snapshot || 0)
+          }
+        ]));
 
         // 2) Fetch event starts for gating by period (tiny read, host-only)
         const { data: evs } = await supabase
           .from('events')
-          .select('id,starts_at')
+          .select('id,starts_at,title')
           .eq('host_id', hostId);
 
         const buildFor = (startDate) => {
           const endDate = now;
           // Gating by starts_at when available; fallback to last_rsvp_at
-          const starts = new Map((evs || []).map(e => [e.id, e.starts_at ? new Date(e.starts_at) : null]));
+          const starts = new Map((evs || []).map(e => [e.id, { dt: e.starts_at ? new Date(e.starts_at) : null, title: e.title || 'Untitled' }]));
           // Build event ids by union of starts_at-in-window and last_rsvp_at-in-window
-          const idsByStart = new Set(Array.from(starts.entries()).filter(([id, dt]) => dt && dt >= startDate && dt <= endDate).map(([id]) => id));
+          const idsByStart = new Set(Array.from(starts.entries()).filter(([id, obj]) => obj.dt && obj.dt >= startDate && obj.dt <= endDate).map(([id]) => id));
           const idsByLast = new Set(Array.from(idToLive.entries()).filter(([id, live]) => live.last && live.last >= startDate && live.last <= endDate).map(([id]) => id));
           const eventIdsWindow = new Set([...idsByStart, ...idsByLast]);
           const items = Array.from(eventIdsWindow).map(id => {
-            const live = idToLive.get(id) || { cap: 0, total: 0 };
-            return { capacity: live.cap, rsvps: live.total };
+            const live = idToLive.get(id) || { cap: 0, total: 0, gross: 0, price: 0 };
+            const meta = starts.get(id) || { dt: null, title: 'Untitled' };
+            return { capacity: live.cap, rsvps: live.total, gross: Number(live.gross || 0), price: Number(live.price || 0), title: meta.title };
           });
           // Compute buckets and avg
           const buckets = {
@@ -911,10 +921,11 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
             '100%': 0,
             'No Capacity': 0,
           };
-          let sumRatio = 0, n = 0;
+          let sumRatio = 0, n = 0, sumGross = 0;
           items.forEach(it => {
             const cap = Number(it.capacity || 0);
             const r = Number(it.rsvps || 0);
+            sumGross += Number(it.gross || 0);
             if (!cap) { buckets['No Capacity']++; return; }
             const ratio = Math.max(0, Math.min(1, r / cap));
             sumRatio += ratio; n++;
@@ -929,7 +940,23 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           // Transform to chart data
           const data = Object.entries(buckets).map(([label, value]) => ({ label, value }));
           const window = { start: startDate.toISOString().slice(0,10), end: endDate.toISOString().slice(0,10) };
-          return { chart: { data, type: 'bar', title: 'Capacity Fill Rate' , avg, window }, meta: { count: n, window } };
+          // Build revenue fallback meta (paid/all) without relying on capacity presence
+          const paidItems = items.filter(it => Number(it.price || 0) > 0);
+          const grossAll = items.reduce((s, it) => s + Number(it.gross || 0), 0);
+          const grossPaid = paidItems.reduce((s, it) => s + Number(it.gross || 0), 0);
+          const eventsAll = items.length;
+          const eventsPaid = paidItems.length;
+          // Build top revenue events list (gross cents → dollars)
+          const top = items
+            .filter(it => Number(it.gross || 0) > 0)
+            .sort((a,b) => b.gross - a.gross)
+            .slice(0, 10)
+            .map(it => ({ label: (it.title && it.title.length > 28) ? it.title.slice(0,28)+'…' : it.title, value: Number(it.gross)/100 }));
+
+          return {
+            chart: { data, type: 'bar', title: 'Capacity Fill Rate' , avg, window },
+            meta: { count: n, window, gross_revenue_cents: sumGross, gross_all_cents: grossAll, gross_paid_cents: grossPaid, events_all: eventsAll, events_paid: eventsPaid, top }
+          };
         };
 
         if (cancelled) return;
@@ -1062,7 +1089,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         const { data: rows } = await supabase
           .schema('analytics')
           .from('host_monthly')
-          .select('year,month,rsvps_total,events_count,revenue_cents,gross_revenue_cents')
+          .select('year,month,rsvps_total,events_count,gross_revenue_cents,net_to_host_cents')
           .eq('host_id', hostId)
           .gte('year', startAll.getFullYear())
           .lte('year', now.getFullYear())
@@ -1077,7 +1104,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           const { data: retry } = await supabase
             .schema('analytics')
             .from('host_monthly')
-            .select('year,month,rsvps_total,events_count,revenue_cents,gross_revenue_cents')
+            .select('year,month,rsvps_total,events_count,gross_revenue_cents,net_to_host_cents')
             .eq('host_id', hostId)
             .order('year', { ascending: true })
             .order('month', { ascending: true });
@@ -1105,7 +1132,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           (effectiveRows || []).forEach(r => {
             if (within(r.year, r.month, startDate, endDate)) {
               events += Number(r.events_count || 0);
-              revenueCents += Number(r.revenue_cents || 0); // legacy if present
+              revenueCents += Number(r.net_to_host_cents || 0);
               gross += Number(r.gross_revenue_cents || 0);
             }
           });
@@ -1378,6 +1405,27 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         return generatePeakTimingChart(filteredEvents);
       case 'refund':
         return generateRefundChart(filteredEvents);
+      case 'avgRevenue': {
+        // Table of highest revenue events within the selected window
+        const revEvents = paidOnly
+          ? filteredEvents.filter(e => (e.price_in_cents || 0) > 0)
+          : filteredEvents;
+        const rows = revEvents
+          .map(e => ({
+            label: (e.title && e.title.length > 28) ? e.title.slice(0, 28) + '…' : (e.title || 'Untitled'),
+            value: ((e.price_in_cents || 0) * (e.rsvp_count || 0)) / 100,
+            fullTitle: e.title || 'Untitled',
+          }))
+          .filter(r => r.value > 0)
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10);
+
+        const description = rows.length > 0
+          ? "Your best earners — straight up. These are the events bringing in the most revenue, so copy what worked: timing, vibe, price, promo. Double down and scale what's real."
+          : "No paid revenue yet. Once money starts moving, we'll show your top performers here.";
+
+        return { data: rows, type: 'table', title: 'Top Revenue Events', description };
+      }
       case 'afterTax':
         return generateAfterTaxChart(filteredEvents);
       default:
@@ -1941,8 +1989,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
       <MetricCard
         title="Avg Revenue per Event (Last 6 Months)"
-        value={`$${((hostMonthly.aggregates?.['6months']?.revenueCents || hostMonthly.aggregates?.['6months']?.gross_revenue_cents || 0) / 100 / Math.max(hostMonthly.aggregates?.['6months']?.events || 0, 1)).toFixed(2)}`}
-        subtitle={`Across ${hostMonthly.aggregates?.['6months']?.events || 0} ${paidOnly ? 'paid ' : ''}events`}
+        value={`$${(((hostMonthly.aggregates?.['6months']?.gross_revenue_cents || 0) / 100) / Math.max(hostMonthly.aggregates?.['6months']?.events || 0, 1)).toFixed(2)}`}
+        subtitle={`Top earners show inside. Across ${hostMonthly.aggregates?.['6months']?.events || 0} ${paidOnly ? 'paid ' : ''}events`}
         icon="cash"
         color="#f59e0b"
         metricType="avgRevenue"
@@ -2150,6 +2198,14 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
               aiEnabled={aiEnabled}
               timePeriod={timePeriod}
             />
+            {selectedMetric?.metricType === 'avgRevenue' && (
+              <AIInsightCard 
+                chartType="topRevenueEvents"
+                chartData={generateChartData('avgRevenue', timePeriod, paidOnly, joinDate, pastEvents)}
+                context={{ timePeriod }}
+                style={{ marginTop: 12 }}
+              />
+            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -2986,7 +3042,7 @@ export default function HostCreateScreen() {
         .single();
       const jd = profile?.created_at ? new Date(profile.created_at) : new Date();
       setJoinDate(jd);
-    } catch(e){ console.log('join date fetch error',e);}  };
+    } catch(e){ }  };
 
   const loadHostData = async () => {
     try {
