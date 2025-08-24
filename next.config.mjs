@@ -1,15 +1,19 @@
-import nextPWA from 'next-pwa'
+// next.config.mjs
+import nextPWA from 'next-pwa';
+
+const isDev = process.env.NODE_ENV === 'development';
 
 const withPWA = nextPWA({
   dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
+  disable:  isDev,   // <-- no service-worker in `pnpm dev`
   register: true,
   skipWaiting: true,
 
+  /* -------- runtime caching ---------- */
   runtimeCaching: [
     // 1) Static assets – cache-first
     {
-      urlPattern: /^https?.*\.(?:png|jpg|jpeg|svg|gif|webp|avif|js|css)$/i,
+      urlPattern: /^https?.*\.(png|jpe?g|svg|gif|webp|avif|js|css)$/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'static-assets',
@@ -28,18 +32,38 @@ const withPWA = nextPWA({
       },
     },
 
-    // 3) Offline fallback for navigation  🔥 fixed
+    // 3) Offline fallback for navigation
     {
       urlPattern: ({ request }) => request.mode === 'navigate',
       handler: 'NetworkOnly',
       options: {
+        // served when both network and cache miss
         precacheFallback: { fallbackURL: '/offline.html' },
       },
     },
   ],
-})
+
+  /* -------- kill the ghost route ---------- */
+  // Anything that *contains* “/find” in its generated path is left out of precache,
+  // so the new sw.js won’t request it again.
+ buildExcludes: [/\/find/], 
+});
 
 export default withPWA({
   reactStrictMode: true,
-  images: { domains: ['your-image-cdn.com'] },
-})
+
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'tzwksdoffzoerzcfsucm.supabase.co',
+        pathname: '/storage/v1/object/public/event-images/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'tzwksdoffzoerzcfsucm.supabase.co',
+        pathname: '/storage/v1/object/public/profile-avatars/**',
+      },
+    ],
+  },
+});

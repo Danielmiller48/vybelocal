@@ -1,30 +1,116 @@
-// app/api/events/route.js
+import { NextResponse } from "next/server";
+import { createSupabaseServer } from "@/utils/supabase/server";
 
-import { NextResponse } from 'next/server';
-import { supabase as createSupabase } from '@/utils/supabase/server'
-
-export async function GET(request) {
-  // Pass the cookies function directly—do NOT await it here
-   const supabase = createSupabase();
-
-  const { data: events, error } = await supabase
-    .from('events')
-    .select('*')
-    .eq('is_approved', true)
-    .order('date_time', { ascending: true });
+/* GET /api/events — approved only */
+export async function GET() {
+  const sb = await createSupabaseServer();
+  const { data, error } = await sb
+    .from("events")
+    .select("*")
+    .eq("status", "approved")
+    .order("starts_at", { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  return NextResponse.json(data);
+}
 
-  // Log the metric
-  await supabase.from('metrics').insert([
-    {
-      action: 'events_listed',
-      user_id: null,
-      event_id: null
+/* POST /api/events — new submission (status = "pending") */
+export async function POST(req) {
+  const sb = await createSupabaseServer();
+
+  /* 1 — auth gate */
+  const { data: { user }, error: userError } = await sb.auth.getUser();
+  if (userError || !user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const session = { user };
+
+  /* 2 — parse + minimal validation */
+  const body = await req.json();
+  for (const k of ["title", "vibe", "starts_at"]) {
+    if (!body?.[k])
+      return NextResponse.json({ error: `Missing "${k}"` }, { status: 400 });
+  }
+
+  /* 3 — whitelist to real columns only */
+  const event = {
+    host_id: session.user.id,
+    title: body.title,
+    description: body.description ?? "",
+    vibe: String(body.vibe).toLowerCase(),
+    address: body.address ?? "",
+    starts_at: body.starts_at,
+    ends_at: body.ends_at || null,
+    refund_policy: body.refund_policy ?? "no_refund",
+    price_in_cents: Number.isFinite(body.price_in_cents) ? body.price_in_cents : null,
+    rsvp_capacity: Number.isFinite(body.rsvp_capacity) ? body.rsvp_capacity : null,
+    // Add +1 so host's auto-RSVP doesn't reduce the advertised guest capacity
+    ...(Number.isFinite(body.rsvp_capacity) ? { rsvp_capacity: body.rsvp_capacity + 1 } : {}),
+    status: "pending",
+    img_path: body.img_path || null,
+  };
+
+  /* 4 — insert */
+  const { data, error } = await sb
+    .from("events")
+    .insert([event])
+    .select()
+    .single(); // just one row expected
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  /* 4.5 — auto-RSVP host (counts toward capacity) */
+  try {
+    await sb.from('rsvps')
+      .insert({
+        event_id: data.id,
+        user_id: session.user.id,
+        paid: event.price_in_cents ? true : false, // host considered paid
+      }, { ignoreDuplicates: true });
+  } catch (rsvpErr) {
+    console.error('Auto-RSVP insert failed:', rsvpErr);
+  }
+
+  /* 5 — trigger moderation */
+  try {
+    console.log('Triggering moderation for new event:', data.id);
+    const modResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/moderate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'event', id: data.id }),
+    });
+    
+    if (!modResponse.ok) {
+      const modError = await modResponse.json();
+      console.error('Moderation failed:', modError);
+      
+      // Delete the event since moderation failed
+      await sb.from("events").delete().eq('id', data.id);
+      
+      // Return the moderation error to the frontend
+      return NextResponse.json({ 
+        error: modError.reason || 'Content moderation failed',
+        moderationError: true 
+      }, { status: 400 });
+    } else {
+      console.log('Moderation triggered successfully');
     }
-  ]);
+  } catch (modError) {
+    console.error('Moderation error:', modError);
+    
+    // Delete the event since moderation failed
+    await sb.from("events").delete().eq('id', data.id);
+    
+    // Return the moderation error to the frontend
+    return NextResponse.json({ 
+      error: 'Content moderation failed - please try again',
+      moderationError: true 
+    }, { status: 400 });
+  }
 
-  return NextResponse.json(events);
+  return NextResponse.json(data, { status: 201 });
 }

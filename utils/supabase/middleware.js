@@ -1,32 +1,43 @@
-// utils/supabase/middleware.js
-import { NextResponse }   from 'next/server'
-import { createServerClient } from '@supabase/ssr'
+// utils/supabase/middleware.js — unified token‑refresh + login‑gate
+import { NextResponse } from 'next/server';
+import { createSupabaseServer } from '@/utils/supabase/server';
 
-/**
- * Refresh Supabase session cookies on every request
- * @param {import('next/server').NextRequest} request
- * @returns {Promise<NextResponse>}
- */
+// Routes that anyone may view while signed‑out
+const PUBLIC = [
+  '/',
+  '/login',
+  '/register',
+  '/api/auth',                // Next‑Auth callbacks
+  '/favicon',
+  '/privacy',
+  '/terms',
+  '/community-guidelines',
+];
+
 export async function updateSession(request) {
-  // Response that we’ll eventually return
-  const response = NextResponse.next()
+  // Prepare the outgoing response so we can layer headers/cookies onto it
+  const res = NextResponse.next();
 
-  // Supabase client wired to read incoming cookies
-  // and write any refreshed cookies onto the response
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        get   : (name)               => request.cookies.get(name)?.value,
-        set   : (name, value, opts)  => response.cookies.set(name, value, opts),
-        remove: (name, opts)         => response.cookies.set(name, '', { ...opts, maxAge: 0 }),
-      },
-    },
-  )
+  /* 1 — refresh Supabase tokens */
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();            // also renews cookies automatically
 
-  // Touch the auth endpoint — refreshes session if the access token is stale
-  await supabase.auth.getUser()
+  /* 2 — propagate user‑id for downstream RSCs */
+  if (user) res.headers.set('x-user-id', user.id);
 
-  return response
+  /* 3 — login‑gate for non‑public paths */
+  const { pathname } = request.nextUrl;
+  const isPublic =
+    PUBLIC.some((p) => pathname === p || pathname.startsWith(p)) ||
+    pathname.startsWith('/_next');               // static assets & chunks
+
+  if (!isPublic && !user) {
+    const login = new URL('/login', request.url);
+    login.searchParams.set('redirect', pathname); // optional deep‑link after login
+    return NextResponse.redirect(login);
+  }
+
+  return res;
 }

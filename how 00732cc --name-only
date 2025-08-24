@@ -1,0 +1,10 @@
+[33m4d3d447[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mtilled-migration[m[33m)[m Enhanced drawer UI with lavender theme and dynamic RSVP counts
+[33m00732cc[m mobile: mini calendar in Events Overview (calendar tab) + past events greyed; paginate past events (5/page); empty-state and analytics copy updates; peak timing description fix
+[33m4cc3dcb[m mobile: AI gating + copy updates - Gate AI insights by Paid Only (dashboard & modal); disabled notes for money metrics - Update RSVP Growth modal description - Add MiniCalendar and EventQuickModal components; remove dropdown calendar (to move under Events Overview) - AI cost controls: cache/dedupe/debounce; switch to gpt-4o-mini
+[33m51ad65d[m mobile: restore solid line for RSVP growth chart using react-native-svg Polyline; add Svg import
+[33mbcfa7f3[m mobile: analytics upgrades - After-tax earnings: slider in modal (Texas 18% default), updated copy, and chart description - Refund rate modal: new header/subheading, improved labels, empty state, milestone messages, and AI insight wiring - Chart tweaks: removed react-native-svg usage (dot chart), enhanced PieChart items with subtitles and dollar amounts - Moved tax controls into modal; cleaned dashboard UI
+[33md13a809[m Fix revenue timeline chart using RSVP chart aggregation logic
+[33m3ff56da[m Fix analytics revenue calculation and remove join date filtering
+[33ma1be9b9[m Fix analytics modal capacity fill rate chart
+[33ma18dd8d[m feat(mobile): align ImageCropModal crop frame with EventCard dimensions
+[33m6ee8167[m Fix host avatar & name loading
