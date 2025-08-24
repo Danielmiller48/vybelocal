@@ -195,7 +195,6 @@ function EventCard({ event, isPast = false }) {
 
       setAttendees(attendeesList);
     } catch (error) {
-      console.error('Error loading attendees:', error);
       setAttendees([]);
     } finally {
       setLoadingAttendees(false);
@@ -254,7 +253,6 @@ function EventCard({ event, isPast = false }) {
         } 
       });
     } catch (error) {
-      console.error('Error loading profile:', error);
       // Could show a toast or alert here if desired
     }
   };
@@ -809,6 +807,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [timePeriod, setTimePeriod] = useState('ytd'); // 'all', 'ytd', '6months', 'month'
+  const { user } = useAuth();
 
   
   const last30Days = new Date();
@@ -827,6 +826,106 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   const [capacityByPeriod, setCapacityByPeriod] = useState({});
   const [revenueSeriesByPeriod, setRevenueSeriesByPeriod] = useState({});
   const [peakByPeriod, setPeakByPeriod] = useState({});
+  const [refundByPeriod, setRefundByPeriod] = useState({});
+
+  const getPeriodDates = (period) => {
+    const today = new Date();
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (period === 'month') {
+      const start = new Date(end);
+      start.setDate(start.getDate() - 30);
+      return { start, end };
+    }
+    if (period === '6months') {
+      const start = new Date(end);
+      start.setMonth(start.getMonth() - 6);
+      start.setDate(1);
+      return { start, end };
+    }
+    if (period === 'ytd') {
+      const start = new Date(end.getFullYear(), 0, 1);
+      return { start, end };
+    }
+    const start = new Date(end.getFullYear() - 5, 0, 1);
+    return { start, end };
+  };
+
+  // Fetch refund stats when refund modal is open or period changes
+  useEffect(() => {
+    if (!modalVisible || selectedMetric?.metricType !== 'refund') return;
+    const hostId = (events && events[0]?.host_id) || user?.id;
+    if (!hostId) return;
+    const { start, end } = getPeriodDates(timePeriod);
+    const startStr = new Date(start).toISOString().slice(0, 10);
+    const endStr = new Date(end).toISOString().slice(0, 10);
+    let cancelled = false;
+    (async () => {
+      console.log('[refund] modal-open fetch start', { hostId, period: timePeriod, startStr, endStr });
+      const { data, error } = await supabase.schema('analytics').rpc('host_refund_stats', {
+        p_host: hostId,
+        p_start: startStr,
+        p_end: endStr,
+      });
+      if (cancelled) {
+        console.log('[refund] modal-open fetch cancelled');
+        return;
+      }
+      if (error) {
+        console.error('[refund] modal-open fetch error', error);
+        return;
+      }
+      console.log('[refund] modal-open fetch ok', { rows: (data||[]).length, row0: data?.[0] });
+      const row = (data && data[0]) || {};
+      setRefundByPeriod(prev => ({
+        ...prev,
+        [timePeriod]: {
+          refund_count: Number(row.refund_count || 0),
+          rsvps_total: Number(row.rsvps_total || 0),
+          window: { start: startStr, end: endStr },
+        }
+      }));
+      console.log('[refund] state updated (modal)', { period: timePeriod, refund_count: Number(row.refund_count || 0), rsvps_total: Number(row.rsvps_total || 0) });
+    })();
+    return () => { cancelled = true; };
+  }, [modalVisible, selectedMetric?.metricType, timePeriod, events?.[0]?.host_id, user?.id]);
+
+  // Prefetch refund stats for the current period so the card can display without opening modal
+  useEffect(() => {
+    const hostId = (events && events[0]?.host_id) || user?.id;
+    if (!hostId) return;
+    const { start, end } = getPeriodDates(timePeriod);
+    const startStr = new Date(start).toISOString().slice(0, 10);
+    const endStr = new Date(end).toISOString().slice(0, 10);
+    let cancelled = false;
+    (async () => {
+      console.log('[refund] prefetch start', { hostId, period: timePeriod, startStr, endStr });
+      const { data, error } = await supabase.schema('analytics').rpc('host_refund_stats', {
+        p_host: hostId,
+        p_start: startStr,
+        p_end: endStr,
+      });
+      if (cancelled) {
+        console.log('[refund] prefetch cancelled');
+        return;
+      }
+      if (error) {
+        console.error('[refund] prefetch error', error);
+        return;
+      }
+      console.log('[refund] prefetch ok', { rows: (data||[]).length, row0: data?.[0] });
+      const row = (data && data[0]) || {};
+      setRefundByPeriod(prev => ({
+        ...prev,
+        [timePeriod]: {
+          refund_count: Number(row.refund_count || 0),
+          rsvps_total: Number(row.rsvps_total || 0),
+          window: { start: startStr, end: endStr },
+        }
+      }));
+      console.log('[refund] state updated (prefetch)', { period: timePeriod, refund_count: Number(row.refund_count || 0), rsvps_total: Number(row.rsvps_total || 0) });
+    })();
+    return () => { cancelled = true; };
+  }, [timePeriod, events?.[0]?.host_id, user?.id]);
 
   useEffect(() => {
     const hostId = (events && events[0]?.host_id) || null;
@@ -1126,7 +1225,6 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     (async () => {
       try {
         const debugHostId = (events && events[0]?.host_id) || null;
-        console.log('[analytics.host_monthly] hostId candidate from events[0]:', debugHostId);
         const { data: rows } = await supabase
           .schema('analytics')
           .from('host_monthly')
@@ -1137,11 +1235,10 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           .order('year', { ascending: true })
           .order('month', { ascending: true });
 
-        console.log('[analytics.host_monthly] fetched rows:', (rows||[]).length, (rows||[]).slice(0, 3));
+        
 
         let effectiveRows = rows || [];
         if ((effectiveRows).length === 0) {
-          console.log('[analytics.host_monthly] retry without year filter');
           const { data: retry } = await supabase
             .schema('analytics')
             .from('host_monthly')
@@ -1150,7 +1247,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
             .order('year', { ascending: true })
             .order('month', { ascending: true });
           effectiveRows = retry || [];
-          console.log('[analytics.host_monthly] retry rows:', effectiveRows.length);
+          
         }
 
         if (cancelled) return;
@@ -1183,7 +1280,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         aggregates['6months'] = calcAgg(boundsFor('6months'));
         aggregates['ytd'] = calcAgg(boundsFor('ytd'));
         aggregates['all'] = calcAgg(boundsFor('all'));
-        console.log('[analytics.host_monthly] aggregates:', aggregates);
+        
         setHostMonthly({ rows: rows || [], aggregates });
 
         // Peak RSVP window per period from host_monthly buckets
@@ -1199,7 +1296,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
               sums.gt7  += Number(r.rsvp_gt_7d || 0);
             }
           });
-          console.log('[peak] sums', startDate.toISOString().slice(0,10), JSON.stringify(sums));
+          
           return sums;
         };
         const labelFromSums = (sums) => {
@@ -1224,7 +1321,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           ytd: labelFromSums(sumBucketsWithin(boundsFor('ytd'))),
           all: labelFromSums(sumBucketsWithin(boundsFor('all'))),
         };
-        console.log('[peak] map', JSON.stringify(peakMap));
+        
         setPeakByPeriod(peakMap);
 
         // Build revenue series for 6months, ytd, all from host_monthly (net_to_host_cents)
@@ -1375,10 +1472,19 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       (repeatGuests.length / allUsers.length) : 0;
     analytics.firstTimerRate = 1 - analytics.repeatGuestRate;
 
-    // Calculate refund rate from payment data
-    const refundedPayments = advancedData.paymentData.filter(p => p.refunded);
-    analytics.refundRate = advancedData.paymentData.length > 0 ?
-      (refundedPayments.length / advancedData.paymentData.length) : 0;
+    // Refund rate: prefer analytics RPC windowed totals; fallback to local payment data
+    const rp = refundByPeriod?.[timePeriod];
+    if (rp && Number(rp.rsvps_total || 0) > 0) {
+      const rate = Number(rp.refund_count || 0) / Number(rp.rsvps_total || 0);
+      console.log('[refund] using RPC totals for refundRate', { period: timePeriod, rp, rate });
+      analytics.refundRate = rate;
+    } else {
+      const refundedPayments = advancedData.paymentData.filter(p => p.refunded);
+      const fallbackRate = advancedData.paymentData.length > 0 ?
+        (refundedPayments.length / advancedData.paymentData.length) : 0;
+      console.log('[refund] falling back to local paymentData for refundRate', { period: timePeriod, count: advancedData.paymentData.length, fallbackRate });
+      analytics.refundRate = fallbackRate;
+    }
 
     // RSVP surge analysis (day-by-day pattern)
     const surgeAnalysis = {};
@@ -1949,10 +2055,12 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   };
 
   const generateRefundChart = (events) => {
-    const advancedData = global.hostAnalyticsData || { paymentData: [] };
-    const refunded = advancedData.paymentData.filter(p => p.refunded).length;
-    const completed = advancedData.paymentData.length - refunded;
-    const total = advancedData.paymentData.length;
+    // Prefer analytics-based count totals when available (from RPC)
+    const rp = refundByPeriod?.[timePeriod];
+    const refunded = rp ? Number(rp.refund_count || 0) : 0;
+    const total = rp ? Number(rp.rsvps_total || 0) : 0;
+    const completed = Math.max(0, total - refunded);
+    console.log('[refund] generateRefundChart', { period: timePeriod, rp, refunded, total, completed });
     
     // Calculate refund rate for milestone messaging
     const refundRate = total > 0 ? (refunded / total) : 0;
@@ -1981,7 +2089,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       }
     ];
     
-    const description = `Your Completion Record\n\nEvery completed payment builds trust with your attendees. Refunds happen — but keeping them low means confidence stays high.\n\n${milestoneMessage}`;
+    const description = `Your Completion Record\n\nEvery completed RSVP builds trust with your attendees. Refunds happen — but keeping them low means confidence stays high.\n\n${milestoneMessage}`;
     
     return { 
       data, 
@@ -3437,11 +3545,11 @@ export default function HostCreateScreen() {
           .select('total_events,total_rsvps,total_revenue_cents')
           .eq('host_id', inferredHostId)
           .maybeSingle();
-        if (hlErr) console.log('[analytics.host_live] error', hlErr);
-        console.log('[analytics.host_live] host_id', inferredHostId, 'data', hl);
+        if (hlErr) {}
+        
         analyticsTotals = hl || null;
       } catch (e) {
-        console.log('[analytics.host_live] exception', e);
+        
       }
 
       setMetrics({
@@ -3454,7 +3562,7 @@ export default function HostCreateScreen() {
       });
 
     } catch (error) {
-      console.error('Error loading host data:', error);
+      
     } finally {
       setLoading(false);
     }
