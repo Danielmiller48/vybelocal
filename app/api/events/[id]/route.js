@@ -12,6 +12,9 @@ const EDITABLE = [
   'ends_at',
   'status',
   'img_path',
+  'price_in_cents',
+  'refund_policy',
+  'rsvp_capacity',
 ];
 
 /**

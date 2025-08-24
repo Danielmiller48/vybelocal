@@ -53,13 +53,9 @@ export const authOptions = {
  */
 export async function getUserIdFromJwt(req) {
   const supabase = await createSupabaseServer();
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (!session?.user?.id) {
-    return null;
-  }
-  
-  return session.user.id;
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user?.id) return null;
+  return user.id;
 }
 
 /**
@@ -69,7 +65,6 @@ export async function getUserIdFromJwt(req) {
  */
 export async function getUserIdFromSession(req) {
   const supabase = await createSupabaseServer();
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  return session?.user?.id || null;
+  const { data: { user }, error } = await supabase.auth.getUser();
+  return (!error && user?.id) ? user.id : null;
 } 

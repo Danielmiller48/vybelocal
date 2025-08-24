@@ -2,6 +2,9 @@
 import { createSupabaseServer } from '@/utils/supabase/server';
 import { signedUrl }                  from '@/utils/signedUrl';
 import RSVPButton                     from '@/components/event/RSVPButton';
+import EventAttendees                 from '@/components/event/EventAttendees';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/utils/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +14,9 @@ export default async function VybeDetail({ params }) {
 
   /* 1 ─ fetch the approved-only view */
   const sb = await createSupabaseServer();
+
+  // get user id if signed in (SSR)
+  const { data: { user } } = await sb.auth.getUser();
   const { data: ev, error } = await sb
     .from('public_events')                    // same view the grid uses
     .select('*')
@@ -27,7 +33,33 @@ export default async function VybeDetail({ params }) {
     ? await signedUrl('event-images', ev.img_path, 3600)
     : null;
 
-  /* 3 ─ render */
+  /* 3 ─ RSVP count & joined (server-side) */
+  let initialJoined = null;
+  let initialPaid   = false;
+  let initialRsvpCount = null;
+
+  // Total RSVP count (available to everyone)
+  const { count } = await sb
+    .from('rsvps')
+    .select('event_id', { count: 'exact' })
+    .eq('event_id', ev.id);
+  initialRsvpCount = count ?? 0;
+
+  // Joined status only if logged in
+  if (user) {
+    const { data: joinedRow } = await sb
+      .from('rsvps')
+      .select('event_id, paid')
+      .eq('event_id', ev.id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (joinedRow) {
+      initialJoined = true;
+      initialPaid   = Boolean(joinedRow.paid);
+    }
+  }
+
+  /* 4 ─ render */
   return (
     <main className="max-w-3xl mx-auto p-6 space-y-6">
       {hero && (
@@ -54,7 +86,16 @@ export default async function VybeDetail({ params }) {
         </p>
       )}
 
-      <RSVPButton eventId={ev.id} />
+      <RSVPButton
+        eventId={ev.id}
+        price={ev.price_in_cents}
+        initialJoined={initialJoined}
+        initialPaid={initialPaid}
+        initialRsvpCount={initialRsvpCount}
+        capacity={ev.rsvp_capacity}
+      />
+      
+      <EventAttendees eventId={ev.id} />
     </main>
   );
 }

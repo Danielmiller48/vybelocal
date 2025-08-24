@@ -31,13 +31,11 @@ export async function GET(request) {
 
 export async function POST(request) {
   const supabase = await createSupabaseServer();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+  const session = { user };
 
   const { event_id } = await request.json();
   if (!event_id) {

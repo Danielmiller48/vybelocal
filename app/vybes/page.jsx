@@ -14,8 +14,9 @@ export default async function VybesPage() {
   const sb = await createSupabaseServer();
 
   /* ── login gate (non-admin pages must be signed-in) ── */
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) redirect('/login');
+  const { data: { user }, error: userError } = await sb.auth.getUser();
+  if (userError || !user) redirect('/login');
+  const session = { user };
 
   /* 1. fetch approved events */
   const { data: events, error } = await sb

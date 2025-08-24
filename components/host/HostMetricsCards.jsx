@@ -5,6 +5,7 @@ export default function HostMetricsCards({ totals }) {
   const cards = [
     { label: "Total RSVPs", val: totals.total },
     { label: "RSVPs today", val: totals.today },
+    { label: "Canceled RSVPs", val: totals.canceled },
   ];
 
   return (

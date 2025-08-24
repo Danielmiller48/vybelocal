@@ -11,6 +11,12 @@ export default function FlagGroupClient({ profile, flags, onStatusChange }) {
     onStatusChange && onStatusChange();
   }
 
+  function confirmAndUpdate(status, label) {
+    if (window.confirm(`Are you sure you want to ${label} this user and all their flags?`)) {
+      handleBulkStatusUpdate(status);
+    }
+  }
+
   function renderDetails(details) {
     if (!details) return <span className="italic text-gray-400">No additional details.</span>;
     if (typeof details === "string") {
@@ -39,6 +45,10 @@ export default function FlagGroupClient({ profile, flags, onStatusChange }) {
     }
     return <span className="italic text-gray-400">No additional details.</span>;
   }
+
+  const allStatus = flags.every(f => f.status === 'actioned') ? 'actioned'
+                   : flags.every(f => f.status === 'dismissed') ? 'dismissed'
+                   : null;
 
   return (
     <details className="bg-white border rounded shadow">
@@ -76,11 +86,23 @@ export default function FlagGroupClient({ profile, flags, onStatusChange }) {
             ))}
           </tbody>
         </table>
-        {/* Bulk status update buttons */}
+        {/* Moderation workflow buttons */}
         <div className="flex gap-2 mt-4">
-          <button type="button" className="btn btn-sm bg-blue-100 text-blue-700" onClick={() => handleBulkStatusUpdate("reviewed")}>Mark All as Reviewed</button>
-          <button type="button" className="btn btn-sm bg-green-100 text-green-700" onClick={() => handleBulkStatusUpdate("actioned")}>Action All</button>
-          <button type="button" className="btn btn-sm bg-gray-100 text-gray-700" onClick={() => handleBulkStatusUpdate("dismissed")}>Dismiss All</button>
+          { (allStatus === 'actioned' || allStatus === 'dismissed') ? (
+            <button type="button" className="btn btn-sm bg-blue-100 text-blue-700" onClick={() => confirmAndUpdate('pending','re-evaluate')}>Re-evaluate</button>
+          ) : (
+            <>
+              <button type="button" className="btn btn-sm bg-gray-100 text-gray-700" onClick={() => confirmAndUpdate("dismissed", "ignore")}>Ignore</button>
+              {(!profile.warning_issued) && (
+                <button type="button" className="btn btn-sm bg-yellow-100 text-yellow-800" onClick={() => confirmAndUpdate("actioned", "warn")}>Warn</button>
+              )}
+              {(profile.warning_issued && !profile.soft_ban_expires_at) && (
+                <button type="button" className="btn btn-sm bg-orange-100 text-orange-800" onClick={() => confirmAndUpdate("actioned", "soft-ban")}>Soft Ban</button>
+              )}
+              <div className="flex-grow"></div>
+              <button type="button" className="btn btn-sm bg-red-100 text-red-700 ml-auto" onClick={() => confirmAndUpdate("ban", "permanently ban")}>Ban</button>
+            </>
+          ) }
         </div>
       </div>
     </details>

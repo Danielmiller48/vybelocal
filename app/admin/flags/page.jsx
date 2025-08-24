@@ -82,7 +82,7 @@ export default function FlagsPage() {
       if (userIds.length) {
         const { data: userProfiles } = await supabase
           .from('profiles')
-          .select('id, name, email, phone, avatar_url')
+          .select('id, name, email, phone, avatar_url, warning_issued, soft_ban_expires_at, is_permanently_banned')
           .in('id', userIds);
         if (userProfiles) {
           for (const p of userProfiles) {

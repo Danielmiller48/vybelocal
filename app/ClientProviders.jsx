@@ -4,6 +4,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { SessionProvider as NextAuthSessionProvider } from 'next-auth/react'
 import { createSupabaseBrowser } from '@/utils/supabase/client'
+import BanModalClient from '@/components/BanModalClient'
+import SoftBanModalClient from '@/components/SoftBanModalClient'
+import WarnModalClient from '@/components/WarnModalClient'
 
 /* ── Supabase React context ── */
 const SupabaseCtx = createContext({ supabase: null, session: null })
@@ -28,6 +31,9 @@ export default function ClientProviders({ children, session: nextAuthSession }) 
   return (
     <NextAuthSessionProvider session={nextAuthSession}>
       <SupabaseCtx.Provider value={{ supabase, session: sbSession }}>
+        <WarnModalClient />
+        <SoftBanModalClient />
+        <BanModalClient />
         {children}
       </SupabaseCtx.Provider>
     </NextAuthSessionProvider>

@@ -15,8 +15,8 @@ export default function BlocksList() {
   // Fetch blocked profiles on mount
   useEffect(() => {
     fetch('/api/blocks')
-      .then((res) => res.json())
-      .then(async (data) => {
+      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(async data => {
         setBlocks(data);
         // Fetch public profiles for all blocked user target_ids
         const userBlocks = data.filter((b) => b.target_type === 'user');
@@ -50,7 +50,7 @@ export default function BlocksList() {
           }
         }
       })
-      .catch((err) => {
+      .catch(err => {
         console.error('Failed to fetch blocks:', err);
         setBlocks([]);
       });

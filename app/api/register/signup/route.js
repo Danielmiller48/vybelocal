@@ -62,6 +62,20 @@ export async function POST(req) {
   if (dup)
     return NextResponse.json('This phone number is already in use.', { status: 409 });
 
+  // Moderation guard: block banned/suspended numbers before Twilio
+  const { data: modProfile } = await sbAdmin
+    .from('profiles')
+    .select('is_permanently_banned, soft_ban_expires_at')
+    .eq('phone', phone.db)
+    .maybeSingle();
+
+  if (modProfile?.is_permanently_banned) {
+    return NextResponse.json('moderation: This phone number is permanently banned.', { status: 403 });
+  }
+  if (modProfile?.soft_ban_expires_at && new Date() < new Date(modProfile.soft_ban_expires_at)) {
+    return NextResponse.json('moderation: This phone number is currently suspended.', { status: 403 });
+  }
+
   /* ── 3 · send SMS only when BOTH guards have passed ── */
   try {
     await sendVerify(phone.e164);

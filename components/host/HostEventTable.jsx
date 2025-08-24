@@ -5,34 +5,35 @@ import { Disclosure } from "@headlessui/react";
 import {
   ChevronDown,
   PencilLine,
-  Copy as CopyIcon,
   Trash2 as TrashIcon,
+  XCircle as CancelIcon,
 } from "lucide-react";
 import ProfileModal from '../event/ProfileModal';
+import CancelEventModal from './CancelEventModal';
 import { createSupabaseBrowser } from '@/utils/supabase/client';
+import { getAvatarUrl } from '@/utils/supabase/avatarCache';
 
 const fmt = (n) => (n ?? 0).toLocaleString("en-US");
 
+// Builds a friendly label for paid attendee counts.
+// If some RSVPs exist but payment not completed yet, we show them as “UNPAID”.
+function formatPaidStatus(paid = 0, unpaid = 0) {
+  paid = paid ?? 0;
+  unpaid = unpaid ?? 0;
+  if (paid > 0 && unpaid > 0) return `${fmt(paid)} PAID / ${fmt(unpaid)} UNPAID`;
+  if (paid > 0) return `${fmt(paid)} PAID`;
+  if (unpaid > 0) return `${fmt(unpaid)} UNPAID`;
+  return "0 PAID"; // default when no RSVPs yet
+}
+
 function useAvatarUrl(avatarPath) {
   const [url, setUrl] = useState('/avatar-placeholder.png');
-  const supabase = createSupabaseBrowser();
   useEffect(() => {
-    if (!avatarPath || typeof avatarPath !== 'string' || avatarPath.trim() === '' || avatarPath === '/avatar-placeholder.png') {
-      setUrl('/avatar-placeholder.png');
-      return;
-    }
-    if (avatarPath.startsWith('http')) {
-      setUrl(avatarPath);
-      return;
-    }
-    supabase.storage
-      .from('profile-images')
-      .createSignedUrl(avatarPath, 3600)
-      .then(({ data }) => {
-        if (data?.signedUrl) setUrl(data.signedUrl);
-        else setUrl('/avatar-placeholder.png');
-      });
-  }, [avatarPath, supabase]);
+    (async () => {
+      const signed = await getAvatarUrl(avatarPath);
+      setUrl(signed);
+    })();
+  }, [avatarPath]);
   return url;
 }
 
@@ -79,13 +80,16 @@ function BlockedUserAvatar({ profile }) {
  *
  * Tailwind + lucide-react icons keep things lightweight; no extra CSS.
  */
-export default function HostEventTable({ events = [], handleDelete }) {
+export default function HostEventTable({ events = [], handleDelete, showUpcomingTab=true, showPastTab=true, showCanceledTab=true, initialTab='upcoming' }) {
   const [modalProfile, setModalProfile] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [attendees, setAttendees] = useState({}); // eventId -> array of profiles
   const [openEventId, setOpenEventId] = useState(null); // Track which event's Disclosure is open
-  const [eventList, setEventList] = useState(events); // Local state for events
+  const [eventList, setEventList] = useState(events); // all events
+  const [tab, setTab] = useState(initialTab);
+  const [pastLimit, setPastLimit] = useState(15);
   const supabase = createSupabaseBrowser();
+  const [cancelEventId, setCancelEventId] = useState(null); // event id being canceled
 
   useEffect(() => { setEventList(events); }, [events]);
 
@@ -129,14 +133,55 @@ export default function HostEventTable({ events = [], handleDelete }) {
     }
   }
 
+  const nowTs = Date.now();
+  const upcoming = eventList.filter(e => {
+    if(e.status==='canceled') return false;
+    const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
+    return endTs >= nowTs;
+  });
+  const pastAll  = eventList.filter(e => {
+    const endTs = e.ends_at ? new Date(e.ends_at).getTime() : new Date(e.starts_at).getTime();
+    return endTs < nowTs;
+  });
+  const past     = pastAll.slice(0, pastLimit);
+  const canceled = eventList.filter(e=> e.status==='canceled');
+
+  const listToShow = tab==='upcoming' ? upcoming : (tab==='past'? past : canceled);
+
   if (!eventList.length)
     return <p className="italic text-gray-500">No events yet.</p>;
 
   return (
     <section className="space-y-2">
-      <h2 className="font-semibold text-lg">Your Events</h2>
+      <div className="flex items-center gap-2 mb-2">
+        {showUpcomingTab && (
+          <button
+            onClick={()=>setTab('upcoming')}
+            className={`px-3 py-1 rounded ${tab==='upcoming'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+          >Upcoming</button>
+        )}
+        {showPastTab && (
+          <button
+            onClick={()=>setTab('past')}
+            className={`px-3 py-1 rounded ${tab==='past'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+          >Past</button>
+        )}
+        {showCanceledTab && (
+          <button
+            onClick={()=>setTab('canceled')}
+            className={`px-3 py-1 rounded ${tab==='canceled'?'bg-indigo-600 text-white':'bg-gray-200'}`}
+          >Canceled</button>
+        )}
+      </div>
 
-      {eventList.map((e) => (
+      {tab==='past' && pastAll.length>pastLimit && (
+        <button
+          onClick={()=>setPastLimit(pastLimit+15)}
+          className="mb-2 text-sm text-indigo-600 hover:underline"
+        >Load older events…</button>
+      )}
+
+      {listToShow.map((e) => (
         <Disclosure key={e.id} as="div" className="bg-white rounded shadow">
           {({ open }) => {
             return (
@@ -166,7 +211,14 @@ export default function HostEventTable({ events = [], handleDelete }) {
                   </div>
 
                   <div className="flex items-center gap-6">
-                    <span className="text-sm tabular-nums">{fmt(e.rsvp_count)} RSVP</span>
+                    {e.price_in_cents !== null && e.price_in_cents>0 ? (
+                      <span className="text-sm tabular-nums">{formatPaidStatus(e.paid_count, e.unpaid_count)}</span>
+                    ) : (
+                      <span className="text-sm tabular-nums">{fmt(e.rsvp_count)} RSVP</span>
+                    )}
+                    {e.price_in_cents !== null && e.price_in_cents>0 && e.expected_payout_cents > 0 && (
+                      <span className="text-sm text-green-700 font-medium">${(e.expected_payout_cents/100).toFixed(2)}</span>
+                    )}
                     <ChevronDown
                       className={`h-5 w-5 transition-transform ${open ? "rotate-180" : "rotate-0"}`}
                     />
@@ -196,6 +248,11 @@ export default function HostEventTable({ events = [], handleDelete }) {
                           {new Date(e.starts_at).toLocaleString()}
                         </p>
                       )}
+                      {e.price_in_cents !== null && e.price_in_cents>0 && e.expected_payout_cents > 0 && (
+                        <p><span className="font-medium">Expected payout: </span>${(e.expected_payout_cents/100).toFixed(2)}</p>
+                      )}
+                      <p><span className="font-medium">Refund policy: </span>{e.refund_policy.replace('_',' ')}</p>
+                      <Countdown startsAt={e.starts_at} />
                       {/* RSVP attendee list */}
                       {attendees[e.id]?.length > 0 && (
                         <div className="mt-3">
@@ -222,27 +279,25 @@ export default function HostEventTable({ events = [], handleDelete }) {
 
                     {/* right: tool set */}
                     <div className="flex gap-3 flex-wrap shrink-0">
-                      <Link
-                        href={`/host/events/${e.id}`}
-                        className="btn-icon"
-                        title="Edit event"
-                      >
-                        <PencilLine className="h-4 w-4" />
-                      </Link>
-                      <button
-                        onClick={() => console.log("duplicate", e.id)}
-                        className="btn-icon"
-                        title="Duplicate event"
-                      >
-                        <CopyIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(e.id)}
-                        className="btn-icon text-red-600 hover:bg-red-50"
-                        title="Delete event"
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
+                      {tab !== 'past' && (
+                        <>
+                          <Link
+                            href={`/host/events/${e.id}`}
+                            className="btn-icon"
+                            title="Edit event"
+                          >
+                            <PencilLine className="h-4 w-4" />
+                          </Link>
+                          <button
+                            onClick={() => setCancelEventId(e.id)}
+                            className="btn-icon text-red-600 hover:bg-red-50"
+                            title="Cancel & refund"
+                          >
+                            <CancelIcon className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
+                      {/* Hard-delete option removed; hosts must use Cancel & Refund */}
                     </div>
                   </div>
                 </Disclosure.Panel>
@@ -262,8 +317,38 @@ export default function HostEventTable({ events = [], handleDelete }) {
         }}
         useAvatarUrl={useAvatarUrl}
       />
+      {/* Cancel Event Modal */}
+      <CancelEventModal
+        open={Boolean(cancelEventId)}
+        eventId={cancelEventId}
+        onClose={(success)=>{
+          if(success){ setEventList(prev=>prev.filter(ev=>ev.id!==cancelEventId)); }
+          setCancelEventId(null);
+        }}
+      />
     </section>
   );
+}
+
+/* ---------- small countdown component ---------- */
+function Countdown({ startsAt }) {
+  const [diff, setDiff] = useState(() => calc());
+
+  function calc() {
+    const ms = new Date(startsAt).getTime() - Date.now();
+    if (ms <= 0) return "Started";
+    const hrs = Math.floor(ms / 3600000);
+    const days = Math.floor(hrs / 24);
+    if (days > 0) return `${days}d ${hrs % 24}h`;
+    return `${hrs}h`;
+  }
+
+  useEffect(() => {
+    const id = setInterval(() => setDiff(calc()), 60000);
+    return () => clearInterval(id);
+  }, [startsAt]);
+
+  return <p><span className="font-medium">Starts in: </span>{diff}</p>;
 }
 
 /* --------------- tiny utility class --------------- */

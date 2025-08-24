@@ -3,10 +3,11 @@ import { createSupabaseServer } from '@/utils/supabase/server';
 
 export async function DELETE(request, { params }) {
   const supabase = await createSupabaseServer();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
+  const session = { user };
   const { id } = params;
   if (!id) {
     return NextResponse.json({ error: 'Missing block ID' }, { status: 400 });

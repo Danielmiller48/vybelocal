@@ -12,8 +12,9 @@ export default function HostSidebar() {
   const pathname = usePathname();
 
   const links = [
-    { href: "/host",      label: "Metrics" },       // host dashboard / metrics
+    { href: "/host",      label: "Upcoming Events" },       // host dashboard
     { href: "/host/new",  label: "Create Event" }, // HostNewForm page
+    { href: "/host/history", label: "Past Events" },
   ];
 
   return (
