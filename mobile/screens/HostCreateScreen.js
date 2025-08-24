@@ -826,6 +826,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   const [hostMonthly, setHostMonthly] = useState({ rows: [], aggregates: {} });
   const [capacityByPeriod, setCapacityByPeriod] = useState({});
   const [revenueSeriesByPeriod, setRevenueSeriesByPeriod] = useState({});
+  const [peakByPeriod, setPeakByPeriod] = useState({});
 
   useEffect(() => {
     const hostId = (events && events[0]?.host_id) || null;
@@ -1051,6 +1052,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     return () => { cancelled = true; };
   }, [events?.[0]?.host_id, hostAnalytics.totalRsvps]);
 
+
   // Preload net revenue daily for last 30 days from analytics.event_daily
   useEffect(() => {
     const hostId = (events && events[0]?.host_id) || null;
@@ -1094,7 +1096,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     if (!hostId) return;
 
     const now = new Date();
-    const endDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Use the last day of the current month as the inclusive end bound for monthly sums
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const startAll = new Date(2020, 0, 1);
 
     const boundsFor = (period) => {
@@ -1127,7 +1130,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         const { data: rows } = await supabase
           .schema('analytics')
           .from('host_monthly')
-          .select('year,month,rsvps_total,events_count,gross_revenue_cents,net_to_host_cents')
+          .select('year,month,rsvps_total,events_count,gross_revenue_cents,net_to_host_cents,rsvp_same_day,rsvp_1d,rsvp_2_3d,rsvp_4_7d,rsvp_gt_7d')
           .eq('host_id', hostId)
           .gte('year', startAll.getFullYear())
           .lte('year', now.getFullYear())
@@ -1142,7 +1145,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           const { data: retry } = await supabase
             .schema('analytics')
             .from('host_monthly')
-            .select('year,month,rsvps_total,events_count,gross_revenue_cents,net_to_host_cents')
+            .select('year,month,rsvps_total,events_count,gross_revenue_cents,net_to_host_cents,rsvp_same_day,rsvp_1d,rsvp_2_3d,rsvp_4_7d,rsvp_gt_7d')
             .eq('host_id', hostId)
             .order('year', { ascending: true })
             .order('month', { ascending: true });
@@ -1182,6 +1185,47 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         aggregates['all'] = calcAgg(boundsFor('all'));
         console.log('[analytics.host_monthly] aggregates:', aggregates);
         setHostMonthly({ rows: rows || [], aggregates });
+
+        // Peak RSVP window per period from host_monthly buckets
+        const sumBucketsWithin = (startDate) => {
+          const sums = { sd:0, d1:0, d2_3:0, d4_7:0, gt7:0 };
+          (effectiveRows || []).forEach(r => {
+            const d = new Date(r.year, (r.month||1)-1, 1);
+            if (d >= startDate && d <= endDate) {
+              sums.sd   += Number(r.rsvp_same_day || 0);
+              sums.d1   += Number(r.rsvp_1d || 0);
+              sums.d2_3 += Number(r.rsvp_2_3d || 0);
+              sums.d4_7 += Number(r.rsvp_4_7d || 0);
+              sums.gt7  += Number(r.rsvp_gt_7d || 0);
+            }
+          });
+          console.log('[peak] sums', startDate.toISOString().slice(0,10), JSON.stringify(sums));
+          return sums;
+        };
+        const labelFromSums = (sums) => {
+          const data = [
+            { label:'Same Day',   value: Number(sums.sd   || 0) },
+            { label:'1 Day Before', value: Number(sums.d1   || 0) },
+            { label:'2–3 Days',   value: Number(sums.d2_3 || 0) },
+            { label:'4–7 Days',   value: Number(sums.d4_7 || 0) },
+            { label:'8+ Days',    value: Number(sums.gt7  || 0) },
+          ];
+          const top = data.slice().sort((a,b)=>b.value-a.value)[0];
+          return { label: top ? top.label : 'Unknown', data };
+        };
+        const peak = {};
+        peak['month']   = labelFromSums(boundsFor('month'));
+        peak['6months'] = labelFromSums(boundsFor('6months'));
+        peak['ytd']     = labelFromSums(boundsFor('ytd'));
+        peak['all']     = labelFromSums(boundsFor('all'));
+        const peakMap = {
+          month: labelFromSums(sumBucketsWithin(boundsFor('month'))),
+          '6months': labelFromSums(sumBucketsWithin(boundsFor('6months'))),
+          ytd: labelFromSums(sumBucketsWithin(boundsFor('ytd'))),
+          all: labelFromSums(sumBucketsWithin(boundsFor('all'))),
+        };
+        console.log('[peak] map', JSON.stringify(peakMap));
+        setPeakByPeriod(peakMap);
 
         // Build revenue series for 6months, ytd, all from host_monthly (net_to_host_cents)
         const buildMonthlySeries = (startDate) => {
@@ -1483,9 +1527,31 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       case 'sellout':
         return generateSellOutChart(filteredEvents);
       case 'repeat':
-        return generateRepeatGuestChart(filteredEvents);
-      case 'peak':
+        // Prefer RPC repeat stats if available; fall back to local computation
+        {
+          const stats = repeatStatsByPeriod?.[period];
+          if (stats) {
+            const unique = Number(stats.unique_attendees || 0);
+            const repeat = Number(stats.repeat_attendees || 0);
+            const firstTimers = Math.max(0, unique - repeat);
+            // Keep existing labels; place first-timers in '1 Event' and all repeats into '2-3 Events'
+            const data = [
+              { label: '1 Event', value: firstTimers },
+              { label: '2-3 Events', value: repeat },
+              { label: '4-5 Events', value: 0 },
+              { label: '6+ Events', value: 0 },
+            ];
+            return { data, type: 'doughnut', title: 'Guest Attendance Frequency' };
+          }
+          return generateRepeatGuestChart(filteredEvents);
+        }
+      case 'peak': {
+        const peak = peakByPeriod[period];
+        if (peak && peak.data) {
+          return { data: peak.data, type: 'bar', title: 'Peak RSVP Timing Patterns', description: 'RSVP timing based on real lead-time buckets.' };
+        }
         return generatePeakTimingChart(filteredEvents);
+      }
       case 'refund':
         return generateRefundChart(filteredEvents);
       case 'avgRevenue': {
@@ -1514,7 +1580,23 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         return { data: rows || [], type: 'table', title: 'Top Revenue Events', description, tableKind: 'topRevenue' };
       }
       case 'afterTax':
-        return generateAfterTaxChart(filteredEvents);
+        {
+          const series = revenueSeriesByPeriod?.[period]?.series || [];
+          if (series.length > 0) {
+            const totalRevenue = series.reduce((s, r) => s + Number(r.value || 0), 0);
+            const estimatedTaxRate = taxRate;
+            const taxAmount = totalRevenue * estimatedTaxRate;
+            const afterTaxAmount = totalRevenue - taxAmount;
+            const keepPercentage = totalRevenue > 0 ? ((afterTaxAmount / totalRevenue) * 100).toFixed(0) : '0';
+            const data = [
+              { label: `You Keep: $${Math.round(afterTaxAmount)}`, value: Math.round(afterTaxAmount), subtitle: `Nice work. That's ${keepPercentage}% of what you earned, still in your pocket.` },
+              { label: `Taxes: $${Math.round(taxAmount)}`, value: Math.round(taxAmount), subtitle: `The part Uncle Sam insists on. Plan ahead and you keep control.` }
+            ];
+            const description = `Where Your Money's Going\n\nBased on your chosen tax rate, here's what you're keeping vs. what's likely headed to the IRS. Numbers are estimates – actual taxes can change depending on deductions, other income, and new laws.`;
+            return { data, type: 'pie', title: 'Your Money, On Your Terms', description };
+          }
+          return generateAfterTaxChart(filteredEvents);
+        }
       default:
         return { data: [], type: 'line' };
     }
@@ -2135,7 +2217,8 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
       <MetricCard
         title="Est. After-Tax Earnings"
-        value={`$${analytics.afterTaxRevenue.toFixed(2)}`}
+        value={`$${(((revenueSeriesByPeriod?.['ytd']?.series || revenueSeriesByPeriod?.['6months']?.series || [])
+          .reduce((s,r)=> s + Number(r.value || 0), 0)) * (taxRate != null ? (1 - taxRate) : (1 - analytics.estimatedTaxRate))).toFixed(2)}`}
         subtitle={`Assuming ${(analytics.estimatedTaxRate * 100).toFixed(0)}% effective tax rate`}
         icon="calculator"
         color="#059669"
@@ -2146,18 +2229,11 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
 
 
 
-      <MetricCard
-        title="Repeat Guest Rate"
-        value={`${(analytics.repeatGuestRate * 100).toFixed(1)}%`}
-        subtitle={`${(analytics.firstTimerRate * 100).toFixed(1)}% first-timers`}
-        icon="people-circle"
-        color="#6366f1"
-        metricType="repeat"
-      />
+      {/* Repeat Guest Rate removed */}
 
       <MetricCard
         title="Peak RSVP Window"
-        value={analytics.peakRsvpDay}
+        value={peakByPeriod?.['6months']?.label || analytics.peakRsvpDay}
         subtitle="When most people book"
         icon="time"
         color="#10b981"
