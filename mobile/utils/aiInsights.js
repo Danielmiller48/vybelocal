@@ -54,6 +54,8 @@ const generateAIInsight = async (chartType, data, context = {}) => {
       switch (chartType) {
         case 'capacity':
           return generateCapacityInsight(data, context);
+        case 'topRevenueEvents':
+          return generateTopRevenueEventsInsight(data, context);
         case 'revenue':
           return generateRevenueInsight(data, context);
         case 'rsvpGrowth':
@@ -158,36 +160,65 @@ const generateCapacityInsight = (data, context) => {
 };
 
 /**
+ * Top Revenue Events (table) Insight
+ */
+const generateTopRevenueEventsInsight = (data, context) => {
+  const rows = Array.isArray(data?.data) ? data.data : [];
+  const top = rows.slice(0, 3);
+  const best = top[0];
+  const take = (best && Number(best.value) > 0)
+    ? `Top pull: ${best.label} at $${Number(best.value).toFixed(0)}.`
+    : 'No paid revenue in this window yet.';
+
+  const message = rows.length
+    ? `Your best earners — straight up. Copy what worked and scale.`
+    : 'No top earners yet. Once paid events land, this fills up.';
+
+  const recommendation = rows.length
+    ? `${take} Test price bumps on high‑demand nights. Keep the vibe and promo timing the same, don’t mess with what converts.`
+    : 'Run a priced event and push RSVPs 7–10 days out. Keep it simple, clear, and local.';
+
+  return { message, recommendation, icon: 'cash', color: '#f59e0b', confidence: 0.8 };
+};
+
+/**
  * Revenue Insights (Top Earning Events)
  */
 const generateRevenueInsight = (data, context) => {
-  const { totalRevenue } = data;
-  
-  let message, recommendation, icon, color;
-  
-  if (totalRevenue > 1000) {
-    message = `You've earned $${totalRevenue.toFixed(0)} from VybeLocal RSVPs!`;
-    recommendation = 'Consider premium event tiers or merchandise to further increase revenue.';
-    icon = 'trending-up';
-    color = '#10b981';
-  } else if (totalRevenue > 200) {
-    message = `You've made $${totalRevenue.toFixed(0)} on VybeLocal so far.`;
-    recommendation = 'Keep experimenting with ticket pricing and promotion to boost earnings.';
-    icon = 'bulb';
-    color = '#f59e0b';
+  const totalRevenue = Number(data?.totalRevenue || 0);
+  const rows = Array.isArray(data?.data) ? data.data : [];
+  const top = rows.slice().sort((a,b)=>Number(b.value||0)-Number(a.value||0)).slice(0,3);
+  const best = top[0];
+
+  let message, recommendation, icon = 'trending-up', color = '#10b981';
+
+  if (best && Number(best.value) > 0) {
+    const bestAmt = Number(best.value).toFixed(0);
+    const second = top[1] ? Number(top[1].value) : 0;
+    const spread = second > 0 ? (Number(best.value)/second) : null;
+    const dominance = spread && spread >= 1.5;
+
+    message = dominance
+      ? `${best.label} is your anchor — $${bestAmt} leads by a lot.`
+      : `Revenue is spread. ${best.label} still on top at $${bestAmt}.`;
+
+    recommendation = dominance
+      ? 'Run that format again next month. Bump price 10–15% and keep timing/vibe identical.'
+      : 'Pick the top 2 formats. Re-run both. Test pricing and push promo 7–10 days out.';
+    color = dominance ? '#f59e0b' : '#10b981';
   } else if (totalRevenue > 0) {
-    message = `You've started earning on VybeLocal with $${totalRevenue.toFixed(0)} in revenue.`;
-    recommendation = 'Post more events and promote them to grow your VybeLocal revenue.';
-    icon = 'cash';
+    message = `Revenue moving: $${totalRevenue.toFixed(0)} so far.`;
+    recommendation = 'Focus on one clean paid format. Keep price simple. Promote early.';
     color = '#3b82f6';
+    icon = 'cash';
   } else {
-    message = `You haven't earned on VybeLocal yet.`;
-    recommendation = 'Host your first paid event to start earning on VybeLocal.';
-    icon = 'cash';
+    message = 'No paid revenue yet in this window.';
+    recommendation = 'Run a priced event. Start with a fair floor. Promote consistently for a week.';
     color = '#3b82f6';
+    icon = 'cash';
   }
-  
-  return { message, recommendation, icon, color, confidence: 0.8 };
+
+  return { message, recommendation, icon, color, confidence: 0.85 };
 };
 
 /**
@@ -227,44 +258,24 @@ const generateRSVPGrowthInsight = (data, context) => {
  * Revenue Timeline Insights
  */
 const generateRevenueTimelineInsight = (data, context) => {
-  const { totalRevenue, achievedMilestones, nextMilestone } = data;
-  
-  let message, recommendation, icon, color;
-  
-  if (achievedMilestones && achievedMilestones.length > 0) {
-    message = `You've reached ${achievedMilestones.length} milestone${achievedMilestones.length > 1 ? 's' : ''} with $${totalRevenue.toFixed(0)} in total revenue!`;
-  } else if (totalRevenue > 100) {
-    message = `You've generated $${totalRevenue.toFixed(0)} in revenue - building momentum!`;
-  } else if (totalRevenue > 0) {
-    message = `You've earned your first $${totalRevenue.toFixed(0)} on VybeLocal!`;
-  } else {
-    message = `Ready to start your revenue journey on VybeLocal.`;
-  }
-  
-  if (nextMilestone) {
-    recommendation = `Only $${(nextMilestone - totalRevenue).toFixed(0)} more to reach your next milestone!`;
-  } else if (totalRevenue > 10000) {
-    recommendation = 'You\'re in the top tier of VybeLocal hosts - consider mentoring others or hosting premium experiences.';
-  } else if (totalRevenue > 1000) {
-    recommendation = 'Great progress! Focus on consistent event hosting and premium pricing strategies.';
-  } else if (totalRevenue > 100) {
-    recommendation = 'Keep hosting regularly and experiment with different price points to accelerate growth.';
-  } else {
-    recommendation = 'Start with your first paid event to begin building revenue momentum.';
-  }
-  
-  if (totalRevenue > 5000) {
-    icon = 'trophy';
-    color = '#10b981';
-  } else if (totalRevenue > 1000) {
-    icon = 'trending-up';
-    color = '#f59e0b';
-  } else {
-    icon = 'cash';
-    color = '#3b82f6';
-  }
-  
-  return { message, recommendation, icon, color, confidence: 0.8 };
+  const points = Array.isArray(data?.data) ? data.data : [];
+  const n = points.length;
+  const values = points.map(p => Number(p.value || 0));
+  const sum = values.reduce((a,b)=>a+b,0);
+  const avg = n ? sum / n : 0;
+  const last = values[n-1] || 0;
+  let rising = 0; for (let i=1;i<n;i++){ if (values[i] > values[i-1]) rising++; }
+  const trendUp = rising >= Math.floor(n/2);
+
+  const message = trendUp
+    ? `Net revenue is climbing. Last point: $${last.toFixed(0)}.`
+    : `Net revenue is flat/down. Avg per point: $${avg.toFixed(0)}.`;
+
+  const recommendation = trendUp
+    ? 'Press what works: repeat the strongest format next window and test a 10–15% price bump.'
+    : 'Tighten the format: smaller capacity, sharpen the pitch, and front‑load promo 7–10 days out.';
+
+  return { message, recommendation, icon: trendUp ? 'trending-up' : 'trending-down', color: trendUp ? '#10b981' : '#f59e0b', confidence: 0.85 };
 };
 
 /**

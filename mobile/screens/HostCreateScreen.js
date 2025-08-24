@@ -825,6 +825,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   const [rsvpMonthlyByPeriod, setRsvpMonthlyByPeriod] = useState({});
   const [hostMonthly, setHostMonthly] = useState({ rows: [], aggregates: {} });
   const [capacityByPeriod, setCapacityByPeriod] = useState({});
+  const [revenueSeriesByPeriod, setRevenueSeriesByPeriod] = useState({});
 
   useEffect(() => {
     const hostId = (events && events[0]?.host_id) || null;
@@ -1050,6 +1051,43 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     return () => { cancelled = true; };
   }, [events?.[0]?.host_id, hostAnalytics.totalRsvps]);
 
+  // Preload net revenue daily for last 30 days from analytics.event_daily
+  useEffect(() => {
+    const hostId = (events && events[0]?.host_id) || null;
+    if (!hostId) return;
+
+    (async () => {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const startStr = start.toISOString().slice(0, 10);
+      const endStr = end.toISOString().slice(0, 10);
+      const { data: rows } = await supabase
+        .schema('analytics')
+        .from('event_daily')
+        .select('day, net_to_host_cents')
+        .eq('host_id', hostId)
+        .gte('day', startStr)
+        .lte('day', endStr);
+
+      const daily = {};
+      for (let i = 30; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        daily[d.toISOString().slice(0,10)] = 0;
+      }
+      (rows || []).forEach(r => {
+        const k = r.day;
+        daily[k] = (daily[k] || 0) + Number(r.net_to_host_cents || 0);
+      });
+      const series = Object.keys(daily).sort().map(k => ({
+        label: new Date(k).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        value: Number(daily[k]) / 100
+      }));
+      setRevenueSeriesByPeriod(prev => ({ ...prev, month: { series } }));
+    })();
+  }, [events?.[0]?.host_id]);
+
   // Preload host_monthly for monthly/YTD table views and build period maps
   useEffect(() => {
     const hostId = (events && events[0]?.host_id) || null;
@@ -1144,6 +1182,49 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
         aggregates['all'] = calcAgg(boundsFor('all'));
         console.log('[analytics.host_monthly] aggregates:', aggregates);
         setHostMonthly({ rows: rows || [], aggregates });
+
+        // Build revenue series for 6months, ytd, all from host_monthly (net_to_host_cents)
+        const buildMonthlySeries = (startDate) => {
+          const endDateInclusive = endDate;
+          // Fill months from 1st of start to end
+          const cur = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+          const values = [];
+          while (cur <= endDateInclusive) {
+            const y = cur.getFullYear();
+            const m = cur.getMonth() + 1;
+            const key = `${y}-${String(m).padStart(2,'0')}`;
+            const sum = (effectiveRows || []).filter(r => r.year === y && r.month === m).reduce((s,r)=> s + Number(r.net_to_host_cents || 0), 0);
+            values.push({ label: cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), value: sum / 100 });
+            cur.setMonth(cur.getMonth() + 1);
+          }
+          return values;
+        };
+
+        const sixStart = boundsFor('6months');
+        const ytdStart = boundsFor('ytd');
+        const sixSeries = buildMonthlySeries(sixStart);
+        const ytdSeries = buildMonthlySeries(ytdStart);
+
+        // All-time 3-month buckets (quarter-like windows), respecting 1st of month
+        const allStart = startAll;
+        const buckets = [];
+        const q = new Date(allStart.getFullYear(), allStart.getMonth() - (allStart.getMonth() % 3), 1);
+        while (q <= endDate) {
+          const y = q.getFullYear();
+          const m = q.getMonth();
+          const months = [m, m+1, m+2];
+          const sum = (effectiveRows || []).filter(r => r.year === y && months.includes(r.month - 1)).reduce((s,r)=> s + Number(r.net_to_host_cents || 0), 0);
+          const label = `${new Date(y, months[0], 1).toLocaleDateString('en-US',{ month:'short' })}–${new Date(y, months[2], 1).toLocaleDateString('en-US',{ month:'short' })} ${String(y).slice(2)}`;
+          buckets.push({ label, value: sum / 100 });
+          q.setMonth(q.getMonth() + 3);
+        }
+
+        setRevenueSeriesByPeriod(prev => ({
+          ...prev,
+          '6months': { series: sixSeries },
+          ytd: { series: ytdSeries },
+          all: { series: buckets }
+        }));
       } catch {}
     })();
 
@@ -1391,9 +1472,11 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
           eventsWithCapacity.reduce((sum, event) => sum + ((event.rsvp_count || 0) / event.rsvp_capacity), 0) / eventsWithCapacity.length
         ) : 0;
         return chart;
-      case 'revenueTimeline':
-        const revEvents = paidOnly ? filteredEvents.filter(e=>e.price_in_cents>0) : filteredEvents;
-        return generateRevenueTimelineChart(revEvents,period);
+      case 'revenueTimeline': {
+        // Use precomputed net revenue series by period
+        const s = revenueSeriesByPeriod?.[period]?.series || [];
+        return { data: s, type: 'line', title: 'Revenue Over Time' };
+      }
       case 'topEarning':
         const topEvents = paidOnly ? filteredEvents.filter(e=>e.price_in_cents>0) : filteredEvents;
         return generateRevenueChart(topEvents);
@@ -1406,25 +1489,29 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       case 'refund':
         return generateRefundChart(filteredEvents);
       case 'avgRevenue': {
-        // Table of highest revenue events within the selected window
-        const revEvents = paidOnly
-          ? filteredEvents.filter(e => (e.price_in_cents || 0) > 0)
-          : filteredEvents;
-        const rows = revEvents
-          .map(e => ({
-            label: (e.title && e.title.length > 28) ? e.title.slice(0, 28) + '…' : (e.title || 'Untitled'),
-            value: ((e.price_in_cents || 0) * (e.rsvp_count || 0)) / 100,
-            fullTitle: e.title || 'Untitled',
-          }))
-          .filter(r => r.value > 0)
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 10);
+        // Prefer precomputed top revenue from analytics.event_live rollup if available
+        const pre = capacityByPeriod?.[period]?.meta?.top;
+        let rows = Array.isArray(pre) ? pre : null;
+        if (!rows || rows.length === 0) {
+          const revEvents = paidOnly
+            ? filteredEvents.filter(e => (e.price_in_cents || 0) > 0)
+            : filteredEvents;
+          rows = revEvents
+            .map(e => ({
+              label: (e.title && e.title.length > 28) ? e.title.slice(0, 28) + '…' : (e.title || 'Untitled'),
+              value: ((e.price_in_cents || 0) * (e.rsvp_count || 0)) / 100,
+              fullTitle: e.title || 'Untitled',
+            }))
+            .filter(r => r.value > 0)
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 10);
+        }
 
-        const description = rows.length > 0
+        const description = (rows && rows.length > 0)
           ? "Your best earners — straight up. These are the events bringing in the most revenue, so copy what worked: timing, vibe, price, promo. Double down and scale what's real."
           : "No paid revenue yet. Once money starts moving, we'll show your top performers here.";
 
-        return { data: rows, type: 'table', title: 'Top Revenue Events', description };
+        return { data: rows || [], type: 'table', title: 'Top Revenue Events', description, tableKind: 'topRevenue' };
       }
       case 'afterTax':
         return generateAfterTaxChart(filteredEvents);
@@ -1592,61 +1679,98 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
     return { data, type: 'bar', title: 'Event Fill Rate Distribution' };
   };
 
-  // Generate cumulative revenue timeline with milestones
+  // Revenue over time (non-cumulative), bucketed by period granularity
   const generateRevenueTimelineChart = (events, period='all') => {
-    // Rewritten revenue timeline using RSVP logic
     const now = new Date();
     let startDate = new Date();
-    switch(period){
+    const centsToDollars = (cents) => (Number(cents || 0) / 100);
+
+    switch (period) {
       case 'month':
-        startDate.setDate(startDate.getDate()-30);
+        startDate.setDate(startDate.getDate() - 30);
         break;
       case '6months':
-        startDate.setMonth(startDate.getMonth()-5);
+        startDate.setMonth(startDate.getMonth() - 5); // include current month as 6th
         startDate.setDate(1);
         break;
       case 'ytd':
-        startDate = new Date(now.getFullYear(),0,1);
+        startDate = new Date(now.getFullYear(), 0, 1);
         break;
       default:
-        startDate = new Date(now.getFullYear()-5,0,1);
+        startDate = new Date(now.getFullYear() - 5, 0, 1);
     }
-    const relevant = events.filter(e=> new Date(e.starts_at) >= startDate && e.price_in_cents>0 && e.rsvp_count>0);
+
+    const paid = events.filter(e => new Date(e.starts_at) >= startDate && e.price_in_cents > 0 && e.rsvp_count > 0);
+
     const dataPoints = [];
-    let cumulative=0;
-    if(period==='month'){
-      const dailyMap={};
-      for(let i=30;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const key=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});dailyMap[key]=0;}
-      relevant.forEach(ev=>{const d=new Date(ev.starts_at);const key=d.toLocaleDateString('en-US',{month:'short',day:'numeric'});if(d>=startDate){dailyMap[key]+=((ev.price_in_cents||0)*(ev.rsvp_count||0))/100;}});
-      Object.keys(dailyMap).forEach(k=>{cumulative+=dailyMap[k];dataPoints.push({label:k,value:cumulative});});
+    if (period === 'month') {
+      // Daily revenue for last 30 days
+      const dailyMap = {};
+      for (let i = 30; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().slice(0,10);
+        dailyMap[key] = 0;
+      }
+      paid.forEach(ev => {
+        const d = new Date(ev.starts_at);
+        const key = d.toISOString().slice(0,10);
+        if (d >= startDate) dailyMap[key] += centsToDollars((ev.price_in_cents||0) * (ev.rsvp_count||0));
+      });
+      Object.keys(dailyMap).sort().forEach(k => {
+        const label = new Date(k).toLocaleDateString('en-US',{ month:'short', day:'numeric' });
+        dataPoints.push({ label, value: dailyMap[k] });
+      });
+    } else if (period === '6months' || period === 'ytd') {
+      // Monthly revenue
+      const monthMap = {};
+      let iter = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      while (iter <= now) {
+        const key = `${iter.getFullYear()}-${String(iter.getMonth()+1).padStart(2,'0')}`;
+        monthMap[key] = 0;
+        iter.setMonth(iter.getMonth()+1);
+      }
+      paid.forEach(ev => {
+        const d = new Date(ev.starts_at);
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        if (monthMap[key] !== undefined) monthMap[key] += centsToDollars((ev.price_in_cents||0) * (ev.rsvp_count||0));
+      });
+      Object.keys(monthMap).forEach(k => {
+        const [y,m] = k.split('-');
+        const label = new Date(Number(y), Number(m)-1, 1).toLocaleDateString('en-US',{ month:'short', year:'2-digit' });
+        dataPoints.push({ label, value: monthMap[k] });
+      });
     } else {
-      const monthKeys=[];let iter=new Date(startDate);while(iter<=now){monthKeys.push(iter.toLocaleDateString('en-US',{month:'short',year:'2-digit'}));iter.setMonth(iter.getMonth()+1);}const monthlyMap={};relevant.forEach(ev=>{const key=new Date(ev.starts_at).toLocaleDateString('en-US',{month:'short',year:'2-digit'});monthlyMap[key]=(monthlyMap[key]||0)+((ev.price_in_cents||0)*(ev.rsvp_count||0))/100;});monthKeys.forEach(k=>{if(monthlyMap[k]) cumulative+=monthlyMap[k];dataPoints.push({label:k,value:cumulative});});}
-    if(dataPoints.length===1){dataPoints.unshift({label:dataPoints[0].label,value:0});}
-    const milestones=[0,500,1000,2500,5000,7500,10000,15000];
-    const achievedMilestones=milestones.filter(m=>cumulative>=m);
-    const nextMilestone=milestones.find(m=>cumulative<m);
-    const milestoneData=[
-      { amount: 0, emoji: "🎯", title: "The Beginning", description: "Every journey starts somewhere" },
-      { amount: 500, emoji: "💪", title: "Half a Stack", description: "500 bucks from your own community? Respect." },
-      { amount: 1000, emoji: "💸", title: "$1K Club", description: "A grand earned from hosting. You built that." },
-      { amount: 2500, emoji: "🚀", title: "Making Moves", description: "You're starting to make real noise. People are vibing." },
-      { amount: 5000, emoji: "🏆", title: "Five Racks Deep", description: "$5K earned from your events — that's legacy in progress." },
-      { amount: 7500, emoji: "🧠", title: "Growth Minded", description: "You're not just earning — you're scaling." },
-      { amount: 10000, emoji: "👑", title: "10K Milestone", description: "Ten. Thousand. Dollars. Made from moments. You're that host." },
-      { amount: 15000, emoji: "🔱", title: "Local Legend", description: "You're in rare air. VybeLocal's never seen someone like you." }
-    ];
-    
+      // All time: 3-month buckets
+      const bucketMap = {};
+      let iter = new Date(startDate.getFullYear(), startDate.getMonth() - (startDate.getMonth()%3), 1);
+      while (iter <= now) {
+        const y = iter.getFullYear();
+        const m = iter.getMonth();
+        const key = `${y}-Q${Math.floor(m/3)+1}`;
+        bucketMap[key] = 0;
+        iter.setMonth(iter.getMonth()+3);
+      }
+      paid.forEach(ev => {
+        const d = new Date(ev.starts_at);
+        const key = `${d.getFullYear()}-Q${Math.floor(d.getMonth()/3)+1}`;
+        if (bucketMap[key] !== undefined) bucketMap[key] += centsToDollars((ev.price_in_cents||0) * (ev.rsvp_count||0));
+      });
+      Object.keys(bucketMap).forEach(k => {
+        const [y,q] = k.split('-Q');
+        const startMonth = (Number(q)-1)*3;
+        const range = `${new Date(Number(y), startMonth, 1).toLocaleDateString('en-US',{ month:'short' })}–${new Date(Number(y), startMonth+2, 1).toLocaleDateString('en-US',{ month:'short' })} ${String(y).slice(2)}`;
+        dataPoints.push({ label: range, value: bucketMap[k] });
+      });
+    }
 
+    // Ensure at least two points
+    if (dataPoints.length === 1) {
+      const single = dataPoints[0];
+      dataPoints.unshift({ label: single.label, value: 0 });
+    }
 
-    return { 
-      data: dataPoints, 
-      type:'line', 
-      title:'Total Revenue Timeline', 
-      totalRevenue: cumulative, 
-      achievedMilestones,
-      nextMilestone,
-      milestones: milestoneData
-    };
+    return { data: dataPoints, type: 'line', title: 'Revenue Over Time' };
   };
 
   const generateRevenueChart = (events) => {
@@ -1990,7 +2114,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       <MetricCard
         title="Avg Revenue per Event (Last 6 Months)"
         value={`$${(((hostMonthly.aggregates?.['6months']?.gross_revenue_cents || 0) / 100) / Math.max(hostMonthly.aggregates?.['6months']?.events || 0, 1)).toFixed(2)}`}
-        subtitle={`Top earners show inside. Across ${hostMonthly.aggregates?.['6months']?.events || 0} ${paidOnly ? 'paid ' : ''}events`}
+        subtitle={`Across ${hostMonthly.aggregates?.['6months']?.events || 0} ${paidOnly ? 'paid ' : ''}events`}
         icon="cash"
         color="#f59e0b"
         metricType="avgRevenue"
@@ -1999,9 +2123,9 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
       />
 
       <MetricCard
-        title="Total Revenue Timeline"
-        value={`$${analytics.totalRevenue.toFixed(2)}`}
-        subtitle={`From ${paidOnly ? 'paid events only' : 'all events'}`}
+        title="Revenue (Last 6 Months)"
+        value={`$${(revenueSeriesByPeriod?.['6months']?.series?.reduce((s,r)=>s+Number(r.value||0),0) || 0).toFixed(2)}`}
+        subtitle={`Net to host over the last 6 months`}
         icon="trending-up"
         color="#8b5cf6"
         metricType="revenueTimeline"
@@ -2290,14 +2414,14 @@ const ChartContainer = ({ chartData, color, aiEnabled=true, timePeriod }) => {
         </Text>
       )}
 
-      {chartData.type === 'line' && chartData.title.includes('Total Revenue Timeline') && (
+      {chartData.type === 'line' && chartData.title.includes('Revenue Over Time') && (
         <Text style={{ 
           fontSize: 13, 
           color: '#6b7280', 
           marginBottom: 16,
           lineHeight: 18 
         }}>
-          This timeline tracks every dollar your Vybes have earned, showing how your total revenue has grown over time. Each point on the line marks a moment the crowd showed up, tickets were sold, and you added to your running total.
+          Net revenue over time. Points are daily for 30d, monthly for 6M/YTD, and 3‑month buckets for all‑time. Clean read on momentum without cumulative stacking.
         </Text>
       )}
 
@@ -2348,12 +2472,22 @@ const ChartContainer = ({ chartData, color, aiEnabled=true, timePeriod }) => {
                 borderBottomWidth: idx === chartData.data.length - 1 ? 0 : 1,
                 borderBottomColor: '#f3f4f6'
               }}>
-                <Text style={{ fontSize: 12, color: '#6b7280', width: 110 }}>{row.label}</Text>
-                <Text style={{ fontSize: 13, color: '#1f2937', fontWeight: '600', textAlign: 'right', width: 60 }}>{Number(row.value || 0)}</Text>
-                <Text style={{ fontSize: 12, color: row.delta > 0 ? '#10b981' : row.delta < 0 ? '#ef4444' : '#6b7280', textAlign: 'right', width: 70 }}>
-                  {typeof row.delta === 'number' ? `${sign}${Math.abs(row.delta)}` : '—'}
+                <Text style={{ fontSize: 12, color: '#6b7280', flex: 1, paddingRight: 8 }} numberOfLines={2}>{row.label}</Text>
+                <Text style={{ fontSize: 13, color: '#1f2937', fontWeight: '600', textAlign: 'right', width: 90 }}>
+                  {chartData.tableKind === 'topRevenue' ? `$${Number(row.value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : Number(row.value || 0)}
                 </Text>
-                <Text style={{ fontSize: 12, color: row.pct > 0 ? '#10b981' : row.pct < 0 ? '#ef4444' : '#6b7280', textAlign: 'right', width: 60 }}>{pct}</Text>
+                {chartData.tableKind === 'topRevenue' ? (
+                  <Text style={{ fontSize: 12, color: '#6b7280', textAlign: 'right', width: 70 }}>—</Text>
+                ) : (
+                  <Text style={{ fontSize: 12, color: row.delta > 0 ? '#10b981' : row.delta < 0 ? '#ef4444' : '#6b7280', textAlign: 'right', width: 70 }}>
+                    {typeof row.delta === 'number' ? `${sign}${Math.abs(row.delta)}` : '—'}
+                  </Text>
+                )}
+                {chartData.tableKind === 'topRevenue' ? (
+                  <Text style={{ fontSize: 12, color: '#6b7280', textAlign: 'right', width: 60 }}>—</Text>
+                ) : (
+                  <Text style={{ fontSize: 12, color: row.pct > 0 ? '#10b981' : row.pct < 0 ? '#ef4444' : '#6b7280', textAlign: 'right', width: 60 }}>{pct}</Text>
+                )}
               </View>
             );
           })}
@@ -2416,12 +2550,12 @@ const ChartContainer = ({ chartData, color, aiEnabled=true, timePeriod }) => {
       )}
 
       {/* AI Insight for Revenue Timeline Chart */}
-      {aiEnabled && chartData.type === 'line' && chartData.title.includes('Total Revenue Timeline') && (
+      {aiEnabled && chartData.type === 'line' && chartData.title.includes('Revenue Over Time') && (
         <View style={{ marginTop: 20 }}>
           <AIInsightCard 
             chartType="revenueTimeline"
             chartData={chartData}
-            context={{ timePeriod: 'current' }}
+            context={{ timePeriod }}
           />
         </View>
       )}
@@ -2476,6 +2610,19 @@ const ChartContainer = ({ chartData, color, aiEnabled=true, timePeriod }) => {
           </Text>
         </View>
       )}
+
+      <View style={{
+        flexDirection: 'row',
+        justifyContent: 'center',
+        paddingTop: 12
+      }}>
+        <Text style={{ fontSize: 13, color: '#6b7280' }}>
+          { (chartData?.title || '').includes('Revenue')
+            ? null
+            : <>Total Growth: <Text style={{ fontWeight: '600', color: '#1f2937' }}>${maxValue}</Text></>
+          }
+        </Text>
+      </View>
     </View>
   );
 };
@@ -2588,6 +2735,7 @@ const LineChart = ({ data, color }) => {
   const maxValue = Math.max(...values);
   const minValue = Math.min(...values);
   const range = maxValue - minValue || 1;
+  const totalValue = values.reduce((sum, v) => sum + v, 0);
   
   const chartWidth = 280;
   const chartHeight = 120;
@@ -2698,7 +2846,7 @@ const LineChart = ({ data, color }) => {
         paddingTop: 12
       }}>
         <Text style={{ fontSize: 13, color: '#6b7280' }}>
-          Total Growth: <Text style={{ fontWeight: '600', color: '#1f2937' }}>{maxValue}</Text> RSVPs
+          Total Growth: <Text style={{ fontWeight: '600', color: '#1f2937' }}>${Number(totalValue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
         </Text>
       </View>
     </View>

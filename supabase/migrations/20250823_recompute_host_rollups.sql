@@ -98,7 +98,7 @@ begin
   select v_host,
          coalesce(sum(events_count),0),
          coalesce(sum(rsvps_total),0),
-         coalesce(sum(gross_revenue_cents),0),
+         coalesce(sum(net_to_host_cents),0),
          coalesce(sum(case when make_date(year, month, 1) >= (date_trunc('month', now()) - interval '6 months') then events_count else 0 end),0),
          0,
          coalesce(sum(refund_count),0),
