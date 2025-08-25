@@ -31,7 +31,6 @@ export default function NotificationModal({ visible, onClose }) {
       const data = await notificationUtils.getUserNotifications(user.id, 50);
       setNotifications(data || []);
     } catch (error) {
-      console.error('Error loading notifications:', error);
     } finally {
       setLoading(false);
     }
@@ -50,7 +49,6 @@ export default function NotificationModal({ visible, onClose }) {
       // Update local state
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
-      console.error('Error deleting notification:', error);
       Alert.alert('Error', 'Failed to delete notification');
     }
   };
@@ -77,7 +75,6 @@ export default function NotificationModal({ visible, onClose }) {
 
               setNotifications([]);
             } catch (error) {
-              console.error('Error clearing notifications:', error);
               Alert.alert('Error', 'Failed to clear notifications');
             }
           }

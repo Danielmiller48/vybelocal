@@ -73,7 +73,6 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
           eventData
         });
       } catch (error) {
-        console.error('Error calculating cancellation preview:', error);
         Alert.alert('Error', 'Failed to load cancellation details');
         onClose();
       } finally {
@@ -124,7 +123,6 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
           });
 
         if (strikeError) {
-          console.warn('Failed to record strike:', strikeError);
           // Don't fail the whole operation for strike recording
         }
       }
@@ -144,7 +142,6 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
       onConfirm({ success: true, eventId: event.id });
       
     } catch (error) {
-      console.error('Error canceling event:', error);
       Alert.alert('Error', error.message);
     } finally {
       setLoading(false);

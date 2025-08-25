@@ -29,7 +29,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
         .eq('event_id', event.id)
         .eq('user_id', user.id);
       if (!cancelled) {
-        if (error) console.error('RSVPButton: fetchJoined error', error);
+        if (error) {}
         setJoined((data?.length ?? 0) > 0);
       }
     };
@@ -46,7 +46,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
         .select('event_id', { count: 'exact' })
         .eq('event_id', event.id);
       if (!cancelled) {
-        if (error) console.error('RSVPButton: fetchCount error', error);
+        if (error) {}
         setRsvpCount(count ?? 0);
         if (typeof onCountChange === 'function') onCountChange(count ?? 0);
       }
@@ -79,7 +79,6 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
       // Insert RSVP row
       const { error } = await supabase.from('rsvps').insert({ event_id: event.id, user_id: user.id }, { ignoreDuplicates: true });
       if (error) {
-        console.error('RSVPButton: join error', error);
         Alert.alert('Error', 'Something went wrong.');
       } else {
         setJoined(true);
@@ -104,7 +103,6 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
           onPress: async () => {
             const { error } = await supabase.from('rsvps').delete().match({ event_id: event.id, user_id: user.id });
             if (error) {
-              console.error('RSVPButton: cancel error', error);
               Alert.alert('Error', 'Something went wrong.');
             } else {
               setJoined(false);

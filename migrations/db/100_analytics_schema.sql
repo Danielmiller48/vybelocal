@@ -8,3 +8,4 @@ alter schema analytics owner to postgres;
 commit;
 
 
+

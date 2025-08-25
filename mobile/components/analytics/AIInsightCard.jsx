@@ -27,7 +27,6 @@ const AIInsightCard = ({
         const result = await getInsightCached(chartType, chartData, context);
         setInsight(result);
       } catch (error) {
-        console.error('Failed to load AI insight:', error);
         setInsight({
           message: 'Unable to generate insights at this time.',
           recommendation: 'Please try again later.',

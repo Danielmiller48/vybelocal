@@ -82,7 +82,6 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
       const counts = await notificationUtils.getUnreadCounts(user.id);
       setUnreadCount(counts.total || 0);
     } catch (error) {
-      console.error('Error loading unread count:', error);
       setUnreadCount(0);
     }
   };
@@ -178,7 +177,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
           )}
         </TouchableOpacity>
         {avatar && (
-          <TouchableOpacity onPress={() => { (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('ProfileSettings'); }} style={{ marginRight:16 }} accessibilityLabel="Profile">
+          <TouchableOpacity onPress={() => { (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('Home', { screen: 'ProfileSettings' }); }} style={{ marginRight:16 }} accessibilityLabel="Profile">
             <Image source={{ uri: avatar }} style={{ width:34, height:34, borderRadius:17, borderWidth:2, borderColor:'#fff' }} />
           </TouchableOpacity>
         )}
@@ -207,7 +206,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
               {/* Account & Tools */}
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Account & Tools</Text>
-              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('ProfileSettings'); }} />
+              <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('Home', { screen: 'ProfileSettings' }); }} />
               <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
               <MenuItem icon="card-outline" label="Payment Methods" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/app/payments'); }} />
 

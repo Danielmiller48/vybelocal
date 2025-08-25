@@ -118,13 +118,11 @@ export const notificationUtils = {
         .limit(limit);
 
       if (error) {
-        console.error('Error getting user notifications:', error);
         return [];
       }
 
       return data || [];
     } catch (error) {
-      console.error('Error in getUserNotifications:', error);
       return [];
     }
   },

@@ -160,7 +160,6 @@ export default function EventChatModal({ visible, onClose, event }) {
         setConnectionStatus('connected');
 
       } catch (error) {
-        console.error('❌ Failed to setup real-time connection:', error);
         setConnectionStatus('error');
       }
     };

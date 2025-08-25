@@ -25,3 +25,4 @@ alter table analytics.host_monthly
 
 commit;
 
+

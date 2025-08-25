@@ -9,3 +9,4 @@ alter function analytics.rsvps_aggregate() set search_path = public, analytics;
 
 commit;
 
+

@@ -138,3 +138,4 @@ for each row execute function analytics.rsvps_aggregate();
 commit;
 
 
+

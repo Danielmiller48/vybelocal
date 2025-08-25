@@ -175,7 +175,6 @@ function TimelineEvent({ event, onCancel }) {
       const count = await notificationUtils.getEventUnreadCount(user.id, event.id);
       setUnreadCount(count);
     } catch (error) {
-      console.error('Error loading unread count:', error);
     }
   };
 
@@ -280,7 +279,7 @@ function TimelineEvent({ event, onCancel }) {
           
           {/* Share button positioned below attendee list */}
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
-            <TouchableOpacity onPress={() => console.log('Share event:', event.id)} style={styles.shareButton}>
+            <TouchableOpacity onPress={() => {}} style={styles.shareButton}>
               <Text style={styles.shareButtonText}>Share</Text>
             </TouchableOpacity>
           </View>

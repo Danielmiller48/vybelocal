@@ -297,7 +297,6 @@ export default function HostDrawerOverlay({ onCreated }) {
       const { data, error } = uploadResult;
       
       if(error) {
-        console.error('Supabase upload error:', error);
         throw error;
       }
       
@@ -323,12 +322,10 @@ export default function HostDrawerOverlay({ onCreated }) {
           }
         }
       } catch (verifyError) {
-        console.warn('Could not verify upload:', verifyError);
       }
       
       return filename;
     } catch (err) {
-      console.error('Image upload failed:', err);
       throw err;
     }
   }
@@ -416,7 +413,6 @@ export default function HostDrawerOverlay({ onCreated }) {
 
         // Removed background auto-subscribe for host chat to conserve resources
       } catch (rsvpErr) {
-        console.warn('Auto-RSVP failed:', rsvpErr);
       }
 
       // Trigger basic content moderation (keyword filtering only for mobile)
@@ -438,7 +434,6 @@ export default function HostDrawerOverlay({ onCreated }) {
         
 
       } catch (modError) {
-        console.warn('Moderation failed, auto-approving for mobile:', modError);
         // Auto-approve for mobile if moderation fails
         await supabase.from('events').update({ 
           status: 'approved',
@@ -961,12 +956,11 @@ async function moderateContent(eventData) {
 
     
     if (mod.error || !mod.results) {
-      console.error('OpenAI moderation failed:', mod);
       // Auto-approve when moderation fails (fail open for normal content)
       return { approved: true, aiScore: null, note: 'Auto-approved due to moderation failure' };
     }
   } catch (err) {
-    console.error('OpenAI moderation error:', err);
+    
     // Auto-approve when moderation fails (fail open for normal content)
     return { approved: true, aiScore: null, note: 'Auto-approved due to moderation failure' };
   }

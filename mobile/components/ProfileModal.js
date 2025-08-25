@@ -58,12 +58,11 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
   const checkFollowStatus = async () => {
     const hostId = profile?.uuid || profile?.id;
     if (!user || !hostId) {
-      console.log('Missing data:', { user: user?.id, profile: profile, hostId });
       return;
     }
     
     try {
-      console.log('Checking follow status for:', { follower: user.id, host: hostId });
+      
       const { data, error } = await supabase
         .from('host_follows')
         .select('id')
@@ -72,23 +71,18 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
         .maybeSingle();
       
       if (error) {
-        console.error('Error checking follow status:', error);
         return;
       }
       
-      console.log('Follow status result:', data);
       setIsFollowing(!!data);
     } catch (error) {
-      console.error('Error checking follow status:', error);
     }
   };
 
   const handleFollowToggle = async () => {
     const hostId = profile?.uuid || profile?.id;
-    console.log('handleFollowToggle called', { user: user?.id, hostId, isFollowing });
     
     if (!user || !hostId) {
-      console.log('Missing user or profile');
       Alert.alert('Error', 'User or profile information missing.');
       return;
     }
@@ -97,7 +91,6 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
     try {
       if (isFollowing) {
         // Unfollow
-        console.log('Attempting to unfollow...');
         const { error } = await supabase
           .from('host_follows')
           .delete()
@@ -105,16 +98,12 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
           .eq('host_id', hostId);
         
         if (error) {
-          console.error('Unfollow error:', error);
           throw error;
         }
-        console.log('Unfollow successful');
         setIsFollowing(false);
         Alert.alert('Success', 'You are no longer following this host.');
       } else {
         // Follow
-        console.log('Attempting to follow...');
-        console.log('Insert data:', { follower_id: user.id, host_id: hostId });
         
         const { data, error } = await supabase
           .from('host_follows')
@@ -125,16 +114,12 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
           .select();
         
         if (error) {
-          console.error('Follow error:', error);
-          console.error('Error details:', JSON.stringify(error, null, 2));
           throw error;
         }
-        console.log('Follow successful, inserted data:', data);
         setIsFollowing(true);
         Alert.alert('Success', 'You are now following this host! You\'ll see their events in your feed.');
       }
     } catch (error) {
-      console.error('Error toggling follow:', error);
       Alert.alert('Error', `Failed to update follow status: ${error.message || 'Please try again.'}`);
     } finally {
       setFollowLoading(false);
@@ -427,7 +412,6 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
                         });
 
                       if (reportError) {
-                        console.error('Report submission error:', reportError);
                         throw reportError;
                       }
 
@@ -441,7 +425,6 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
                           });
 
                         if (blockError) {
-                          console.error('Block submission error:', blockError);
                           // Don't throw here - report was successful, blocking failed
                           Alert.alert('Report Submitted', 'Your report was submitted, but there was an issue blocking the user. Please try blocking separately.');
                           return;
@@ -460,7 +443,6 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
                           : 'Thank you for your report. Our moderation team will review it shortly.'
                       );
                     } catch (error) {
-                      console.error('Error submitting report:', error);
                       Alert.alert('Error', `Failed to submit report: ${error.message || 'Please try again.'}`);
                     } finally {
                       setIsSubmitting(false);

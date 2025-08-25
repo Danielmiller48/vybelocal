@@ -156,12 +156,10 @@ export default function SimpleCropModal({ visible, imageUri, onClose, onCrop, as
           
           onCrop(result.uri);
         } catch (error) {
-          console.warn('Crop error:', error);
           onClose();
         }
       });
     } catch (error) {
-      console.warn('Image size error:', error);
       onClose();
     }
   };

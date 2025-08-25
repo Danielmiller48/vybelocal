@@ -16,3 +16,4 @@ grant execute on function analytics.host_30d_rsvps(uuid) to authenticated;
 commit;
 
 
+

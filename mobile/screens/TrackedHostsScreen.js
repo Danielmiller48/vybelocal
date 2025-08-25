@@ -32,7 +32,6 @@ export default function TrackedHostsScreen() {
         .eq('follower_id', user.id);
 
       if (followError) {
-        console.error('Error fetching followed hosts:', followError);
         return;
       }
 
@@ -67,7 +66,6 @@ export default function TrackedHostsScreen() {
         .order('starts_at', { ascending: true });
 
       if (error) {
-        console.error('Error fetching tracked host events:', error);
         return;
       }
 
@@ -130,7 +128,6 @@ export default function TrackedHostsScreen() {
           try {
             formattedStartsAt = new Date(event.starts_at).toISOString();
           } catch (dateError) {
-            console.error('Error formatting date for event:', event.id, event.starts_at);
             formattedStartsAt = new Date().toISOString(); // Fallback to current time
           }
 
@@ -166,13 +163,11 @@ export default function TrackedHostsScreen() {
           }
           flatListData.push({ type: 'event', ...ev, id: ev.id });
         } catch (e) {
-          console.error('Error grouping event by date:', ev.id, ev.starts_at, e);
         }
       });
 
       setListData(flatListData);
     } catch (error) {
-      console.error('Error loading tracked host events:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

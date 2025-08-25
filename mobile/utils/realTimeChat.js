@@ -208,7 +208,6 @@ class RealTimeChatManager {
           
           // 🚨 CIRCUIT BREAKER: Stop aggressive retries after 5 consecutive errors
           if (connection.errorCount >= 5) {
-            console.error('🛑 TOO MANY ERRORS - STOPPING POLLING for event:', eventId);
             connection.isActive = false;
             break;
           }
@@ -336,7 +335,6 @@ class RealTimeChatManager {
     
     // 🚨 DETECT EXCESSIVE INITIAL MESSAGE CALLS
     if (currentCount > 3) {
-      console.error('🚨 TOO MANY INITIAL MESSAGE CALLS for event:', eventId, 'count:', currentCount + 1);
     }
 
     const response = await fetch(`${this.baseUrl}/api/chat/messages?eventId=${eventId}`, {

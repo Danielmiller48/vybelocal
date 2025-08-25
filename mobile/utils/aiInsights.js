@@ -46,9 +46,7 @@ const generateAIInsight = async (chartType, data, context = {}) => {
     // Use real OpenAI for insights
     return await withBackoff(() => callOpenAI(chartType, data, context));
   } catch (error) {
-    console.error('OpenAI API Error:', error);
     // Fallback to enhanced conditional insights if OpenAI fails
-    console.log('Falling back to conditional insights...');
     
     try {
       switch (chartType) {
@@ -86,7 +84,6 @@ const generateAIInsight = async (chartType, data, context = {}) => {
         return generateGenericInsight(data, context);
       }
     } catch (fallbackError) {
-      console.error('Fallback insights error:', fallbackError);
       return {
         message: "Unable to generate insights at this time.",
         recommendation: "Please try again later.",

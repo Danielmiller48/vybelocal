@@ -44,7 +44,6 @@ async function callSecureAPI(endpoint, data, token) {
     
     return result;
   } catch (error) {
-    console.error(`API call to ${endpoint} failed:`, error);
     throw error;
   }
 }
@@ -77,7 +76,6 @@ async function uploadAvatar(imageUri, token) {
     } else {
       // If not JSON, get text for debugging
       const text = await response.text();
-      console.error('Non-JSON response:', text);
       throw new Error(`Server returned non-JSON response: ${response.status}`);
     }
     
@@ -87,7 +85,6 @@ async function uploadAvatar(imageUri, token) {
     
     return result;
   } catch (error) {
-    console.error('Avatar upload failed:', error);
     throw error;
   }
 }
@@ -183,7 +180,6 @@ export default function ProfileSettingsScreen() {
             });
           }
         } catch (error) {
-          console.error('Error checking deletion status:', error);
         }
       };
       
@@ -592,7 +588,7 @@ export default function ProfileSettingsScreen() {
                 })
               });
               
-              console.log('Delete account response status:', response.status);
+              
               
               if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -659,7 +655,6 @@ export default function ProfileSettingsScreen() {
         Alert.alert('Error', result.error || 'Failed to cancel deletion');
       }
     } catch (error) {
-      console.error('Cancel deletion error:', error);
       Alert.alert('Error', `Network error: ${error.message}`);
     } finally {
       setSaving(false);

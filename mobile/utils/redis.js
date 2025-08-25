@@ -17,20 +17,9 @@ const UPSTASH_REDIS_REST_TOKEN =
   Constants.expoConfig?.extra?.UPSTASH_REDIS_REST_TOKEN ||
   Constants.manifest?.extra?.UPSTASH_REDIS_REST_TOKEN;
 
-// Debug logging to see what's available
-if (__DEV__) {
-  console.log('Redis Config Debug:', {
-    'process.env.UPSTASH_REDIS_REST_URL': process.env.UPSTASH_REDIS_REST_URL ? 'FOUND' : 'MISSING',
-    'process.env.UPSTASH_REDIS_REST_TOKEN': process.env.UPSTASH_REDIS_REST_TOKEN ? 'FOUND' : 'MISSING',
-    'Constants.expoConfig?.extra': Constants.expoConfig?.extra,
-    'final UPSTASH_REDIS_REST_URL': UPSTASH_REDIS_REST_URL ? 'FOUND' : 'MISSING',
-    'final UPSTASH_REDIS_REST_TOKEN': UPSTASH_REDIS_REST_TOKEN ? 'FOUND' : 'MISSING'
-  });
-}
+// Debug logging removed
 
-if (!UPSTASH_REDIS_REST_URL || !UPSTASH_REDIS_REST_TOKEN) {
-  console.warn('Upstash Redis credentials not found. Chat functionality will be disabled.');
-}
+// Warning removed
 
 // Create Redis client
 export const redis = UPSTASH_REDIS_REST_URL && UPSTASH_REDIS_REST_TOKEN 
@@ -53,17 +42,7 @@ export const chatUtils = {
     const lockoutTime = eventEndTime + (60 * 60 * 1000); // 1 hour after event end
     const now = Date.now();
     
-    // Debug logging to verify UTC conversion (only log once per chat session)
-    if (__DEV__ && !chatUtils._lockCheckLogged) {
-      console.log('Chat lock check:', {
-        eventEndStr: eventEndTimeStr,
-        eventEndLocal: new Date(eventEndTime).toLocaleString(),
-        lockoutLocal: new Date(lockoutTime).toLocaleString(),
-        nowLocal: new Date(now).toLocaleString(),
-        isLocked: now > lockoutTime
-      });
-      chatUtils._lockCheckLogged = true; // Prevent repeated logging
-    }
+    // Debug logging removed
     
     return now > lockoutTime;
   },
@@ -138,7 +117,6 @@ export const chatUtils = {
         } catch (parseError) {
           // Only log parsing errors in dev mode and limit frequency
           if (__DEV__) {
-            console.warn('Chat message parse error:', parseError.message);
           }
           
           // Try different parsing approaches
@@ -149,7 +127,6 @@ export const chatUtils = {
           } catch (secondError) {
             // Skip malformed messages silently in production
             if (__DEV__) {
-              console.warn('Skipping malformed message');
             }
           }
         }
@@ -162,12 +139,10 @@ export const chatUtils = {
   // Subscribe to new messages (for real-time updates)
   // 🚫 DEPRECATED: Old 2-second polling system - REPLACED by real-time long-polling
   subscribeToMessages: async (eventId, event, callback) => {
-    console.warn('⚠️ DEPRECATED: subscribeToMessages() replaced by realTimeChatManager.subscribeToEvent()');
-    console.log('🔄 Use realTimeChatManager for efficient 30-second long-polling instead of 2-second spam');
+    // Deprecated warnings removed
     
     // NO MORE 2-SECOND POLLING! Return empty cleanup function
     return () => {
-      console.log('🚫 Old 2-second polling cleanup (disabled)');
     };
   },
 };

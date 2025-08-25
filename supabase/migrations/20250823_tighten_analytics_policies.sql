@@ -40,3 +40,4 @@ create policy host_monthly_read on analytics.host_monthly
 
 commit;
 
+

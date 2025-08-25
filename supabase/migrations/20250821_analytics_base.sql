@@ -153,3 +153,4 @@ create trigger trg_rsvps_aggregate after insert or update or delete on public.rs
 commit;
 
 
+

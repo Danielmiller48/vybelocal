@@ -114,7 +114,6 @@ export default function PastVybesScreen() {
       
       setListData(flatListData);
     } catch (error) {
-      console.error('Error loading past events:', error);
       setPastEvents([]);
     } finally {
       setLoading(false);
