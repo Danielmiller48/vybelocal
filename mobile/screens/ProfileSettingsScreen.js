@@ -23,7 +23,7 @@ const formatPretty = (digits) =>
 // API helper functions for backend endpoints
 // Use production waitlist API (Vercel)
 import Constants from 'expo-constants';
-const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || '';
 
 async function callSecureAPI(endpoint, data, token) {
   try {
@@ -325,12 +325,21 @@ export default function ProfileSettingsScreen() {
       
       // Get user token
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error('Authentication required');
-      }
+      if (!session?.access_token) throw new Error('Authentication required');
       
       // Call secure backend endpoint
-      const result = await callSecureAPI('email', { email: next }, session.access_token);
+      const url = `${API_BASE_URL || ''}/api/profile/email`;
+      console.log('[mobile][email-change] start', { url });
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ email: next }),
+      });
+      const text = await res.text();
+      console.log('[mobile][email-change] response', { status: res.status, body: text?.slice(0,200) });
+      let result = {};
+      try { result = JSON.parse(text); } catch {}
+      if (!res.ok) throw new Error(result?.error || text || `HTTP ${res.status}`);
       
       // Update rate limiting
       updateRateLimit('email');
@@ -340,7 +349,6 @@ export default function ProfileSettingsScreen() {
       setEmailStage('current');
       setVerifyKind('email');
       setVerifyModalOpen(true);
-      Alert.alert('Check your phone', result.message || `We sent a code to your current phone. Enter it to continue.`);
     } catch (e) {
       Alert.alert('Error', e.message || 'Unable to update email.');
     } finally {
@@ -540,7 +548,6 @@ export default function ProfileSettingsScreen() {
       setPhoneStage('current');
       setVerifyKind('phone');
       setVerifyModalOpen(true);
-      Alert.alert('Check your email', `We sent a code to your current email. Enter it to continue.`);
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not request code.');
     } finally {
@@ -575,7 +582,6 @@ export default function ProfileSettingsScreen() {
             body: JSON.stringify({ phone: digits })
           });
         } catch {}
-        Alert.alert('Check your phone', 'We sent a code to your new phone. Enter it to finish.');
         return;
       }
 
@@ -840,14 +846,10 @@ export default function ProfileSettingsScreen() {
                   onChangeText={setEmail}
                 />
                 <Text style={styles.settingHint}>Private. Used for RSVPs, receipts, and account help. Never for spam.</Text>
-                {!user?.email_confirmed_at ? (
-                  <Text style={[styles.settingHint, { color: '#f59e0b', marginTop: 8 }]}>
-                    We'll send you a quick code to make sure it's really you.
-                  </Text>
+                {(!user?.email_confirmed_at || pendingEmail || emailStage) ? (
+                  <Text style={[styles.settingHint, { color: '#f59e0b', marginTop: 8 }]}>Pending verification — follow the steps to finish.</Text>
                 ) : (
-                  <Text style={[styles.settingHint, { color: '#22c55e', marginTop: 8 }]}>
-                    All set — you're verified.
-                  </Text>
+                  <Text style={[styles.settingHint, { color: '#22c55e', marginTop: 8 }]}>All set — you're verified.</Text>
                 )}
                 <TouchableOpacity style={styles.hostBtn} onPress={handleChangeEmail} disabled={saving}>
                   <Text style={styles.hostBtnText}>{saving ? 'Sending…' : 'Update Email'}</Text>
@@ -867,14 +869,10 @@ export default function ProfileSettingsScreen() {
                   maxLength={10}
                 />
                 <Text style={styles.settingHint}>Private. Helps hosts reach you if something changes. No spam, ever.</Text>
-                {!phone || phone.length !== 10 ? (
-                  <Text style={[styles.settingHint, { color: '#f59e0b', marginTop: 8 }]}>
-                    We'll text you a one-time code. Standard rates may apply.
-                  </Text>
+                {(!phone || phone.length !== 10 || requestedPhone || phoneStage) ? (
+                  <Text style={[styles.settingHint, { color: '#f59e0b', marginTop: 8 }]}>Pending verification — follow the steps to finish.</Text>
                 ) : (
-                  <Text style={[styles.settingHint, { color: '#22c55e', marginTop: 8 }]}>
-                    Verified — you're good to go.
-                  </Text>
+                  <Text style={[styles.settingHint, { color: '#22c55e', marginTop: 8 }]}>Verified — you're good to go.</Text>
                 )}
                 {requestedPhone ? (
                   <></>
@@ -1059,6 +1057,7 @@ export default function ProfileSettingsScreen() {
                       : `Enter the code sent to +1 ${requestedPhone} to finish.`)
                 }
               </Text>
+              {/* Removed blocking alert; rely on modal only */}
               <TextInput
                 style={[styles.hostInput,{ marginTop: 12 }]}
                 keyboardType="number-pad"
