@@ -129,11 +129,17 @@ export default function ProfileSettingsScreen() {
   const [requesting, setRequesting] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [phoneStage, setPhoneStage] = useState(null); // 'current' | 'new'
 
   // email verify flow
   const [pendingEmail, setPendingEmail] = useState('');
   const [emailCode, setEmailCode] = useState('');
   const [emailVerifying, setEmailVerifying] = useState(false);
+  const [emailStage, setEmailStage] = useState(null); // 'current' | 'new'
+
+  // unified verification modal state
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
+  const [verifyKind, setVerifyKind] = useState(null); // 'email' | 'phone'
 
   // drawers
   const [openEmail, setOpenEmail] = useState(false);
@@ -331,7 +337,10 @@ export default function ProfileSettingsScreen() {
       
       setPendingEmail(next);
       setEmailCode('');
-      Alert.alert('Email sent', result.message || `We sent a code to your phone. Enter it below to confirm.`);
+      setEmailStage('current');
+      setVerifyKind('email');
+      setVerifyModalOpen(true);
+      Alert.alert('Check your phone', result.message || `We sent a code to your current phone. Enter it to continue.`);
     } catch (e) {
       Alert.alert('Error', e.message || 'Unable to update email.');
     } finally {
@@ -342,7 +351,7 @@ export default function ProfileSettingsScreen() {
   const verifyEmailCode = useCallback(async () => {
     const codeToVerify = (emailCode || '').trim();
     if (!pendingEmail || codeToVerify.length !== 6) {
-      Alert.alert('Missing info', 'Enter the 6-digit code to verify your email.');
+      Alert.alert('Missing info', 'Enter the 6-digit code.');
       return;
     }
 
@@ -351,28 +360,30 @@ export default function ProfileSettingsScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Authentication required');
 
-      const res = await fetch(`${API_BASE_URL}/api/profile/verify-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ code: codeToVerify })
-      });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Verification failed');
-
-      // Update local state to the new email from server
-      if (result?.email) setEmail(result.email);
-      setPendingEmail('');
-      setEmailCode('');
-      Alert.alert('Verified', 'Your email has been updated.');
+      if (emailStage === 'current') {
+        // Verify current factor (SMS to current phone), advance to send code to new email
+        const res = await fetch(`${API_BASE_URL}/api/profile/email/verify-current`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ code: codeToVerify })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Verification failed');
+        setEmailStage('new');
+        setEmailCode('');
+        // For link flow, close modal and instruct user to click link
+        setVerifyModalOpen(false);
+        Alert.alert('Check your new email', 'We sent a verification link to your new email. Click it to finish.');
+        return;
+      }
+      // emailStage === 'new' no longer requires code entry (link-based)
+      Alert.alert('Check your new email', 'Please use the verification link we sent to complete the change.');
     } catch (e) {
       Alert.alert('Error', e.message || 'Unable to verify email.');
     } finally {
       setEmailVerifying(false);
     }
-  }, [pendingEmail, emailCode]);
+  }, [pendingEmail, emailCode, emailStage]);
 
   const handleImagePicker = useCallback(async () => {
     try {
@@ -444,6 +455,8 @@ export default function ProfileSettingsScreen() {
   const uploadProfileImage = useCallback(async (imageUri) => {
     try {
       setSaving(true);
+      // prevent double taps while network in-flight
+      if (saving) return;
       
       // Get user token
       const { data: { session } } = await supabase.auth.getSession();
@@ -524,7 +537,10 @@ export default function ProfileSettingsScreen() {
       
       setRequestedPhone(digits);
       setCooldown(30);
-      Alert.alert('Code sent', `We sent a code to +1 ${digits}.`);
+      setPhoneStage('current');
+      setVerifyKind('phone');
+      setVerifyModalOpen(true);
+      Alert.alert('Check your email', `We sent a code to your current email. Enter it to continue.`);
     } catch (e) {
       Alert.alert('Error', e.message || 'Could not request code.');
     } finally {
@@ -535,30 +551,54 @@ export default function ProfileSettingsScreen() {
   const verifyPhoneCode = useCallback(async () => {
     const digits = requestedPhone;
     if (digits.length !== 10 || !code.trim()) {
-      Alert.alert('Missing info', 'Enter the code to verify your phone.');
+      Alert.alert('Missing info', 'Enter the 6-digit code.');
       return;
     }
     setVerifying(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/profile/phone/verify`, {
+      if (phoneStage === 'current') {
+        // Verify current email code; backend returns next step and pending new_phone
+        const res = await fetch(`${API_BASE_URL}/api/profile/phone/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ code: code.trim() })
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || 'Verification failed.');
+        setPhoneStage('new');
+        setCode('');
+        // Send Twilio Verify OTP to the new phone now
+        try {
+          await fetch(`${API_BASE_URL}/api/phone/request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify({ phone: digits })
+          });
+        } catch {}
+        Alert.alert('Check your phone', 'We sent a code to your new phone. Enter it to finish.');
+        return;
+      }
+
+      // phoneStage === 'new' → verify OTP sent to the new phone and apply
+      const res2 = await fetch(`${API_BASE_URL}/api/profile/phone/verify-new`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ code: code.trim() })
+        body: JSON.stringify({ phone: digits, code: code.trim() })
       });
-      if (!res.ok) throw new Error('Invalid code or verification failed.');
-
-      // Phone was updated server-side; reflect locally
+      const result2 = await res2.json();
+      if (!res2.ok) throw new Error(result2.error || 'Verification failed.');
 
       setPhone(digits);
       setRequestedPhone('');
       setCode('');
-      Alert.alert('Verified', 'All set.');
+      setPhoneStage(null);
+      Alert.alert('Verified', 'Your phone has been updated.');
     } catch (e) {
       Alert.alert('Error', e.message || 'Unable to verify phone.');
     } finally {
       setVerifying(false);
     }
-  }, [requestedPhone, code, session?.access_token]);
+  }, [requestedPhone, code, session?.access_token, phoneStage]);
 
   const handleDeleteAccount = useCallback(async () => {
     Alert.alert(
@@ -809,26 +849,10 @@ export default function ProfileSettingsScreen() {
                     All set — you're verified.
                   </Text>
                 )}
-                <TouchableOpacity style={styles.hostBtn} onPress={handleChangeEmail}>
-                  <Text style={styles.hostBtnText}>Update Email</Text>
+                <TouchableOpacity style={styles.hostBtn} onPress={handleChangeEmail} disabled={saving}>
+                  <Text style={styles.hostBtnText}>{saving ? 'Sending…' : 'Update Email'}</Text>
                 </TouchableOpacity>
-                {!!pendingEmail && (
-                  <View style={{ marginTop: 12 }}>
-                    <Text style={[styles.settingHint,{ marginBottom: 8 }]}>Enter the 6‑digit code we sent to your phone to confirm {pendingEmail}</Text>
-                    <TextInput
-                      style={styles.hostInput}
-                      keyboardType="number-pad"
-                      placeholder="123456"
-                      placeholderTextColor="#9ca3af"
-                      value={emailCode}
-                      onChangeText={setEmailCode}
-                      maxLength={6}
-                    />
-                    <TouchableOpacity style={[styles.hostBtn, { backgroundColor: '#CBB4E3' }]} onPress={verifyEmailCode} disabled={emailVerifying}>
-                      <Text style={[styles.hostBtnText, { color: '#fff' }]}>{emailVerifying ? 'Verifying…' : 'Verify Email'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                {/* Code entry handled in verification modal */}
               </View>
 
               <View style={[styles.settingItem, { marginTop: 24 }]}>
@@ -853,29 +877,7 @@ export default function ProfileSettingsScreen() {
                   </Text>
                 )}
                 {requestedPhone ? (
-                  <View style={{ marginTop: 12 }}>
-                    <Text style={[styles.settingHint,{ marginBottom: 8 }]}>Enter the 6‑digit code sent to +1 {requestedPhone}</Text>
-                    <TextInput
-                      style={styles.hostInput}
-                      keyboardType="number-pad"
-                      placeholder="123456"
-                      placeholderTextColor="#9ca3af"
-                      value={code}
-                      onChangeText={setCode}
-                      maxLength={6}
-                    />
-                    <TouchableOpacity style={[styles.hostBtn, { backgroundColor: '#CBB4E3' }]} onPress={verifyPhoneCode} disabled={verifying}>
-                      <Text style={[styles.hostBtnText, { color: '#fff' }]}>{verifying ? 'Verifying…' : 'Verify Phone'}</Text>
-                    </TouchableOpacity>
-                    <Text style={[styles.settingHint,{ textAlign:'center', marginTop:12 }]}>
-                      {cooldown>0 ? `Didn't get it? Resend in ${cooldown}s.` : ''}
-                    </Text>
-                    {cooldown===0 && (
-                      <TouchableOpacity style={[styles.hostBtn,{ marginTop:8 }]} onPress={requestPhoneCode}>
-                        <Text style={styles.hostBtnText}>Resend Code</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                  <></>
                 ) : (
                   <TouchableOpacity style={[styles.hostBtn, { backgroundColor: '#CBB4E3', marginTop: 8 }]} onPress={requestPhoneCode} disabled={requesting}>
                     <Text style={[styles.hostBtnText, { color: '#fff' }]}>{requesting ? 'Sending…' : 'Send Code'}</Text>
@@ -1038,6 +1040,54 @@ export default function ProfileSettingsScreen() {
             <View style={{ height: 32 }} />
           </ScrollView>
         </KeyboardAvoidingView>
+
+        {/* Verification Modal */}
+        {verifyModalOpen && (
+          <ModalCard 
+            visible={verifyModalOpen}
+            onClose={() => { setVerifyModalOpen(false); setVerifyKind(null); }}
+            title={verifyKind === 'email' ? (emailStage === 'current' ? 'Verify via SMS' : 'Verify new email') : (phoneStage === 'current' ? 'Verify via Email' : 'Verify new phone')}
+          >
+            <View>
+              <Text style={styles.settingHint}>
+                {verifyKind === 'email'
+                  ? (emailStage === 'current'
+                      ? `Enter the 6-digit code sent to your current phone to continue changing to ${pendingEmail}.`
+                      : `Enter the 6-digit code sent to ${pendingEmail} to finish.`)
+                  : (phoneStage === 'current'
+                      ? `Enter the 6-digit code sent to your email to continue changing your phone.`
+                      : `Enter the code sent to +1 ${requestedPhone} to finish.`)
+                }
+              </Text>
+              <TextInput
+                style={[styles.hostInput,{ marginTop: 12 }]}
+                keyboardType="number-pad"
+                placeholder="123456"
+                placeholderTextColor="#9ca3af"
+                value={verifyKind === 'email' ? emailCode : code}
+                onChangeText={verifyKind === 'email' ? setEmailCode : setCode}
+                maxLength={6}
+              />
+              <TouchableOpacity 
+                style={[styles.hostBtn, { backgroundColor: '#CBB4E3', marginTop: 10 }]}
+                onPress={verifyKind === 'email' ? verifyEmailCode : verifyPhoneCode}
+                disabled={verifyKind === 'email' ? emailVerifying : verifying}
+              >
+                <Text style={[styles.hostBtnText, { color: '#fff' }]}>Verify</Text>
+              </TouchableOpacity>
+              {verifyKind === 'phone' && (
+                <Text style={[styles.settingHint,{ textAlign:'center', marginTop:12 }]}>
+                  {cooldown>0 ? `Didn't get it? Resend in ${cooldown}s.` : ''}
+                </Text>
+              )}
+              {verifyKind === 'phone' && cooldown===0 && (
+                <TouchableOpacity style={[styles.hostBtn,{ marginTop:8 }]} onPress={requestPhoneCode}>
+                  <Text style={styles.hostBtnText}>Resend Code</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </ModalCard>
+        )}
 
         {/* Deletion Countdown Timer */}
         {deletionScheduled && timeRemaining && (
