@@ -150,6 +150,15 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
 
       <View ref={anchorRef} style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:16, paddingTop: insets.top, paddingBottom:12 }}>
         <Text style={{ fontSize:20, fontWeight:'700', flex:1, color:'#fff' }}>VybeLocal</Text>
+        {!!profile?.is_admin && (
+          <TouchableOpacity
+            onPress={() => { try { Linking.openURL('https://vybelocal.com/admin'); } catch {} }}
+            style={{ marginRight:16 }}
+            accessibilityLabel="Admin"
+          >
+            <Ionicons name="shield-checkmark-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={handleNotificationPress} style={{ marginRight:16, position: 'relative' }} accessibilityLabel="Notifications">
           <Ionicons name="notifications-outline" size={24} color="#fff" />
           {unreadCount > 0 && (
