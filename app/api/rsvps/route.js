@@ -5,6 +5,7 @@ import { createSupabaseServer } from '@/utils/supabase/server';
 export async function GET(request) {
   const url      = new URL(request.url);
   const eventId  = url.searchParams.get('eventId');
+  const joinedForMe = url.searchParams.get('joinedForMe');
 
   if (!eventId) {
     return NextResponse.json({ error: 'Missing eventId' }, { status: 400 });
@@ -20,13 +21,28 @@ export async function GET(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Optionally include whether current user has RSVP'd
+  let joined = false;
+  if (joinedForMe === '1' || joinedForMe === 'true') {
+    const { data: { user } } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+    if (user?.id) {
+      const { data: existing } = await supabase
+        .from('rsvps')
+        .select('id')
+        .eq('event_id', eventId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      joined = !!existing;
+    }
+  }
+
   // Fire‑and‑forget metric
   supabase
     .from('metrics')
     .insert({ action: 'rsvp_counted', user_id: null, event_id: eventId })
     .catch(() => {});
 
-  return NextResponse.json({ count });
+  return NextResponse.json({ count, joined });
 }
 
 export async function POST(request) {
@@ -105,4 +121,35 @@ export async function POST(request) {
     .catch(() => {});
 
   return NextResponse.json(inserted, { status: 201 });
+}
+
+export async function DELETE(request) {
+  const supabase = await createSupabaseServer();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  }
+
+  const { event_id } = await request.json().catch(() => ({}));
+  if (!event_id) {
+    return NextResponse.json({ error: 'Missing event_id' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('rsvps')
+    .delete()
+    .eq('event_id', event_id)
+    .eq('user_id', user.id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Metric (non-blocking)
+  supabase
+    .from('metrics')
+    .insert({ action: 'rsvp_removed', user_id: user.id, event_id })
+    .catch(() => {});
+
+  return NextResponse.json({ ok: true });
 }

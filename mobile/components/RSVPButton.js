@@ -4,6 +4,7 @@ import { TouchableOpacity, Text, ActivityIndicator, Alert, StyleSheet } from 're
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
+import Constants from 'expo-constants';
 import realTimeChatManager from '../utils/realTimeChat';
 import colors from '../theme/colors';
 
@@ -17,20 +18,25 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   const capacity = event?.rsvp_capacity ?? null;
   const isHost = user?.id === event?.host_id;
 
+  const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+
   // Fetch whether current user already RSVP'd
   useEffect(() => {
     if (!user) { setJoined(false); return; }
     let cancelled = false;
 
     const fetchJoined = async () => {
-      const { data, error } = await supabase
-        .from('rsvps')
-        .select('user_id')
-        .eq('event_id', event.id)
-        .eq('user_id', user.id);
-      if (!cancelled) {
-        if (error) {}
-        setJoined((data?.length ?? 0) > 0);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/rsvps?eventId=${encodeURIComponent(event.id)}&joinedForMe=1`, {
+          method: 'GET',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
+        const json = await res.json();
+        if (!cancelled) setJoined(!!json?.joined);
+      } catch {
+        if (!cancelled) setJoined(false);
       }
     };
     fetchJoined();
@@ -41,14 +47,19 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   useEffect(() => {
     let cancelled = false;
     const fetchCount = async () => {
-      const { count, error } = await supabase
-        .from('rsvps')
-        .select('event_id', { count: 'exact' })
-        .eq('event_id', event.id);
-      if (!cancelled) {
-        if (error) {}
-        setRsvpCount(count ?? 0);
-        if (typeof onCountChange === 'function') onCountChange(count ?? 0);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/rsvps?eventId=${encodeURIComponent(event.id)}`, { method: 'GET' });
+        const json = await res.json();
+        if (!cancelled) {
+          const count = json?.count ?? 0;
+          setRsvpCount(count);
+          if (typeof onCountChange === 'function') onCountChange(count);
+        }
+      } catch {
+        if (!cancelled) {
+          setRsvpCount(0);
+          if (typeof onCountChange === 'function') onCountChange(0);
+        }
       }
     };
     fetchCount();
@@ -76,19 +87,28 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
 
     setBusy(true);
     if (!joined) {
-      // Insert RSVP row
-      const { error } = await supabase.from('rsvps').insert({ event_id: event.id, user_id: user.id }, { ignoreDuplicates: true });
-      if (error) {
-        Alert.alert('Error', 'Something went wrong.');
-      } else {
+      // Insert RSVP via API
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch(`${API_BASE_URL}/api/rsvps`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ event_id: event.id }),
+        });
+        if (!res.ok) throw new Error('Failed');
         setJoined(true);
         const newCount = rsvpCount + 1;
         setRsvpCount(newCount);
         if (typeof onCountChange === 'function') onCountChange(newCount);
-
-        // Removed background auto-subscribe to conserve resources
+      } catch (e) {
+        Alert.alert('Error', 'Something went wrong.');
+      } finally {
+        setBusy(false);
       }
-      setBusy(false);
     } else {
       // Confirm cancellation
       Alert.alert('Cancel RSVP', 'Are you sure you want to cancel?', [
@@ -101,18 +121,27 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
           text: 'Yes',
           style: 'destructive',
           onPress: async () => {
-            const { error } = await supabase.from('rsvps').delete().match({ event_id: event.id, user_id: user.id });
-            if (error) {
-              Alert.alert('Error', 'Something went wrong.');
-            } else {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const token = session?.access_token;
+              const res = await fetch(`${API_BASE_URL}/api/rsvps`, {
+                method: 'DELETE',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ event_id: event.id }),
+              });
+              if (!res.ok) throw new Error('Failed');
               setJoined(false);
-              const newCount = rsvpCount - 1;
+              const newCount = Math.max(0, rsvpCount - 1);
               setRsvpCount(newCount);
               if (typeof onCountChange === 'function') onCountChange(newCount);
-
-              // Removed background auto-unsubscribe (connection no longer created)
+            } catch (e) {
+              Alert.alert('Error', 'Something went wrong.');
+            } finally {
+              setBusy(false);
             }
-            setBusy(false);
           },
         },
       ]);

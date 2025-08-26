@@ -5,6 +5,7 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import TimelineEvent from '../components/TimelineEvent';
 import TimelineSectionHeader from '../components/TimelineSectionHeader';
 import { supabase } from '../utils/supabase';
+import Constants from 'expo-constants';
 import { getSignedUrl } from '../utils/signedUrlCache';
 import { useAuth } from '../auth/AuthProvider';
 import { format } from 'date-fns';
@@ -15,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 export default function PastVybesScreen() {
   const { user } = useAuth();
+  const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
   const [pastEvents, setPastEvents] = useState([]);
   const [listData, setListData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -144,17 +146,26 @@ export default function PastVybesScreen() {
       const payload = {
         target_type: 'event',
         target_id: reportEvent.id,
-        reporter_id: user.id,
         user_id: reportEvent.host_id, // event owner
         reason_code: reportReason,
         details: reportReason === 'no_interaction' ? null : { explanation: reportExplanation.trim() },
-        severity: 1,
-        status: 'pending',
         source: 'user',
       };
 
-      const { error } = await supabase.from('flags').insert(payload);
-      if (error) throw error;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch(`${API_BASE_URL}/api/flags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
 
       setReportVisible(false);
       setReportEvent(null);
