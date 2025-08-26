@@ -1,6 +1,6 @@
-// mobile/components/HostDrawerOverlay.js
+﻿// mobile/components/HostDrawerOverlay.js
 import React, { useRef, useState } from 'react';
-import { Animated, Dimensions, TouchableOpacity, StyleSheet, View, TextInput, Text, ScrollView, Alert, Modal, Keyboard, Platform, Image, Easing } from 'react-native';
+import { Animated, Dimensions, TouchableOpacity, StyleSheet, View, TextInput, Text, ScrollView, Alert, Modal, Keyboard, Platform, Image, Easing, ToastAndroid } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
@@ -15,6 +15,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 function getCardAspect(){
   // EventCard now uses 4:3 aspect ratio
@@ -41,7 +42,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   const sheetY = useRef(new Animated.Value(sheetH - peek)).current;
   const [open, setOpen] = useState(false);
 
-  const openPos = sheetH * 0.25;
+  const openPos = Math.max(0, (sheetH * 0.25) - 150);
   const toggle = () => {
     Animated.timing(sheetY, { toValue: open ? sheetH - peek : openPos, duration: 300, useNativeDriver: true }).start();
     setOpen(!open);
@@ -184,6 +185,7 @@ export default function HostDrawerOverlay({ onCreated }) {
      });
      if(!res.canceled){
        const uri = res.assets[0].uri;
+       try { console.log('[image] picked uri:', uri); } catch {}
        setImageUri(uri);
      }
    }
@@ -297,6 +299,7 @@ export default function HostDrawerOverlay({ onCreated }) {
       const { data, error } = uploadResult;
       
       if(error) {
+        console.error('Supabase upload error:', error);
         throw error;
       }
       
@@ -322,10 +325,12 @@ export default function HostDrawerOverlay({ onCreated }) {
           }
         }
       } catch (verifyError) {
+        console.warn('Could not verify upload:', verifyError);
       }
       
       return filename;
     } catch (err) {
+      console.error('Image upload failed:', err);
       throw err;
     }
   }
@@ -374,15 +379,24 @@ export default function HostDrawerOverlay({ onCreated }) {
   const submitEvent = async (vals) => {
     setBusy(true);
     try {
-      let img_path = null;
-      if (vals.image) {
-        img_path = await uploadImageMobile(vals.image);
-      }
+      let created = false;
+      const extractError = async (resp) => {
+        try {
+          const text = await resp.text();
+          try {
+            const j = JSON.parse(text);
+            return j?.reason || j?.error || j?.message || text || 'Unknown error';
+          } catch (_) {
+            return text || 'Unknown error';
+          }
+        } catch (_) {
+          return 'Unknown error';
+        }
+      };
 
       const baseCents = paid ? Math.round((vals.price_in_cents || 0) * 100) : null;
 
       const payload = {
-        host_id: user?.id ?? null,
         title: vals.title,
         vibe: vals.vibe,
         description: vals.description || null,
@@ -392,58 +406,32 @@ export default function HostDrawerOverlay({ onCreated }) {
         refund_policy: paid ? vals.refund_policy : "no_refund",
         price_in_cents: baseCents,
         rsvp_capacity: vals.rsvp_capacity,
-        img_path,
-        status: "pending", // Match web version
+        img_path: null,
       };
 
-      // Insert directly into Supabase (mobile doesn't have access to Next.js API routes)
-      const { data, error } = await supabase.from('events').insert(payload).select().single();
-      
-      if (error) {
-        throw new Error(error.message || 'Submission failed');
+      // Secure backend route handles auth, moderation, creation, auto-RSVP, and notification
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error('Not authenticated');
+      // console.log('[createEvent] POST /api/events payload', payload);
+      const resp = await fetch('https://vybelocal.com/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) {
+        throw new Error(await extractError(resp));
       }
+      created = true; // success status reached; even if parsing fails, event likely created
+      const json = await resp.json();
+      const data = json?.event;
+      // console.log('[createEvent] success event id', data?.id);
 
-      // Auto-RSVP the host
-      try {
-        await supabase.from('rsvps').insert({
-          event_id: data.id,
-          user_id: user.id,
-          paid: payload.price_in_cents ? true : false,
-        });
-
-        // Removed background auto-subscribe for host chat to conserve resources
-      } catch (rsvpErr) {
+      // Immediate success feedback (do not block on image upload)
+      if (Platform.OS === 'android') {
+        try { ToastAndroid.show('Your event is live! Tap the bell to share.', ToastAndroid.SHORT); } catch {}
       }
-
-      // Trigger basic content moderation (keyword filtering only for mobile)
-      try {
-        const moderationResult = await moderateContent(data);
-        if (!moderationResult.approved) {
-          // Delete the event if moderation fails
-          await supabase.from('events').delete().eq('id', data.id);
-          Alert.alert('Content Moderation Failed', moderationResult.reason || 'Your content violates community guidelines');
-          return;
-        }
-        
-        // Update event status to approved if moderation passes
-        await supabase.from('events').update({ 
-          status: 'approved',
-          ai_score: moderationResult.aiScore,
-          updated_at: new Date().toISOString()
-        }).eq('id', data.id);
-        
-
-      } catch (modError) {
-        // Auto-approve for mobile if moderation fails
-        await supabase.from('events').update({ 
-          status: 'approved',
-          ai_score: null,
-          updated_at: new Date().toISOString()
-        }).eq('id', data.id);
-      }
-
-      Alert.alert('Success', 'Event created successfully! 🎉');
-      // Reset form
+      // Reset form immediately on success
       setTitle('');
       setDesc('');
       setAddress('');
@@ -451,12 +439,139 @@ export default function HostDrawerOverlay({ onCreated }) {
       setPrice('');
       setPaid(false);
       setImageUri(null);
+      try { Keyboard.dismiss(); } catch {}
       toggle();
       onCreated?.();
+      // Show success alert on iOS (and as a fallback) after closing drawer
+      setTimeout(() => {
+        try { Alert.alert('Success', 'Your event is live! Tap the bell to share.'); } catch {}
+      }, 300);
+
+      // Server already handles moderation/approval and auto-RSVP via triggers
+      // If an image was selected, upload via presign + commit flow (run in background)
+      if (vals.image && data?.id) {
+        (async () => {
+          try {
+            // Compress image to speed up upload
+            let workingUri = vals.image;
+            try {
+              const manip = await ImageManipulator.manipulateAsync(
+                vals.image,
+                [{ resize: { width: 1280 } }],
+                { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
+              );
+              workingUri = manip.uri || vals.image;
+            } catch {}
+            // Removed noisy logs after verifying upload works
+
+            // Build a non-empty blob from the (possibly compressed) uri
+            let blob;
+            try {
+              // Prefer fetch() for RN/Expo compatibility
+              const primaryRes = await fetch(workingUri);
+              blob = await primaryRes.blob();
+              if (!blob || !('size' in blob) || blob.size === 0) throw new Error('empty blob from fetch');
+            } catch (e) {
+              // Fallback: read as base64 then re-fetch via a data URI to obtain a Blob
+              try {
+                const base64 = workingUri.startsWith('data:')
+                  ? (workingUri.split(',')[1] || '')
+                  : await FileSystem.readAsStringAsync(workingUri, { encoding: FileSystem.EncodingType.Base64 });
+                const dataUri = `data:image/jpeg;base64,${base64}`;
+                const resp2 = await fetch(dataUri);
+                blob = await resp2.blob();
+              } catch (e2) {
+                throw e2;
+              }
+            }
+
+            if (!blob || !('size' in blob) || blob.size === 0) {
+              try { console.warn('[image] empty blob built from uri:', workingUri); } catch {}
+              throw new Error('Empty image blob');
+            }
+            
+
+            const contentType = blob.type || 'image/jpeg';
+
+            // Presign request
+            const presignResp = await fetch('https://vybelocal.com/api/events/images/presign', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ eventId: data.id, contentType })
+            });
+            if (!presignResp.ok) throw new Error('Failed to presign image');
+            const presignJson = await presignResp.json();
+            const { path: signedPath, token: uploadToken } = presignJson || {};
+            if (!signedPath || !uploadToken) throw new Error('Invalid presign response');
+            
+
+            // Convert to ArrayBuffer to avoid RN zero-byte uploads
+            let arrayBuffer;
+            try {
+              arrayBuffer = await blob.arrayBuffer();
+            } catch (_) {
+              // Fallback from base64
+              const base64 = workingUri.startsWith('data:')
+                ? (workingUri.split(',')[1] || '')
+                : await FileSystem.readAsStringAsync(workingUri, { encoding: FileSystem.EncodingType.Base64 });
+              const byteChars = atob(base64);
+              const byteNums = new Array(byteChars.length);
+              for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+              arrayBuffer = new Uint8Array(byteNums).buffer;
+            }
+            
+
+            // Upload to signed URL via Supabase helper using ArrayBuffer body
+            const uploadRes = await supabase.storage
+              .from('event-images')
+              .uploadToSignedUrl(signedPath, uploadToken, arrayBuffer, { contentType, upsert: false });
+            if (uploadRes?.error) throw uploadRes.error;
+
+            // Commit to attach to event
+            const commitResp = await fetch('https://vybelocal.com/api/events/images/commit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ eventId: data.id, path: signedPath })
+            });
+            // Best-effort; if commit fails, event still exists
+          } catch (imgErr) {
+            console.warn('Image upload via presign failed; event created without image', imgErr?.message || imgErr);
+          }
+        })();
+      }
+
+      if (Platform.OS === 'android') {
+        try { ToastAndroid.show('Your event is live! Tap the bell to share.', ToastAndroid.SHORT); } catch {}
+      }
+      // Reset form immediately on success
+      setTitle('');
+      setDesc('');
+      setAddress('');
+      setCapacity('');
+      setPrice('');
+      setPaid(false);
+      setImageUri(null);
+      try { Keyboard.dismiss(); } catch {}
+      toggle();
+      onCreated?.();
+
+      // Show success alert on iOS (and as a fallback) after closing drawer
+      setTimeout(() => {
+        try { Alert.alert('Success', 'Your event is live! Tap the bell to share.'); } catch {}
+      }, 300);
     } catch (err) {
-      Alert.alert('Error', err.message);
+      if (!created) {
+        console.error('submitEvent error', err);
+      } else {
+        console.warn('submitEvent post-success nuisance error suppressed:', err?.message || err);
+      }
+      // Suppress nuisance popup if we already created the event
+      if (!created) {
+        Alert.alert('Error', err?.message || 'Unknown error');
+      }
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   // Modal confirm handlers
@@ -560,7 +675,7 @@ export default function HostDrawerOverlay({ onCreated }) {
 
         <ScrollView
           style={{ flex:1 }}
-          contentContainerStyle={{ padding:20, paddingTop:76, paddingBottom:200 + insets.bottom, flexGrow:1 }}
+          contentContainerStyle={{ padding:20, paddingTop:76, paddingBottom:50 + insets.bottom, flexGrow:1 }}
           bounces={false}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={(w,h)=>setContentH(h)}
@@ -956,11 +1071,12 @@ async function moderateContent(eventData) {
 
     
     if (mod.error || !mod.results) {
+      console.error('OpenAI moderation failed:', mod);
       // Auto-approve when moderation fails (fail open for normal content)
       return { approved: true, aiScore: null, note: 'Auto-approved due to moderation failure' };
     }
   } catch (err) {
-    
+    console.error('OpenAI moderation error:', err);
     // Auto-approve when moderation fails (fail open for normal content)
     return { approved: true, aiScore: null, note: 'Auto-approved due to moderation failure' };
   }

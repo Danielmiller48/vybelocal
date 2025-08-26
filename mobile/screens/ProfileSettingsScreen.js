@@ -23,7 +23,139 @@ const formatPretty = (digits) =>
 // API helper functions for backend endpoints
 // Use production waitlist API (Vercel)
 import Constants from 'expo-constants';
-const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || '';
+const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+
+async function connectivityProbe() {
+  try {
+    const t0 = Date.now();
+    const r1 = await fetch('https://vybelocal.com/api/debug', { method: 'GET' });
+    console.log('[probe] vybelocal.com', { status: r1.status, ms: Date.now() - t0 });
+  } catch (e) {
+    console.log('[probe] vybelocal.com network_error', e?.message || e, e?.nativeStack || e?.stack || '');
+  }
+  try {
+    const t1 = Date.now();
+    const r2 = await fetch('https://vybelocal-waitlist.vercel.app/api/debug', { method: 'GET' });
+    console.log('[probe] waitlist.vercel.app', { status: r2.status, ms: Date.now() - t1 });
+  } catch (e) {
+    console.log('[probe] waitlist.vercel.app network_error', e?.message || e, e?.nativeStack || e?.stack || '');
+  }
+}
+
+async function postEmailUpdateWithFallback(next, token) {
+  const urls = [
+    `${API_BASE_URL}/api/profile/email`,
+    `https://vybelocal-waitlist.vercel.app/api/profile/email`,
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    console.log('[mobile][email-change] start', { url });
+    try {
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ email: next }),
+      });
+      const text = await res.text();
+      console.log('[mobile][email-change] response', { url, status: res.status, body: text?.slice(0,200) });
+      let json = {};
+      try { json = JSON.parse(text); } catch {}
+      if (!res.ok) throw new Error(json?.error || text || `HTTP ${res.status}`);
+      return json;
+    } catch (e) {
+      console.log('[mobile][email-change] network_or_server_error', { url, message: e?.message || e, stack: e?.nativeStack || e?.stack || '' });
+      lastError = e;
+      // Only fall back on network-level failures; if we got a response with a status, the code above threw with message and we still try fallback
+      continue;
+    }
+  }
+  throw lastError || new Error('Network request failed');
+}
+
+async function postVerifyCurrentWithFallback(code, token) {
+  const urls = [
+    `${API_BASE_URL}/api/profile/email/verify-current`,
+    `https://vybelocal-waitlist.vercel.app/api/profile/email/verify-current`,
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    console.log('[mobile][email-verify-current] start', { url });
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ code }),
+      });
+      const text = await res.text();
+      console.log('[mobile][email-verify-current] response', { url, status: res.status, body: text?.slice(0,200) });
+      let json = {};
+      try { json = JSON.parse(text); } catch {}
+      if (!res.ok) throw new Error(json?.error || text || `HTTP ${res.status}`);
+      return json;
+    } catch (e) {
+      console.log('[mobile][email-verify-current] network_or_server_error', { url, message: e?.message || e, stack: e?.nativeStack || e?.stack || '' });
+      lastError = e;
+      continue;
+    }
+  }
+  throw lastError || new Error('Network request failed');
+}
+
+async function postPhoneStartWithFallback(phoneDigits, token) {
+  const urls = [
+    `https://vybelocal-waitlist.vercel.app/api/profile/phone`,
+    `${API_BASE_URL}/api/profile/phone`
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    console.log('[mobile][phone-start] start', { url });
+    try {
+      const res = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ phone: phoneDigits })
+      });
+      const text = await res.text();
+      console.log('[mobile][phone-start] response', { url, status: res.status, body: text?.slice(0,200) });
+      if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+      return true;
+    } catch (e) {
+      console.log('[mobile][phone-start] network_or_server_error', { url, message: e?.message || e, stack: e?.nativeStack || e?.stack || '' });
+      lastError = e;
+      continue;
+    }
+  }
+  throw lastError || new Error('Network request failed');
+}
+
+async function postPhoneVerifyNewWithFallback(phoneDigits, code, token) {
+  const urls = [
+    `https://vybelocal-waitlist.vercel.app/api/profile/phone/verify-new`,
+    `${API_BASE_URL}/api/profile/phone/verify-new`
+  ];
+  let lastError = null;
+  for (const url of urls) {
+    console.log('[mobile][phone-verify-new] start', { url });
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ phone: phoneDigits, code })
+      });
+      const text = await res.text();
+      console.log('[mobile][phone-verify-new] response', { url, status: res.status, body: text?.slice(0,200) });
+      let json = {};
+      try { json = JSON.parse(text); } catch {}
+      if (!res.ok) throw new Error(json?.error || text || `HTTP ${res.status}`);
+      return json;
+    } catch (e) {
+      console.log('[mobile][phone-verify-new] network_or_server_error', { url, message: e?.message || e, stack: e?.nativeStack || e?.stack || '' });
+      lastError = e;
+      continue;
+    }
+  }
+  throw lastError || new Error('Network request failed');
+}
 
 async function callSecureAPI(endpoint, data, token) {
   try {
@@ -140,6 +272,13 @@ export default function ProfileSettingsScreen() {
   // unified verification modal state
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
   const [verifyKind, setVerifyKind] = useState(null); // 'email' | 'phone'
+
+  // password change state
+  const [currentPwd, setCurrentPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [pwdSaving, setPwdSaving] = useState(false);
+  const [showPwd, setShowPwd] = useState({ current:false, next:false, confirm:false });
 
   // drawers
   const [openEmail, setOpenEmail] = useState(false);
@@ -327,19 +466,9 @@ export default function ProfileSettingsScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Authentication required');
       
-      // Call secure backend endpoint
-      const url = `${API_BASE_URL || ''}/api/profile/email`;
-      console.log('[mobile][email-change] start', { url });
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ email: next }),
-      });
-      const text = await res.text();
-      console.log('[mobile][email-change] response', { status: res.status, body: text?.slice(0,200) });
-      let result = {};
-      try { result = JSON.parse(text); } catch {}
-      if (!res.ok) throw new Error(result?.error || text || `HTTP ${res.status}`);
+      // Connectivity probe and fallback POST
+      await connectivityProbe();
+      const result = await postEmailUpdateWithFallback(next, session.access_token);
       
       // Update rate limiting
       updateRateLimit('email');
@@ -369,14 +498,9 @@ export default function ProfileSettingsScreen() {
       if (!session?.access_token) throw new Error('Authentication required');
 
       if (emailStage === 'current') {
-        // Verify current factor (SMS to current phone), advance to send code to new email
-        const res = await fetch(`${API_BASE_URL}/api/profile/email/verify-current`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-          body: JSON.stringify({ code: codeToVerify })
-        });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || 'Verification failed');
+        // Verify current factor (SMS to current phone), advance
+        await connectivityProbe();
+        await postVerifyCurrentWithFallback(codeToVerify, session.access_token);
         setEmailStage('new');
         setEmailCode('');
         // For link flow, close modal and instruct user to click link
@@ -487,6 +611,42 @@ export default function ProfileSettingsScreen() {
     }
   }, []);
 
+  // simple password checks
+  const validatePassword = useCallback((pwd) => {
+    if (!pwd || pwd.length < 8) throw new Error('Password must be at least 8 characters.');
+    if (!/[A-Za-z]/.test(pwd) || !/\d/.test(pwd)) throw new Error('Use letters and numbers.');
+    if (/\s/.test(pwd)) throw new Error('No spaces allowed in password.');
+    return true;
+  }, []);
+
+  const handleChangePassword = useCallback(async () => {
+    try {
+      if (pwdSaving) return;
+      setPwdSaving(true);
+      if (!currentPwd) throw new Error('Enter your current password.');
+      validatePassword(newPwd);
+      if (newPwd !== confirmPwd) throw new Error('Passwords do not match.');
+
+      // Re-authenticate to prove current password
+      const loginEmail = (email || user?.email || '').trim();
+      if (!loginEmail) throw new Error('Email not available for re-auth. Try again.');
+      const reauth = await supabase.auth.signInWithPassword({ email: loginEmail, password: currentPwd });
+      if (reauth?.error) throw new Error('Current password is incorrect.');
+
+      const upd = await supabase.auth.updateUser({ password: newPwd });
+      if (upd?.error) throw new Error(upd.error.message || 'Failed to update password.');
+
+      setCurrentPwd('');
+      setNewPwd('');
+      setConfirmPwd('');
+      Alert.alert('Success', 'Your password has been updated.');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Unable to update password.');
+    } finally {
+      setPwdSaving(false);
+    }
+  }, [pwdSaving, currentPwd, newPwd, confirmPwd, email, user?.email, validatePassword]);
+
   const removeAvatar = useCallback(async () => {
     try {
       setSaving(true);
@@ -533,12 +693,8 @@ export default function ProfileSettingsScreen() {
       
       setRequesting(true);
       if (!session?.access_token) throw new Error('Not authenticated');
-      const res = await fetch(`${API_BASE_URL}/api/profile/phone`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ phone: digits })
-      });
-      if (!res.ok) throw new Error('Failed to send code.');
+      await connectivityProbe();
+      await postPhoneStartWithFallback(digits, session.access_token);
       
       // Update rate limiting
       updateRateLimit('phone');
@@ -586,13 +742,8 @@ export default function ProfileSettingsScreen() {
       }
 
       // phoneStage === 'new' → verify OTP sent to the new phone and apply
-      const res2 = await fetch(`${API_BASE_URL}/api/profile/phone/verify-new`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({ phone: digits, code: code.trim() })
-      });
-      const result2 = await res2.json();
-      if (!res2.ok) throw new Error(result2.error || 'Verification failed.');
+      await connectivityProbe();
+      await postPhoneVerifyNewWithFallback(digits, code.trim(), session.access_token);
 
       setPhone(digits);
       setRequestedPhone('');
@@ -977,6 +1128,51 @@ export default function ProfileSettingsScreen() {
                   }}
                 >
                   <Text style={styles.hostBtnText}>Save Bio</Text>
+                </TouchableOpacity>
+              </View>
+            </HostSection>
+
+            {/* Security */}
+            <HostSection title="Security" icon="lock-closed" defaultOpen={false}>
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Change Password</Text>
+                <TextInput
+                  style={styles.hostInput}
+                  secureTextEntry={!showPwd.current}
+                  placeholder="Current password"
+                  placeholderTextColor="#9ca3af"
+                  value={currentPwd}
+                  onChangeText={setCurrentPwd}
+                />
+                <TextInput
+                  style={[styles.hostInput, { marginTop: 8 }]}
+                  secureTextEntry={!showPwd.next}
+                  placeholder="New password (min 8, letters & numbers)"
+                  placeholderTextColor="#9ca3af"
+                  value={newPwd}
+                  onChangeText={setNewPwd}
+                />
+                <TextInput
+                  style={[styles.hostInput, { marginTop: 8 }]}
+                  secureTextEntry={!showPwd.confirm}
+                  placeholder="Confirm new password"
+                  placeholderTextColor="#9ca3af"
+                  value={confirmPwd}
+                  onChangeText={setConfirmPwd}
+                />
+                <View style={{ flexDirection:'row', justifyContent:'space-between', marginTop: 8 }}>
+                  <TouchableOpacity onPress={()=> setShowPwd(p=>({ ...p, current: !p.current }))}>
+                    <Text style={styles.settingHint}>{showPwd.current ? 'Hide current' : 'Show current'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={()=> setShowPwd(p=>({ ...p, next: !p.next }))}>
+                    <Text style={styles.settingHint}>{showPwd.next ? 'Hide new' : 'Show new'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={()=> setShowPwd(p=>({ ...p, confirm: !p.confirm }))}>
+                    <Text style={styles.settingHint}>{showPwd.confirm ? 'Hide confirm' : 'Show confirm'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity style={[styles.hostBtn, { backgroundColor: '#CBB4E3', marginTop: 12 }]} onPress={handleChangePassword} disabled={pwdSaving}>
+                  <Text style={[styles.hostBtnText, { color:'#fff' }]}>{pwdSaving ? 'Updating…' : 'Update Password'}</Text>
                 </TouchableOpacity>
               </View>
             </HostSection>

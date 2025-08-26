@@ -25,6 +25,7 @@ import PastVybesScreen from './screens/PastVybesScreen';
 import TrackedHostsScreen from './screens/TrackedHostsScreen';
 import PushNotificationService from './utils/pushNotifications';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 
 // Make PushNotificationService available globally for testing
 if (__DEV__) {
@@ -123,6 +124,7 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="Forgot" component={ForgotPasswordScreen} />
         </>
       )}
     </Stack.Navigator>

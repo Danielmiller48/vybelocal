@@ -18,8 +18,11 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   const capacity = event?.rsvp_capacity ?? null;
   const isHost = user?.id === event?.host_id;
 
-  const API_BASE_URL = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+  const MAIN_API_BASE_URL = Constants.expoConfig?.extra?.mainApiBaseUrl || process.env?.EXPO_PUBLIC_MAIN_API_BASE_URL;
+  const API_BASE_URL = MAIN_API_BASE_URL || Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+  const WRITE_API_BASE_URL = Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
   const debug = (...args) => { try { console.log('[mobile][RSVP]', ...args); } catch {} };
+  debug('config', { MAIN_API_BASE_URL: !!MAIN_API_BASE_URL ? MAIN_API_BASE_URL : null, API_BASE_URL, WRITE_API_BASE_URL });
 
   // Fetch whether current user already RSVP'd
   useEffect(() => {
@@ -29,7 +32,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     const fetchJoined = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      const url = `${API_BASE_URL}/api/rsvps?eventId=${encodeURIComponent(event.id)}&joinedForMe=1`;
+      const url = `${WRITE_API_BASE_URL}/api/rsvps?eventId=${encodeURIComponent(event.id)}&joinedForMe=1`;
       debug('GET joined start', { url, hasToken: !!token });
       try {
         const res = await fetch(url, {
@@ -54,7 +57,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   useEffect(() => {
     let cancelled = false;
     const fetchCount = async () => {
-      const url = `${API_BASE_URL}/api/rsvps?eventId=${encodeURIComponent(event.id)}`;
+      const url = `${WRITE_API_BASE_URL}/api/rsvps?eventId=${encodeURIComponent(event.id)}`;
       debug('GET count start', { url });
       try {
         const res = await fetch(url, { method: 'GET' });
@@ -103,7 +106,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        const url = `${API_BASE_URL}/api/rsvps`;
+        const url = `${WRITE_API_BASE_URL}/api/rsvps`;
         const body = JSON.stringify({ event_id: event.id });
         debug('POST start', { url, hasToken: !!token, body });
         const res = await fetch(url, {
@@ -142,7 +145,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
             try {
               const { data: { session } } = await supabase.auth.getSession();
               const token = session?.access_token;
-              const url = `${API_BASE_URL}/api/rsvps`;
+              const url = `${WRITE_API_BASE_URL}/api/rsvps`;
               const body = JSON.stringify({ event_id: event.id });
               debug('DELETE start', { url, hasToken: !!token, body });
               const res = await fetch(url, {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, RefreshControl, SafeAreaView } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,7 @@ export default function TrackedHostsScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [events, setEvents] = useState([]);
   const [listData, setListData] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -198,10 +200,10 @@ export default function TrackedHostsScreen() {
   const getItemLayout = useCallback((data, index) => {
     const HEADER_HEIGHT = 60;
     const EVENT_HEIGHT = 300;
-    
+
     let offset = 0;
     let itemHeight = EVENT_HEIGHT;
-    
+
     for (let i = 0; i < index; i++) {
       if (data[i]?.type === 'header') {
         offset += HEADER_HEIGHT;
@@ -209,19 +211,24 @@ export default function TrackedHostsScreen() {
         offset += EVENT_HEIGHT;
       }
     }
-    
+
     if (data[index]?.type === 'header') {
       itemHeight = HEADER_HEIGHT;
     }
-    
+
     return { length: itemHeight, offset, index };
   }, []);
 
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
-        <LinearGradient colors={['#FFFFFF', '#FFE5D9']} style={styles.container}>
-          <AppHeader title="Tracked Hosts" />
+      <SafeAreaView style={{ flex:1, backgroundColor:'transparent' }} edges={['top','left','right']}>
+        <LinearGradient colors={['#FFFFFF', '#FFE5D9']} style={{ flex:1 }}>
+          {/* Page break spacer so content never tucks under header */}
+          <View style={{ height: insets.top + 56 }} />
+          {/* Header rendered absolutely to avoid shifting content */}
+          <View style={{ position:'absolute', top:0, left:0, right:0 }}>
+            <AppHeader />
+          </View>
           <View style={styles.emptyContainer}>
             <Ionicons name="person-outline" size={64} color="#BAA4EB" />
             <Text style={styles.emptyText}>Please log in to see tracked hosts</Text>
@@ -233,9 +240,14 @@ export default function TrackedHostsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#FFFFFF', '#FFE5D9']} style={styles.container}>
-        <AppHeader title="Tracked Hosts" />
+    <SafeAreaView style={{ flex:1, backgroundColor:'transparent' }} edges={['top','left','right']}>
+      <LinearGradient colors={['#FFFFFF', '#FFE5D9']} style={{ flex:1 }}>
+        {/* Page break spacer so content never tucks under header */}
+        <View style={{ height: insets.top + 56 }} />
+        {/* Header rendered absolutely to avoid shifting content */}
+        <View style={{ position:'absolute', top:0, left:0, right:0 }}>
+          <AppHeader />
+        </View>
         
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -291,6 +303,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingTop: 20,
   },
   loadingText: {
     fontSize: 16,
@@ -302,6 +315,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 32,
+    paddingTop: 20,
   },
   emptyTitle: {
     fontSize: 24,

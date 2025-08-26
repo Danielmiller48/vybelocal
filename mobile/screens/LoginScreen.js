@@ -80,6 +80,11 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        {/* Forgot password */}
+        <TouchableOpacity onPress={() => navigation.navigate('Forgot')} style={{ marginTop: 12 }}>
+          <Text style={{ color:'#fff' }}>Forgot your password?</Text>
+        </TouchableOpacity>
+
 
 
         {/* Link to Register */}
