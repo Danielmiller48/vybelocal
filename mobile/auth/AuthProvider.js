@@ -36,12 +36,26 @@ export function AuthProvider({ children }) {
       const uid = session?.user?.id;
       if (!uid) { setProfile(null); return; }
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
-          .select('id,name,avatar_url,stripe_account_id')
+          .select('id,name,avatar_url,avatar_path')
           .eq('id', uid)
           .maybeSingle();
-        if (!cancelled) setProfile(data || null);
+        if (error) { console.warn('[AuthProvider] profiles fetch error', error.message); }
+        let out = data || null;
+        try { console.log('[AuthProvider] profiles row', { uid, hasRow: !!out, avatar_url: out?.avatar_url || null, avatar_path: out?.avatar_path || null }); } catch {}
+        if (out && (!out.avatar_url || out.avatar_url === '/avatar-placeholder.png') && !out.avatar_path) {
+          try {
+            const { data: puc } = await supabase
+              .from('public_user_cards')
+              .select('avatar_url')
+              .eq('uuid', uid)
+              .maybeSingle();
+            if (puc?.avatar_url) out = { ...out, avatar_url: puc.avatar_url };
+            try { console.log('[AuthProvider] puc fallback', { found: !!puc?.avatar_url }); } catch {}
+          } catch {}
+        }
+        if (!cancelled) setProfile(out);
       } catch {
         if (!cancelled) setProfile(null);
       }

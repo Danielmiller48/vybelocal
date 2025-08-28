@@ -24,13 +24,49 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
     let cancelled = false;
     if (!user) { setAvatar(null); return; }
     (async () => {
-      const raw = profile?.avatar_url || profile?.avatar_path || null;
-      if (!raw) { setAvatar(null); return; }
-      if (typeof raw === 'string' && raw.startsWith('http')) { setAvatar(raw); return; }
+      const raw = profile?.avatar_path || profile?.avatar_url || null;
+      try { console.log('[AppHeader][avatar]', { userId: user?.id, raw }); } catch {}
+      if (typeof raw === 'string' && raw.length > 0) {
+        if (raw.startsWith('http')) {
+          try { console.log('[AppHeader][avatar] using raw http'); } catch {}
+          setAvatar(raw);
+          return;
+        }
+        try {
+          const signed = await getSignedUrl(supabase, 'profile-images', raw, 3600);
+          try { console.log('[AppHeader][avatar] signed from raw', { ok: !!signed }); } catch {}
+          if (!cancelled) setAvatar(signed ?? null);
+          return;
+        } catch (e) {
+          try { console.warn('[AppHeader][avatar] sign error', e?.message || e); } catch {}
+        }
+      }
+
+      // Fallback: query public_user_cards for current user avatar_url
       try {
-        const signed = await getSignedUrl(supabase, 'profile-images', raw, 3600);
-        if (!cancelled) setAvatar(signed ?? null);
-      } catch { if (!cancelled) setAvatar(null); }
+        const { data: puc } = await supabase
+          .from('public_user_cards')
+          .select('avatar_url')
+          .eq('uuid', user.id)
+          .maybeSingle();
+        const pucUrl = puc?.avatar_url || null;
+        if (pucUrl) {
+          if (pucUrl.startsWith('http')) {
+            try { console.log('[AppHeader][avatar] using puc avatar_url'); } catch {}
+            if (!cancelled) setAvatar(pucUrl);
+          } else {
+            const signed = await getSignedUrl(supabase, 'profile-images', pucUrl, 3600);
+            try { console.log('[AppHeader][avatar] puc signedUrl', { ok: !!signed }); } catch {}
+            if (!cancelled) setAvatar(signed ?? null);
+          }
+          return;
+        }
+      } catch (e) {
+        try { console.warn('[AppHeader][avatar] puc fetch error', e?.message || e); } catch {}
+      }
+
+      try { console.log('[AppHeader][avatar] no path or url'); } catch {}
+      setAvatar(null);
     })();
     return () => { cancelled = true; };
   }, [user?.id, profile?.avatar_url, profile?.avatar_path]);
@@ -231,7 +267,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
               {/* Brand / Extra */}
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Extra</Text>
-              <MenuItem icon="star-outline" label="Become a paid event Host" onPress={() => { closeMenu(); navigation.navigate('Host'); }} />
+              <MenuItem icon="cash-outline" label="Become a Monetized Host" onPress={() => { closeMenu(); navigation.navigate('Home', { screen: 'KybIntro' }); }} />
               <MenuItem icon="heart-outline" label="Support VybeLocal" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/patron'); }} />
               <MenuItem icon="logo-instagram" label="Follow Us" onPress={() => { closeMenu(); Linking.openURL('https://instagram.com/joinvybelocal'); }} />
 

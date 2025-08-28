@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import AppHeader from '../components/AppHeader';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import HostDrawerOverlay from '../components/HostDrawerOverlay';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
@@ -807,7 +808,7 @@ function AnalyticsContent({ events, paidOnly=false, setPaidOnly, joinDate, taxRa
   const [selectedMetric, setSelectedMetric] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [timePeriod, setTimePeriod] = useState('ytd'); // 'all', 'ytd', '6months', 'month'
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   
   const last30Days = new Date();
@@ -3335,7 +3336,8 @@ const AreaChart = ({ data, color }) => {
 };
 
 export default function HostCreateScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const tooltipBottom = insets.bottom + 33; // raised by 5px
   const [events, setEvents] = useState([]);
@@ -3831,12 +3833,22 @@ export default function HostCreateScreen() {
         {/* First-Timer Tooltip moved outside ScrollView */}
 
         {/* Payouts & Earnings */}
-        <HostSection title="Payouts & Earnings" icon="card">
-          <PlaceholderContent 
-            icon="card-outline"
-            title="Payouts & Earnings"
-            description="Track your earnings, manage payouts, and view transaction history"
-          />
+        <HostSection title="💸 Payouts & Earnings" icon="card">
+          {profile?.tilled_merchant_id || profile?.stripe_account_id ? (
+            <PlaceholderContent 
+              icon="cash"
+              title="Payouts enabled"
+              description="You're set to accept payments and receive payouts."
+            />
+          ) : (
+            <View style={{ padding: 12 }}>
+              <Text style={{ fontSize: 14, color: '#111827' }}>Start earning from your events through VybeLocal.</Text>
+              <Text style={{ fontSize: 14, color: '#111827', marginTop: 6 }}>Ready to charge for tickets and track your earnings?{"\n"}Become a Monetized Host with a quick setup.</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Home', { screen: 'KybIntro' })} style={{ marginTop:12, backgroundColor:'#BAA4EB', borderRadius:10, paddingVertical:12, alignItems:'center' }}>
+                <Text style={{ color:'#fff', fontWeight:'800' }}>Get Verified & Start Earning →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </HostSection>
 
         {/* Analytics */}

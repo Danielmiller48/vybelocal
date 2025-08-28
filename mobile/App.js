@@ -26,6 +26,8 @@ import TrackedHostsScreen from './screens/TrackedHostsScreen';
 import PushNotificationService from './utils/pushNotifications';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import KybOnboardingScreen from './screens/KybOnboardingScreen';
+import KybIntroScreen from './screens/KybIntroScreen';
 
 // Make PushNotificationService available globally for testing
 if (__DEV__) {
@@ -144,6 +146,8 @@ function HomeStackScreen() {
       <HomeStack.Screen name="PastVybes" component={PastVybesScreen} />
       <HomeStack.Screen name="TrackedHosts" component={TrackedHostsScreen} />
       <HomeStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+      <HomeStack.Screen name="KybIntro" component={KybIntroScreen} />
+      <HomeStack.Screen name="KybOnboarding" component={KybOnboardingScreen} />
     </HomeStack.Navigator>
   );
 }
