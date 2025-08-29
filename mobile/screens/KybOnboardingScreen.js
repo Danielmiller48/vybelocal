@@ -92,6 +92,30 @@ export default function KybOnboardingScreen() {
         return;
       }
 
+      // First, check existing status
+      const statusRes = await fetch(`${API_BASE_URL}/api/payments/tilled/status`, {
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+        }
+      });
+
+      const statusText = await statusRes.text();
+      let statusJson; try { statusJson = JSON.parse(statusText); } catch { statusJson = {}; }
+
+      if (statusRes.ok && statusJson.status) {
+        if (statusJson.status === 'has_application') {
+          Alert.alert('Application Found', `Your KYB application status: ${statusJson.application_status}. Continue to review.`);
+          animateTo(1, 1);
+          return;
+        } else if (statusJson.status === 'has_account') {
+          Alert.alert('Account Found', 'Connected account exists. Continue with KYB application.');
+          animateTo(1, 1);
+          return;
+        }
+      }
+
+      // No existing account/application, create new connected account
       const res = await fetch(`${API_BASE_URL}/api/payments/tilled/connected-account`, {
         method: 'POST',
         headers: { 
