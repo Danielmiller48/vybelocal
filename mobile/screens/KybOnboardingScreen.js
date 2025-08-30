@@ -266,6 +266,8 @@ export default function KybOnboardingScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>        
         <AppHeader />
         <ScrollView contentContainerStyle={{ padding:16 }}>
+          <View style={{ alignItems:'center' }}>
+            <View style={{ width:'100%', maxWidth:420 }}>
           <Animated.View style={{ opacity: fade, transform: [{ translateX: slide.interpolate({ inputRange:[-1,0,1], outputRange:[-24,0,24] }) }] }}>
             {step === 0 && (
               <View>
@@ -559,15 +561,19 @@ export default function KybOnboardingScreen() {
             </Animated.View>
           )}
 
+            </View>
+          </View>
         </ScrollView>
         {(step===1 || (step===2 && bizType==='sp')) && (
-          <View style={{ position:'absolute', left:16, right:16, bottom:24, flexDirection:'row', justifyContent:'space-between' }}>
-            <TouchableOpacity onPress={()=> (step===1 ? animateTo(0, -1) : animateTo(1, -1))} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-              <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={()=> (step===1 ? animateTo(2, 1) : animateTo(3, 1))} style={{ width:'48%', backgroundColor:'#3B82F6', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-              <Text style={{ color:'#fff', fontWeight:'700' }}>{step===1 ? 'Next' : 'Next'}</Text>
-            </TouchableOpacity>
+          <View style={{ position:'absolute', left:0, right:0, bottom:24, alignItems:'center' }}>
+            <View style={{ width:'100%', maxWidth:420, flexDirection:'row', justifyContent:'space-between', paddingHorizontal:16 }}>
+              <TouchableOpacity onPress={()=> (step===1 ? animateTo(0, -1) : animateTo(1, -1))} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={()=> (step===1 ? animateTo(2, 1) : animateTo(3, 1))} style={{ width:'48%', backgroundColor:'#3B82F6', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                <Text style={{ color:'#fff', fontWeight:'700' }}>{step===1 ? 'Next' : 'Next'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </SafeAreaView>
