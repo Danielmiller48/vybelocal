@@ -27,6 +27,7 @@ import PushNotificationService from './utils/pushNotifications';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import KybOnboardingScreen from './screens/KybOnboardingScreen';
+import { OnboardingDraftProvider } from './components/OnboardingDraftProvider';
 import KybIntroScreen from './screens/KybIntroScreen';
 
 // Make PushNotificationService available globally for testing
@@ -183,11 +184,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
+        <OnboardingDraftProvider>
         <NavigationContainer>
           <StatusBar style="light" backgroundColor="#000" />
           <RootNavigator />
           {!splashDone && <SplashScreen onFinish={() => setSplashDone(true)} />}
         </NavigationContainer>
+        </OnboardingDraftProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );
