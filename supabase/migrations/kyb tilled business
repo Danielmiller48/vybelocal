@@ -1,0 +1,77 @@
+{
+  "legal_entity": {
+    "mcc": "{{business.mcc}}",                  // ✅ Autofill: set from Class/Subclass choice in UI.
+    "region": "US",                             // ✅ Hard default (autofill).
+    "address": {                                // ✅ Collect: Business/LLC registered address.
+      "street": "{{business.address.street}}",
+      "street2": "{{business.address.street2||null}}",
+      "city": "{{business.address.city}}",
+      "state": "{{business.address.state}}",
+      "postal_code": "{{business.address.postal_code}}",
+      "country": "US"
+    },
+    "website": "https://vybelocal.com/h/{{hostSlug}}", // ✅ Autofill: profile URL, editable, fallback to vybelocal.com.
+    "is_501c3": false,                          // ⚪ Collect only if nonprofit toggle checked (else false).
+    "structure": "{{business.structure}}",      // ✅ Collect: llc / corporation / nonprofit.
+    "legal_name": "{{business.legal_name}}",    // ✅ Collect: Registered business name.
+
+    "principals": [                             // ⛔ PII direct → Tilled widget. We only pass email/phone basics.
+      {
+        "email": "{{account.email}}",           // ✅ Autofill from account; verified.
+        "phone": "{{account.phone_e164}}",      // ✅ Autofill from account; normalized.
+        "address": {                            // ✅ Collect/confirm: mailing address of control person.
+          "street": "{{account.address.street}}",
+          "street2": "{{account.address.street2||null}}",
+          "city": "{{account.address.city}}",
+          "state": "{{account.address.state}}",
+          "postal_code": "{{account.address.postal_code}}",
+          "country": "US"
+        },
+        "id_number": "⛔ OMIT VIA API",          // ⛔ Captured in hosted widget.
+        "date_of_birth": "⛔ OMIT VIA API",      // ⛔ Captured in hosted widget.
+        "job_title": "{{principal.job_title}}", // ✅ Collect: “owner”, “CEO”, etc.
+        "first_name": "{{principal.first_name}}", // ✅ Collect in widget.
+        "last_name": "{{principal.last_name}}",   // ✅ Collect in widget.
+        "is_applicant": true,                   // ✅ Always true (control person).
+        "is_control_prong": true,               // ✅ Control person = true.
+        "percent_ownership": 25                 // ✅ Collect if multi-owner; must >=25% for control.
+      }
+    ],
+
+    "bank_account": "⛔ OMIT VIA API",           // ⛔ Bank info always captured via Plaid/hosted widget.
+
+    "support_email": "{{business.support_email||account.email}}", // ✅ Autofill from account; fallback to VybeLocal support.
+    "support_phone": "{{business.support_phone||account.phone_e164}}", // ✅ Autofill or fallback support line.
+    "tax_id_number": "{{business.ein||null}}",  // ✅ Collect if EIN provided; else null (handled in widget).
+    "charity_document": null,                   // ⚪ Only if nonprofit.
+
+    "processing_volume": {                      // ✅ Autofill from event builder estimates.
+      "currency": "usd",
+      "high_ticket_amount": {{est.max_ticket_usd||200}},         // Autofill conservative estimate; editable.
+      "monthly_processing_volume": {{est.monthly_gross_usd||5000}}, // Estimate: avg ticket * RSVPs.
+      "monthly_transaction_count": {{est.monthly_txn||100}},     // Autofill rough txn count.
+      "average_transaction_amount_card": {{est.avg_ticket_usd||35}}, // Autofill avg ticket.
+      "average_transaction_amount_debit": {{est.avg_ticket_usd||35}}
+    },
+
+    "number_of_terminals": null,                // ✅ Always null (100% online).
+    "patriot_act_details": {
+      "business_license": null,                 // ⚪ Optional: if they upload metadata; widget handles docs.
+      "articles_of_incorporation": null         // ⚪ Optional: only for corp/LLC; via widget.
+    },
+
+    "product_description": "Local events hosted via VybeLocal", // ✅ Standard copy; editable.
+    "statement_descriptor": "VYBELOCAL*EVENT",  // ✅ Brand-safe; <=22 chars.
+    "date_of_incorporation": "{{business.date_of_incorp}}", // ✅ Collect: from LLC paperwork.
+    "existing_processor_name": "{{business.prev_processor||'None'}}", // ✅ Optional: Square/Stripe/etc.
+    "percent_business_to_business": {{est.b2b_pct||20}},  // ✅ Default low; editable.
+    "days_billed_prior_to_shipment": 0,          // ✅ Events = 0.
+    "card_checkout_method_breakdown": {          // ✅ Hard default: e-comm only.
+      "percent_swiped": 0,
+      "percent_e_commerce": 100,
+      "percent_manual_card_not_present": 0
+    }
+  },
+
+  "tos_acceptance": true                         // ✅ Captured via checkbox at submit.
+}

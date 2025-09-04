@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TextInput, FlatList, TouchableOpacity, Text } from 'react-native';
+import { View, TextInput, TouchableOpacity, Text } from 'react-native';
 import Constants from 'expo-constants';
 
 const MAPBOX_TOKEN = Constants.expoConfig?.extra?.mapboxToken || process.env?.EXPO_PUBLIC_MAPBOX_TOKEN || '';
@@ -69,17 +69,32 @@ export default function AddressAutocomplete({
         style={{ borderWidth:1, borderColor:'#e5e7eb', borderRadius:8, padding:10 }}
       />
       {open && results.length > 0 && (
-        <View style={{ position:'absolute', left:0, right:0, top:48, backgroundColor:'#fff', borderWidth:1, borderColor:'#e5e7eb', borderRadius:8, maxHeight:200, zIndex:20 }}>
-          <FlatList
-            keyboardShouldPersistTaps="handled"
-            data={results}
-            keyExtractor={(it) => it.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity onPress={() => selectItem(item)} style={{ padding:10 }}>
-                <Text style={{ color:'#111827' }}>{item.label}</Text>
-              </TouchableOpacity>
-            )}
-          />
+        <View
+          style={{
+            position:'absolute',
+            left:0,
+            right:0,
+            top:48,
+            backgroundColor:'#ffffff',
+            borderWidth:1,
+            borderColor:'#e5e7eb',
+            borderRadius:8,
+            maxHeight:200,
+            zIndex:50,
+            overflow:'hidden',
+            // subtle shadow
+            shadowColor:'#000',
+            shadowOpacity:0.12,
+            shadowOffset:{ width:0, height:2 },
+            shadowRadius:6,
+            elevation:8,
+          }}
+        >
+          {results.map((item) => (
+            <TouchableOpacity key={item.id} onPress={() => selectItem(item)} style={{ padding:10, backgroundColor:'#ffffff' }}>
+              <Text style={{ color:'#111827' }}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
     </View>

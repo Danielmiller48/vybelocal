@@ -92,7 +92,7 @@ export default function KybOnboardingScreen() {
 
       if (statusRes.ok && statusJson.status) {
         if (statusJson.status === 'has_application') {
-          Alert.alert('Application Found', `Your KYB application status: ${statusJson.application_status}. Continue to review.`);
+          Alert.alert('Application Found', `Your KYB status: ${statusJson.tilled_status}. Continue to review.`);
           animateTo(1, 1);
           return;
         } else if (statusJson.status === 'has_account') {
@@ -141,6 +141,10 @@ export default function KybOnboardingScreen() {
         Alert.alert('Please sign in');
         return;
       }
+      if (!agreed) {
+        Alert.alert('Agreement required', 'Please agree to the Terms before submitting.');
+        return;
+      }
 
       // Build payload matching API expectations
       const payload = {
@@ -181,7 +185,8 @@ export default function KybOnboardingScreen() {
             state: useBizAddr ? bizState : resState, 
             postal_code: useBizAddr ? bizZip : resZip 
           } 
-        }
+        },
+        tos_acceptance: true
       };
 
       const res = await fetch(`${API_BASE_URL}/api/payments/tilled/onboarding`, {

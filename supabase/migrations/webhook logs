@@ -1,0 +1,245 @@
+2025-09-03T21:29:16.664Z [info] [tilled:onboarding] submit {
+  reqId: '4mtxruwt',
+  userId: '44ece390-8c1c-4d39-a668-4a322c1e10a1',
+  idem: true,
+  bizType: 'sole_prop'
+}
+2025-09-03T21:29:18.616Z [info] [kyb:persist:check] {
+  userId: '44ece390…',
+  prev: 'started',
+  next: 'started',
+  ignore: true,
+  reason: 'no_change',
+  applicationId: null
+}
+
+
+
+2025-09-03T21:29:17.274Z [info] [tilled:webhook:recv] {
+  id: 'evt_MmQgs3ICes7ru0101nxBA',
+  type: 'account.updated',
+  accountId: 'acct_AsiCXLbN0gapU3To0l1nL',
+  merchantId: 'acct_AsiCXLbN0gapU3To0l1nL'
+}
+2025-09-03T21:29:17.279Z [info] [tilled:webhook:map] {
+  id: 'evt_MmQgs3ICes7ru0101nxBA',
+  type: 'account.updated',
+  mappedStatus: null,
+  requiredCount: 0,
+  bankStatus: null
+}
+
+
+2025-09-03T21:29:17.386Z [info] [tilled:webhook:recv] {
+  id: 'evt_iHKKILti0SfyaFCZhmm2J',
+  type: 'account.updated',
+  accountId: 'acct_AsiCXLbN0gapU3To0l1nL',
+  merchantId: 'acct_AsiCXLbN0gapU3To0l1nL'
+}
+2025-09-03T21:29:17.403Z [info] [tilled:webhook:map] {
+  id: 'evt_iHKKILti0SfyaFCZhmm2J',
+  type: 'account.updated',
+  mappedStatus: 'started',
+  requiredCount: 0,
+  bankStatus: null
+}
+
+
+2025-09-03T21:29:17.799Z [info] [tilled:webhook:recv] {
+  id: 'evt_C2Rb6UkXs22MjauYweVEm',
+  type: 'account.updated',
+  accountId: 'acct_AsiCXLbN0gapU3To0l1nL',
+  merchantId: 'acct_AsiCXLbN0gapU3To0l1nL'
+}
+2025-09-03T21:29:17.799Z [info] [tilled:webhook:map] {
+  id: 'evt_C2Rb6UkXs22MjauYweVEm',
+  type: 'account.updated',
+  mappedStatus: 'started',
+  requiredCount: 0,
+  bankStatus: null
+}
+
+{
+    "id": "acct_AsiCXLbN0gapU3To0l1nL",
+    "name": "Daniel Miller",
+    "type": "merchant",
+    "email": "daniel.miller48@gmail.com",
+    "status": "started",
+    "metadata": null,
+    "settings": {
+      "branding": {
+        "logo": null,
+        "primary_color": null,
+        "support_email": null,
+        "support_phone": null,
+        "dark_mode_logo": null,
+        "secondary_color": null,
+        "global_email_settings": null,
+        "global_dashboard_settings": null,
+        "global_email_notifications": null,
+        "merchant_support_center_url": null,
+        "merchant_support_center_name": null
+      }
+    },
+    "created_at": "2025-09-03T21:28:26.224Z",
+    "updated_at": "2025-09-03T21:29:17.142Z",
+    "capabilities": [
+      {
+        "id": "pp_gD5oF7Y4fvE7d7FP5nkkO",
+        "status": "active",
+        "attributes": null,
+        "product_code": {
+          "id": "pc_Nxrv7xqmKAd5YFr7kQygb",
+          "region": "US",
+          "currency": "usd",
+          "created_at": "2025-07-30T14:51:52.439Z",
+          "updated_at": "2025-08-28T21:29:10.055Z",
+          "description": "2.90% / $0.30 TXN / $10 CHBK/Reversals/Retrievals / $0 Monthly",
+          "payment_method_type": "card"
+        },
+        "pricing_template": {
+          "id": "pt_PxMiuaA4SUYUc5BxGw2VM",
+          "card": {
+            "markups": [
+              {
+                "rate": 3.1,
+                "card_type": "amex"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "diners"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "discover"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "jcb"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "maestro"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "mastercard"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "solo"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "visa"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "visa_debit"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "visa_electron"
+              },
+              {
+                "rate": 2.9,
+                "card_type": "interac"
+              }
+            ],
+            "reversal_fee": 1000,
+            "retrieval_fee": 1000,
+            "chargeback_fee": 1000,
+            "card_update_fee": 0,
+            "transaction_fee": 30,
+            "transaction_fee_type": "flat_rate",
+            "bank_account_change_fee": 500
+          },
+          "name": "CC-USD: 2.90% / $0.30 TXN / $10 CHBK/Reversals/Retrievals / $0 Monthly",
+          "status": "active",
+          "currency": "usd",
+          "account_id": "acct_3FZZP05T4PPwlYkkotk81",
+          "created_at": "2025-07-30T14:51:54.085Z",
+          "updated_at": "2025-07-30T14:51:54.085Z",
+          "account_monthly_fee": 0,
+          "payment_method_type": "card",
+          "account_monthly_minimum_fee": 0
+        },
+        "requirements_errors": [],
+        "onboarding_application_url": null,
+        "onboarding_application_progress": 100
+      }
+    ],
+    "bank_accounts": [
+      {
+        "id": "ba_flmHSogQQ3wQpSuNBSBZZ",
+        "type": "checking",
+        "last4": "6789",
+        "status": "new",
+        "currency": "usd",
+        "bank_name": "Bank Of America",
+        "account_id": "acct_AsiCXLbN0gapU3To0l1nL",
+        "created_at": "2025-09-03T21:29:17.381Z",
+        "updated_at": "2025-09-03T21:29:17.381Z",
+        "routing_number": "011000015",
+        "account_holder_name": "Daniel Miller",
+        "default_for_currency": true
+      }
+    ],
+    "business_profile": {
+      "id": "bp_KOH5gqDhk3IS9WwRHKTz9",
+      "phone": "+18083653266",
+      "locale": "en_US",
+      "region": "US",
+      "address": {
+        "id": "addr_DUy6b1JEpcc04xJmT0P6X",
+        "city": "El Paso",
+        "state": "TX",
+        "street": "3231 Zion Lane",
+        "country": "US",
+        "street2": null,
+        "created_at": "2025-09-03T21:29:17.365Z",
+        "updated_at": "2025-09-03T21:29:17.365Z",
+        "postal_code": "79904"
+      },
+      "website": "https://vybelocal.com/policies",
+      "category": "RECREATION",
+      "structure": "SOLEPROP",
+      "created_at": "2025-09-03T21:29:17.371Z",
+      "legal_name": "Daniel Miller",
+      "updated_at": "2025-09-03T21:29:17.371Z",
+      "representatives": [
+        {
+          "id": "br_ztU9C5xaOs8H1z8rd9RTj",
+          "type": null,
+          "email": "daniel.miller48@gmail.com",
+          "phone": "+18083653266",
+          "addresses": [
+            {
+              "id": "addr_BHvivj1vlPihtQaPiKXmx",
+              "city": "El Paso",
+              "state": "TX",
+              "street": "3231 Zion Lane",
+              "country": "US",
+              "street2": null,
+              "created_at": "2025-09-03T21:29:17.385Z",
+              "updated_at": "2025-09-03T21:29:17.385Z",
+              "postal_code": "79904"
+            }
+          ],
+          "job_title": "Owner",
+          "last_name": "Miller",
+          "created_at": "2025-09-03T21:29:17.379Z",
+          "first_name": "Daniel",
+          "updated_at": "2025-09-03T21:29:17.379Z",
+          "middle_name": null,
+          "is_applicant": true,
+          "is_control_prong": true
+        }
+      ],
+      "tax_identification_number": "001234567"
+    },
+    "merchant_support": false,
+    "terminal_readers": [],
+    "document_requests": [],
+    "white_label_domain": null
+  }

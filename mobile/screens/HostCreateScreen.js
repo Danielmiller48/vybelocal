@@ -3,14 +3,60 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Animated, 
 import Slider from '@react-native-community/slider';
 
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../utils/supabase';
+
+const WAITLIST_API_BASE_URL = (typeof process !== 'undefined' && (process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL)) || 'https://vybelocal-waitlist.vercel.app';
+
+function KybStatusBannerInline() {
+  const [status, setStatus] = React.useState(null);
+  const [required, setRequired] = React.useState(null);
+  const [bankStatus, setBankStatus] = React.useState(null);
+
+  const fetchStatus = React.useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return;
+      const { data: row } = await supabase
+        .from('profiles')
+        .select('tilled_status, bank_verification_status, tilled_required')
+        .eq('id', userId)
+        .maybeSingle();
+      const tstatus = row?.tilled_status || null;
+      if (__DEV__) { try { console.log('[KYB][status]', { tstatus }); } catch {} }
+      setStatus(tstatus);
+      setRequired(row?.tilled_required || null);
+      setBankStatus(row?.bank_verification_status || null);
+    } catch {}
+  }, []);
+
+  React.useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useFocusEffect(React.useCallback(() => { fetchStatus(); }, [fetchStatus]));
+  // Note: Avoid continuous polling to keep DB/API load minimal; we refresh on mount and focus only
+
+  if (!status || status === 'active' || status === 'completed') return null;
+  const isAction = status === 'action_required';
+  const isRejected = status === 'rejected';
+  const isStarted = status === 'started';
+  return (
+    <View style={{ backgroundColor: isAction ? '#FEE2E2' : '#DBEAFE', borderColor: isAction ? '#FCA5A5' : '#93C5FD', borderWidth:1, borderRadius:12, padding:12, marginBottom:12 }}>
+      <Text style={{ fontWeight:'800', color:'#111827', marginBottom:4 }}>
+        {isAction ? 'Action required' : isRejected ? 'Onboarding rejected' : isStarted ? 'Application started' : 'Account in review'}
+      </Text>
+      <Text style={{ color:'#374151' }}>
+        {isAction ? 'Processor needs additional information to continue onboarding.' : isRejected ? 'Please contact support to resolve your application.' : isStarted ? 'Complete to begin running monetized events.' : 'Your application is being reviewed.'}
+      </Text>
+    </View>
+  );
+}
 import { LinearGradient } from 'expo-linear-gradient';
 import colors from '../theme/colors';
 import AppHeader from '../components/AppHeader';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import HostDrawerOverlay from '../components/HostDrawerOverlay';
 import { useAuth } from '../auth/AuthProvider';
-import { supabase } from '../utils/supabase';
+// duplicate import removed
 import Svg, { Polyline } from 'react-native-svg';
 
 import AIInsightCard from '../components/analytics/AIInsightCard';
@@ -3833,7 +3879,9 @@ export default function HostCreateScreen() {
         {/* First-Timer Tooltip moved outside ScrollView */}
 
         {/* Payouts & Earnings */}
-        <HostSection title="💸 Payouts & Earnings" icon="card">
+        <HostSection title="Payouts & Earnings" icon="card">
+          {/* KYB status banner (hidden when active/completed) */}
+          <KybStatusBannerInline />
           {profile?.tilled_merchant_id || profile?.stripe_account_id ? (
             <PlaceholderContent 
               icon="cash"

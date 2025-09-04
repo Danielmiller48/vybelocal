@@ -1,0 +1,82 @@
+{
+  "legal_entity": {
+    "mcc": "7542",                       // ✅ (use your chosen MCC)
+    "region": "US",                      // ✅
+    "address": {                         // ✅ business address
+      "street": "123 Main Street",
+      "street2": "1",
+      "city": "NYC",
+      "state": "NY",
+      "postal_code": "11004",
+      "country": "US"
+    },
+    "website": "https://example.com",    // ✅
+    "is_501c3": false,                   // ✅
+    "structure": "limited_liability_company", // ✅
+    "legal_name": "Legal Name",          // ✅
+
+    "principals": [
+      {
+        "email": "test@example.com",     // ✅
+        "phone": "18007778378",          // ✅
+        "address": {                     // ✅ residential/mailing address
+          "street": "123 Main Street",
+          "street2": "1",
+          "city": "NYC",
+          "state": "NY",
+          "postal_code": "11004",
+          "country": "US"
+        },
+
+        "id_number": "⛔ OMIT VIA API",  // ⛔ (SSN/ITIN/Gov ID → hosted widget)
+        "job_title": "chief_executive_officer", // ✅
+        "last_name": "FirstName",        // ✅ (note: looks swapped in your sample)
+        "first_name": "LastName",        // ✅
+        "is_applicant": true,            // ✅
+        "date_of_birth": "⛔ OMIT VIA API", // ⛔ (DOB → hosted widget)
+        "is_control_prong": true,        // ✅
+        "previous_address": null,        // ⚪ optional/safe
+        "percent_ownership": 75          // ✅
+      }
+    ],
+
+    "bank_account": "⛔ OMIT VIA API",    // ⛔ (routing/account or bank-link → hosted widget)
+
+    "support_email": "test@example.com", // ✅
+    "support_phone": "18007778378",      // ✅
+    "tax_id_number": "123456780",        // ✅ (EIN is fine to store)
+    "charity_document": null,            // ⛔ if this implies file upload; use hosted flow for docs
+
+    "processing_volume": {               // ✅ estimates are fine
+      "currency": "usd",
+      "high_ticket_amount": 1000000,
+      "monthly_processing_volume": 1000000,
+      "monthly_transaction_count": 1000,
+      "average_transaction_amount_card": 100,
+      "average_transaction_amount_debit": 100
+    },
+
+    "number_of_terminals": null,         // ✅ (e-com only)
+    "patriot_act_details": {
+      "business_license": null,          // ⛔ if file upload; metadata only is ⚪
+      "articles_of_incorporation": {     // ⚪ metadata OK (no files)
+        "state": "AZ",
+        "issued_at": "1999-10-10"
+      }
+    },
+
+    "product_description": "A product description", // ✅
+    "statement_descriptor": "A descriptor",         // ✅ keep short/recognizable
+    "date_of_incorporation": "1999-08-09",          // ✅ (omit for sole prop if N/A)
+    "existing_processor_name": "I’ve never processed payments before", // ✅
+    "percent_business_to_business": 51,  // ✅
+    "days_billed_prior_to_shipment": 0,  // ✅ (events: 0)
+    "card_checkout_method_breakdown": {  // ✅ should sum to ~100
+      "percent_swiped": 0,
+      "percent_e_commerce": 100,
+      "percent_manual_card_not_present": 0
+    }
+  },
+
+  "tos_acceptance": true                 // ✅
+}

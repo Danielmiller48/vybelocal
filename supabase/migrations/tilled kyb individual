@@ -1,0 +1,79 @@
+{
+  "legal_entity": {
+    "mcc": "7999",                       // ✅ set from UI choice; default for individuals = 7999 (classes/community). If "Ticketed shows", set 7922.
+    "region": "US",                      // ✅ autofill from user profile country (default US).
+    "address": {                         // ✅ business address; for sole props we AUTOFILL = principal address at submit (don’t label as “residential” in UI).
+      "street": "{{principal.address.street}}",
+      "street2": "{{principal.address.street2||null}}",
+      "city": "{{principal.address.city}}",
+      "state": "{{principal.address.state}}",
+      "postal_code": "{{principal.address.postal_code}}",
+      "country": "US"
+    },
+    "website": "https://vybelocal.com/h/{{hostSlug}}", // ✅ autofill: host’s public profile URL; editable; fallback to https://vybelocal.com.
+    "is_501c3": false,                   // ✅ hard default for individuals.
+    "structure": "sole_proprietorship",  // ✅ hard default for individual flow.
+    "legal_name": "{{account.full_name}}", // ✅ autofill from account name; editable.
+
+    "principals": [
+      {
+        "email": "{{account.email}}",    // ✅ autofill from account; verified email only.
+        "phone": "{{account.phone_e164}}", // ✅ autofill from account; normalize to E.164.
+        "address": {                     // ✅ autofill from account “mailing address” step; shown/confirmable.
+          "street": "{{account.address.street}}",
+          "street2": "{{account.address.street2||null}}",
+          "city": "{{account.address.city}}",
+          "state": "{{account.address.state}}",
+          "postal_code": "{{account.address.postal_code}}",
+          "country": "US"
+        },
+
+        "id_number": "⛔ OMIT VIA API",  // ⛔ collected in hosted widget (SSN/ITIN/Gov ID).
+        "job_title": "owner",            // ✅ autofill “owner” for sole prop.
+        "last_name": "{{account.last_name}}", // ✅ autofill from account.
+        "first_name": "{{account.first_name}}", // ✅ autofill from account.
+        "is_applicant": true,            // ✅ set true (they’re filling it out).
+        "date_of_birth": "⛔ OMIT VIA API", // ⛔ collected in hosted widget.
+        "is_control_prong": true,        // ✅ sole prop = control person.
+        "previous_address": null,        // ⚪ leave null; widget will collect if needed (e.g., moved <2yrs).
+        "percent_ownership": 100         // ✅ sole prop owns 100%.
+      }
+    ],
+
+    "bank_account": "⛔ OMIT VIA API",    // ⛔ bank link via hosted widget/Plaid only.
+
+    "support_email": "{{account.email||'support@vybelocal.com'}}", // ✅ autofill host email; fallback: VybeLocal support if blank.
+    "support_phone": "{{account.phone_e164||'+18005550123'}}",     // ✅ autofill host phone; fallback support line.
+    "tax_id_number": "{{account.ein||null}}",  // ✅ EIN only if provided; if none, set null (widget will handle SSN via id_number).
+    "charity_document": null,            // ⛔ not applicable for individuals; any docs → widget.
+
+    "processing_volume": {               // ✅ AUTOFILL from event builder estimates; start conservative for underwriting.
+      "currency": "usd",
+      "high_ticket_amount": {{est.max_ticket_usd||200}},         // e.g., highest expected price.
+      "monthly_processing_volume": {{est.monthly_gross_usd||2500}}, // price * expected RSVPs.
+      "monthly_transaction_count": {{est.monthly_txn||50}},      // expected ticket count.
+      "average_transaction_amount_card": {{est.avg_ticket_usd||35}},
+      "average_transaction_amount_debit": {{est.avg_ticket_usd||35}}
+    },
+
+    "number_of_terminals": null,         // ✅ e-commerce only.
+    "patriot_act_details": {
+      "business_license": null,          // ⛔ files in widget; if you capture metadata, add states/dates only.
+      "articles_of_incorporation": null  // ⚪ N/A for sole prop.
+    },
+
+    "product_description": "Local classes/meetups hosted via VybeLocal", // ✅ standard copy; editable.
+    "statement_descriptor": "VYBELOCAL*EVENT",         // ✅ short, recognizable; keep <=22 chars.
+    "date_of_incorporation": null,       // ✅ input as today's date
+    "existing_processor_name": "{{account.prev_processor||'None'}}", // ✅ optional; let them pick None/Square/Stripe/etc.
+    "percent_business_to_business": {{est.b2b_pct||20}},  // ✅ default small (10–30%); editable.
+    "days_billed_prior_to_shipment": 0,  // ✅ events = 0.
+    "card_checkout_method_breakdown": {  // ✅ 100% e-commerce for VybeLocal.
+      "percent_swiped": 0,
+      "percent_e_commerce": 100,
+      "percent_manual_card_not_present": 0
+    }
+  },
+
+  "tos_acceptance": true                 // ✅ captured via checkbox at submit.
+}
