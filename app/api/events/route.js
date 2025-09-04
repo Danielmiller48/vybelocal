@@ -34,6 +34,37 @@ export async function POST(req) {
       return NextResponse.json({ error: `Missing "${k}"` }, { status: 400 });
   }
 
+  /* 2.5 — enforce KYB active before allowing paid events */
+  try {
+    const { data: prof } = await sb
+      .from('profiles')
+      .select('tilled_status, tilled_required')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const status = (prof?.tilled_status || '').toLowerCase();
+    const wantsPaid = Number.isFinite(body?.price_in_cents) && Number(body.price_in_cents) > 0;
+    if (wantsPaid && status !== 'active') {
+      return NextResponse.json({
+        code: 'kyb_not_active',
+        error: 'Paid events are locked until your payouts are verified.',
+        tilled_status: status || null,
+        required: prof?.tilled_required || null,
+      }, { status: 403 });
+    }
+  } catch {
+    // If profile lookup fails, default to blocking paid to be safe
+    const wantsPaid = Number.isFinite(body?.price_in_cents) && Number(body.price_in_cents) > 0;
+    if (wantsPaid) {
+      return NextResponse.json({
+        code: 'kyb_not_active',
+        error: 'Paid events are locked until your payouts are verified.',
+        tilled_status: null,
+        required: null,
+      }, { status: 403 });
+    }
+  }
+
   /* 3 — whitelist to real columns only */
   const event = {
     host_id: session.user.id,

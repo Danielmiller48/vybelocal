@@ -9,6 +9,8 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import colors from '../theme/colors';
 import { supabase } from '../utils/supabase';
+import useKybStatus from '../hooks/useKybStatus';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthProvider';
 import realTimeChatManager from '../utils/realTimeChat';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -81,6 +83,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [busy, setBusy]      = useState(false);
   const [canCharge, setCanCharge] = useState(false);
+  const kyb = useKybStatus();
   const [contentH, setContentH] = useState(0);
   const [containerH, setContainerH] = useState(0);
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -137,8 +140,8 @@ export default function HostDrawerOverlay({ onCreated }) {
   React.useEffect(()=>{
     if(!user?.id) return;
     (async()=>{
-      const { data } = await supabase.from('profiles').select('stripe_account_id').eq('id', user.id).single();
-      setCanCharge(!!data?.stripe_account_id);
+      // Gate by KYB active instead of legacy Stripe
+      setCanCharge(kyb?.status === 'active');
       
       // Fetch strike count
       const { data: strikeData } = await supabase
@@ -150,7 +153,7 @@ export default function HostDrawerOverlay({ onCreated }) {
         setStrikeCount(strikeData.strike_count ?? 0);
       }
     })();
-  },[user?.id]);
+  },[user?.id, kyb?.status]);
 
   const priceEnabled = paid && canCharge && parseFloat(price) > 0;
 
@@ -778,7 +781,7 @@ export default function HostDrawerOverlay({ onCreated }) {
           )}
 
           {paid && !canCharge && (
-            <Text style={[styles.warnTxt, { marginTop: 6 }]}>Set up Stripe payments in settings to charge for events</Text>
+            <OnboardingGuard />
           )}
 
           {/* Divider */}
@@ -910,6 +913,34 @@ export default function HostDrawerOverlay({ onCreated }) {
     </Animated.View>
   );
 }
+function OnboardingGuard(){
+  const kyb = useKybStatus();
+  const navigation = useNavigation();
+
+  const go = React.useCallback(() => {
+    try {
+      // Navigate to the intro screen (pre-onboarding hero)
+      navigation.navigate('Home', { screen: 'KybIntro' });
+    } catch {}
+  }, [navigation]);
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <View style={{ padding:14, borderWidth:2, borderColor:'rgba(180,168,209,0.8)', backgroundColor:'rgba(240,235,250,0.9)', borderRadius:14 }}>
+        <Text style={[styles.warnTxt, { color:'#3C3450', textAlign:'center' }]}>Want to charge for your Vybe?</Text>
+        <Text style={{ color:'#6b7280', fontSize:13, marginTop:6, lineHeight:18, textAlign:'center' }}>
+          You’ll need to finish verification before you can post paid events. It’s a one-time thing—we keep it secure, simple, and 100% for your benefit.
+        </Text>
+        <View style={{ marginTop:10, width:'100%', alignItems:'center' }}>
+          <TouchableOpacity onPress={go} activeOpacity={0.9} style={{ backgroundColor:'#BAA4EB', paddingHorizontal:16, paddingVertical:10, borderRadius:12 }}>
+            <Text style={{ color:'#000', fontWeight:'800' }}>Start Onboarding</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 
 // Full-screen Address Input Modal
 function AddressInputModal({ visible, address, onClose, onSelectAddress, suggestions, setSuggestions, MAPBOX_TOKEN }) {
