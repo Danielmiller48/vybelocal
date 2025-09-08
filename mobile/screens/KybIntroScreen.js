@@ -19,7 +19,7 @@ export default function KybIntroScreen() {
   const panelH = Math.min(140, Math.max(96, Math.floor(winH * 0.14)));
   const pulse = React.useRef(new Animated.Value(1)).current;
   const [submitting, setSubmitting] = React.useState(false);
-  const [mcc, setMcc] = React.useState('7922'); // default: ticketed events/promoters
+  const [mcc, setMcc] = React.useState('7922'); // default retained; passed to web if needed
 
   React.useEffect(() => {
     const loop = Animated.loop(
@@ -84,9 +84,9 @@ export default function KybIntroScreen() {
           Alert.alert('Already submitted', status === 'active' ? 'Your account is active.' : 'Your details are pending review.');
           return;
         }
-        if (status === 'action_required') { navigation.navigate('MoovOnboardingWeb'); return; }
+        if (status === 'action_required') { navigation.navigate('MoovOnboardingWeb', { mcc }); return; }
       } catch (_) {}
-      navigation.navigate('MoovOnboardingWeb');
+      navigation.navigate('MoovOnboardingWeb', { mcc });
     } finally { setSubmitting(false); }
   };
 
