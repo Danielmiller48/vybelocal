@@ -8,7 +8,7 @@ export default function MoovOnboardingWeb({ route }) {
   const [loading, setLoading] = React.useState(true);
   const [userBearer, setUserBearer] = React.useState(null);
   const mcc = route?.params?.mcc || null;
-  const acctType = route?.params?.type || 'individual';
+  const acctType = route?.params?.type || null;
 
   React.useEffect(()=>{
     (async ()=>{
@@ -22,17 +22,33 @@ export default function MoovOnboardingWeb({ route }) {
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <script src="https://js.moov.io/v1"></script>
-      <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;margin:0;padding:16px;background:#f6f7fb} .wrap{max-width:720px;margin:0 auto}</style>
+      <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;margin:0;padding:16px;background:#f6f7fb} .wrap{max-width:720px;margin:0 auto} .card{background:#fff;border:1px solid #eee;border-radius:12px;padding:12px;margin-bottom:12px}</style>
     </head>
     <body>
       <div class="wrap">
-        <h3>Getting your onboarding ready…</h3>
+        <div class="card">
+          <h3 style="margin:8px 0 12px 0">Quick setup</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <button id="t-ind" style="padding:8px 10px;border-radius:8px;border:1px solid #ddd;background:#f9f9fb;cursor:pointer">Individual</button>
+            <button id="t-biz" style="padding:8px 10px;border-radius:8px;border:1px solid #ddd;background:#f9f9fb;cursor:pointer">Business</button>
+          </div>
+          <div id="mcc-row" style="display:none;margin-top:6px">
+            <label for="mcc" style="font-size:12px;color:#555">Category</label>
+            <select id="mcc" style="display:block;margin-top:4px;padding:8px;border-radius:8px;border:1px solid #ddd;min-width:260px">
+              <option value="7922">Event ticketing / promoters</option>
+              <option value="5812">Food & beverage events</option>
+              <option value="7999">Classes & community</option>
+              <option value="8299">Education / workshops</option>
+            </select>
+          </div>
+        </div>
         <moov-onboarding id="drop" show-logo></moov-onboarding>
       </div>
       <script>
         (async function(){
           const facilitator = '${process.env.MOOV_FACILITATOR_ACCOUNT_ID || process.env.MOOV_PLATFORM_ACCOUNT_ID || ''}';
-          const chosenMcc = '${mcc || ''}';
+          let selectedType = '${acctType || ''}' || 'individual';
+          let chosenMcc = '${mcc || ''}' || '7922';
           const drop = document.getElementById('drop');
           drop.facilitatorAccountID = facilitator;
           // Do not pre-request capabilities; let Moov Drops determine requirements
@@ -47,7 +63,7 @@ export default function MoovOnboardingWeb({ route }) {
                 try { await fetch('https://vybelocal.com/api/payments/moov/associate', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_){ }
                 // Preselect entity path in Drop by presetting profile
                 try {
-                  if ('${acctType}' === 'business') {
+                  if (selectedType === 'business') {
                     if (chosenMcc) {
                       await fetch('https://api-sandbox.moov.io/v1/accounts/'+acctId+'/profile', {
                         method: 'PATCH',
@@ -72,6 +88,19 @@ export default function MoovOnboardingWeb({ route }) {
               }
             }
           };
+          // Inline controls
+          const indBtn = document.getElementById('t-ind');
+          const bizBtn = document.getElementById('t-biz');
+          const mccRow = document.getElementById('mcc-row');
+          const mccSel = document.getElementById('mcc');
+          function setType(t){
+            selectedType = t;
+            if (t === 'business') { mccRow.style.display = 'block'; } else { mccRow.style.display = 'none'; }
+          }
+          indBtn.addEventListener('click', ()=> setType('individual'));
+          bizBtn.addEventListener('click', ()=> setType('business'));
+          mccSel.addEventListener('change', (e)=> { chosenMcc = e.target.value; });
+          setType(selectedType);
           async function fetchToken(accountId){
             // Try primary domain, then vercel fallback
             const bodies = [
