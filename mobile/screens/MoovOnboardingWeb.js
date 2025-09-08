@@ -45,16 +45,30 @@ export default function MoovOnboardingWeb({ route }) {
                 try { drop.token = await fetchToken(acctId); } catch(e){ console.error('token refresh failed', e); }
                 // Persist association to our DB so webhooks are not required for initial link
                 try { await fetch('https://vybelocal.com/api/payments/moov/associate', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_){ }
-                // If user chose business, best‑effort set businessProfile.mcc to skip large list
-                if (chosenMcc && '${acctType}' === 'business') {
-                  try {
+                // Preselect entity path in Drop by presetting profile
+                try {
+                  if ('${acctType}' === 'business') {
+                    if (chosenMcc) {
+                      await fetch('https://api-sandbox.moov.io/v1/accounts/'+acctId+'/profile', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer '+drop.token },
+                        body: JSON.stringify({ businessProfile: { mcc: chosenMcc } })
+                      });
+                    } else {
+                      await fetch('https://api-sandbox.moov.io/v1/accounts/'+acctId+'/profile', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer '+drop.token },
+                        body: JSON.stringify({ businessProfile: {} })
+                      });
+                    }
+                  } else {
                     await fetch('https://api-sandbox.moov.io/v1/accounts/'+acctId+'/profile', {
                       method: 'PATCH',
                       headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer '+drop.token },
-                      body: JSON.stringify({ businessProfile: { mcc: chosenMcc } })
+                      body: JSON.stringify({ individualProfile: {} })
                     });
-                  } catch(_){ }
-                }
+                  }
+                } catch(_){ }
               }
             }
           };
