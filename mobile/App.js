@@ -31,7 +31,6 @@ import KybOnboardingScreen from './screens/KybOnboardingScreen';
 import { OnboardingDraftProvider } from './components/OnboardingDraftProvider';
 import KybIntroScreen from './screens/KybIntroScreen';
 import MoovOnboardingWeb from './screens/MoovOnboardingWeb';
-import KybTypeScreen from './screens/KybTypeScreen';
 
 // Make PushNotificationService available globally for testing
 if (__DEV__) {
@@ -152,7 +151,6 @@ function HomeStackScreen() {
       <HomeStack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <HomeStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
       <HomeStack.Screen name="KybIntro" component={KybIntroScreen} />
-      <HomeStack.Screen name="KybType" component={KybTypeScreen} />
       <HomeStack.Screen name="KybOnboarding" component={KybOnboardingScreen} />
       <HomeStack.Screen name="MoovOnboardingWeb" component={MoovOnboardingWeb} />
     </HomeStack.Navigator>
