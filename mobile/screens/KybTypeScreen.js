@@ -20,7 +20,7 @@ export default function KybTypeScreen({ navigation, route }) {
   React.useEffect(() => {
     Animated.timing(anim, {
       toValue: type === 'business' ? 1 : 0,
-      duration: 300,
+      duration: 200,
       useNativeDriver: false,
     }).start();
   }, [type, anim]);
