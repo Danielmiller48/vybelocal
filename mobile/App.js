@@ -23,12 +23,15 @@ import CalendarScreen from './screens/CalendarScreen';
 import GuidelinesScreen from './screens/GuidelinesScreen';
 import PastVybesScreen from './screens/PastVybesScreen';
 import TrackedHostsScreen from './screens/TrackedHostsScreen';
+import BlockedUsersScreen from './screens/BlockedUsersScreen';
 import PushNotificationService from './utils/pushNotifications';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
 import KybOnboardingScreen from './screens/KybOnboardingScreen';
 import { OnboardingDraftProvider } from './components/OnboardingDraftProvider';
 import KybIntroScreen from './screens/KybIntroScreen';
+import MoovOnboardingWeb from './screens/MoovOnboardingWeb';
+import KybTypeScreen from './screens/KybTypeScreen';
 
 // Make PushNotificationService available globally for testing
 if (__DEV__) {
@@ -146,9 +149,12 @@ function HomeStackScreen() {
       <HomeStack.Screen name="Guidelines" component={GuidelinesScreen} />
       <HomeStack.Screen name="PastVybes" component={PastVybesScreen} />
       <HomeStack.Screen name="TrackedHosts" component={TrackedHostsScreen} />
+      <HomeStack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
       <HomeStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
       <HomeStack.Screen name="KybIntro" component={KybIntroScreen} />
+      <HomeStack.Screen name="KybType" component={KybTypeScreen} />
       <HomeStack.Screen name="KybOnboarding" component={KybOnboardingScreen} />
+      <HomeStack.Screen name="MoovOnboardingWeb" component={MoovOnboardingWeb} />
     </HomeStack.Navigator>
   );
 }

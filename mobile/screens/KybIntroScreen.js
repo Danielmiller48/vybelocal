@@ -1,11 +1,14 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Pressable, Dimensions, Animated } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Pressable, Dimensions, Animated, Alert } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '../utils/supabase';
+import MoovOnboardingWeb from './MoovOnboardingWeb';
 
 export default function KybIntroScreen() {
   const navigation = useNavigation();
@@ -15,6 +18,8 @@ export default function KybIntroScreen() {
   const winH = Dimensions.get('window').height;
   const panelH = Math.min(140, Math.max(96, Math.floor(winH * 0.14)));
   const pulse = React.useRef(new Animated.Value(1)).current;
+  const [submitting, setSubmitting] = React.useState(false);
+  const [mcc, setMcc] = React.useState('7922'); // default: ticketed events/promoters
 
   React.useEffect(() => {
     const loop = Animated.loop(
@@ -64,6 +69,27 @@ export default function KybIntroScreen() {
     </View>
   );
 
+  const handleStart = async () => {
+    try {
+      setSubmitting(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) { Alert.alert('Sign in required', 'Please log in to continue.'); return; }
+      // Preflight status to avoid duplicate onboarding
+      try {
+        const res = await fetch('https://vybelocal.com/api/payments/moov/status', { headers: { 'Authorization': `Bearer ${token}` } });
+        const j = await res.json();
+        const status = (j?.moov_status || '').toLowerCase();
+        if (status === 'in_review' || status === 'active') {
+          Alert.alert('Already submitted', status === 'active' ? 'Your account is active.' : 'Your details are pending review.');
+          return;
+        }
+        if (status === 'action_required') { navigation.navigate('KybType'); return; }
+      } catch (_) {}
+      navigation.navigate('KybType');
+    } finally { setSubmitting(false); }
+  };
+
   return (
     <LinearGradient colors={['rgba(203,180,227,0.2)', 'rgba(255,200,162,0.4)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -102,6 +128,26 @@ export default function KybIntroScreen() {
 
           
 
+          {/* Choose category (maps to MCC) */}
+          <View style={{ marginTop:16, backgroundColor:'#fff', borderRadius:12, padding:16 }}>
+            <Text style={{ fontSize:16, fontWeight:'800', marginBottom:8 }}>Your category</Text>
+            {[
+              { key:'7922', title:'Event ticketing / promoters', desc:'Concerts, shows, paid RSVPs' },
+              { key:'5812', title:'Food & beverage events', desc:'Pop‑ups, tastings, dinners' },
+              { key:'7999', title:'Classes & community', desc:'Workshops, fitness, clubs' },
+              { key:'8299', title:'Education / workshops', desc:'Lessons, seminars' },
+            ].map(opt => (
+              <Pressable key={opt.key} onPress={()=> setMcc(opt.key)} style={{ paddingVertical:10, flexDirection:'row', alignItems:'center' }}>
+                <Ionicons name={mcc===opt.key? 'radio-button-on' : 'radio-button-off'} size={18} color={mcc===opt.key? '#6B46FF':'#9CA3AF'} style={{ marginRight:10 }} />
+                <View style={{ flex:1 }}>
+                  <Text style={{ fontWeight:'700', color:'#111827' }}>{opt.title}</Text>
+                  <Text style={{ color:'#6B7280', fontSize:12 }}>{opt.desc}</Text>
+                </View>
+              </Pressable>
+            ))}
+            <Text style={{ color:'#6b7280', marginTop:8 }}>We’ll set this on your account so Moov skips the big list.</Text>
+          </View>
+
           {/* Requirements */}
           <View style={{ marginTop:16, backgroundColor:'#fff', borderRadius:12, padding:16 }}>
             <Text style={{ fontSize:16, fontWeight:'800', marginBottom:8 }}>What you need</Text>
@@ -135,9 +181,9 @@ export default function KybIntroScreen() {
 
         {/* Compact sticky CTA (lavender button) */}
         <View style={{ position:'absolute', left:0, right:0, bottom:0, height: panelH + insets.bottom, paddingBottom: insets.bottom + 8, alignItems:'center', justifyContent:'flex-end' }}>
-          <Pressable onPress={()=>navigation.navigate('KybOnboarding')} style={{ width:'100%', alignItems:'center' }}>
-            <Animated.View style={{ width:'92%', backgroundColor:'#A78BFA', borderRadius:16, paddingVertical:14, alignItems:'center', transform:[{ scale: pulse }] }}>
-              <Text style={{ color:'#fff', fontWeight:'800', fontSize:16 }}>Start verification</Text>
+          <Pressable onPress={handleStart} disabled={submitting} style={{ width:'100%', alignItems:'center' }}>
+            <Animated.View style={{ width:'92%', backgroundColor:'#A78BFA', opacity: submitting ? 0.7 : 1, borderRadius:16, paddingVertical:14, alignItems:'center', transform:[{ scale: pulse }] }}>
+              <Text style={{ color:'#fff', fontWeight:'800', fontSize:16 }}>{submitting ? 'Starting…' : 'Start verification'}</Text>
             </Animated.View>
           </Pressable>
         </View>
