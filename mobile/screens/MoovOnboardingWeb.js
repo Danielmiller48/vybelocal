@@ -45,6 +45,8 @@ export default function MoovOnboardingWeb({ route }) {
                 try { drop.token = await fetchToken(acctId); } catch(e){ console.error('token refresh failed', e); }
                 // Persist association to our DB so webhooks are not required for initial link
                 try { await fetch('https://vybelocal.com/api/payments/moov/associate', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_){ }
+                // Immediately request wallet + collect-funds capabilities (idempotent)
+                try { await fetch('https://vybelocal.com/api/payments/moov/capabilities/request', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_) {}
                 // If user chose business, best‑effort set businessProfile.mcc to skip large list
                 if (chosenMcc && '${acctType}' === 'business') {
                   try {

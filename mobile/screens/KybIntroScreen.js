@@ -84,9 +84,9 @@ export default function KybIntroScreen() {
           Alert.alert('Already submitted', status === 'active' ? 'Your account is active.' : 'Your details are pending review.');
           return;
         }
-        if (status === 'action_required') { navigation.navigate('KybType'); return; }
+        if (status === 'action_required') { navigation.navigate('MoovOnboardingWeb'); return; }
       } catch (_) {}
-      navigation.navigate('KybType');
+      navigation.navigate('MoovOnboardingWeb');
     } finally { setSubmitting(false); }
   };
 
