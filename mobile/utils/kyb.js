@@ -24,7 +24,7 @@ export async function fetchKybProfile(userId) {
   const inflight = (async () => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('tilled_status, tilled_required, bank_verification_status')
+      .select('moov_status, moov_account_id, bank_verification_status')
       .eq('id', userId)
       .maybeSingle();
     if (error) {
@@ -33,8 +33,8 @@ export async function fetchKybProfile(userId) {
       return out;
     }
     const out = {
-      status: normalizeStatus(data?.tilled_status),
-      required: data?.tilled_required || null,
+      status: normalizeStatus(data?.moov_status),
+      required: data?.moov_account_id ? null : 'account_required',
       bankStatus: data?.bank_verification_status || null,
     };
     KYB_CACHE.set(userId, { at: Date.now(), data: out, inflight: null });
@@ -57,8 +57,8 @@ export function subscribeKyb(userId, onUpdate) {
     }, (payload) => {
       const row = payload?.new || {};
       const out = {
-        status: normalizeStatus(row?.tilled_status),
-        required: row?.tilled_required || null,
+        status: normalizeStatus(row?.moov_status),
+        required: row?.moov_account_id ? null : 'account_required',
         bankStatus: row?.bank_verification_status || null,
       };
       try { onUpdate && onUpdate(out); } catch {}
@@ -74,13 +74,13 @@ export async function fetchOnboardingLink(accessToken) {
   try {
     const API_BASE = Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
     if (!accessToken) return { url: null, status: null };
-    const resp = await fetch(`${API_BASE}/api/payments/tilled/status`, {
+    const resp = await fetch(`${API_BASE}/api/payments/moov/status`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     const text = await resp.text();
     let json; try { json = JSON.parse(text); } catch { json = {}; }
-    const url = json?.onboarding_application_url || null;
-    const status = normalizeStatus(json?.tilled_status);
+    const url = null; // Moov uses Drops, no external onboarding URLs
+    const status = normalizeStatus(json?.moov_status);
     return { url, status };
   } catch {
     return { url: null, status: null };
