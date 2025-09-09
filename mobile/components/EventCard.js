@@ -33,7 +33,7 @@ function useAvatarUrl(path) {
   return url;
 }
 
-export default function EventCard({ event, onPress }) {
+export default function EventCard({ event, onPress, blockedIds }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [hostProfile, setHostProfile] = useState(null);
@@ -94,6 +94,15 @@ export default function EventCard({ event, onPress }) {
 
   const avatarUrl = useAvatarUrl(hostProfile?.avatar_url);
 
+  const showBlockedAttendee = React.useMemo(() => {
+    // If any RSVP user_id in rsvps_attendee_ids is blocked by me, show warning badge.
+    // We expect backend to optionally enrich; otherwise hide.
+    const arr = Array.isArray(event?.rsvps_attendee_ids) ? event.rsvps_attendee_ids : [];
+    if (!arr.length || !blockedIds) return false;
+    for (const uid of arr) { if (blockedIds.has(uid)) return true; }
+    return false;
+  }, [event?.rsvps_attendee_ids, blockedIds]);
+
   return (
     <>
       <TouchableOpacity
@@ -111,6 +120,11 @@ export default function EventCard({ event, onPress }) {
               <View style={[styles.pill, { backgroundColor: VIBE_COLORS[event.vibe] || '#ffffff55' }]}> 
                 <Text style={styles.pillText}>{event.vibe.charAt(0).toUpperCase() + event.vibe.slice(1)}</Text>
               </View>
+              {showBlockedAttendee && (
+                <View style={styles.blockedBadge}>
+                  <Text style={styles.blockedBadgeText}>▲ Blocked user attending</Text>
+                </View>
+              )}
             </View>
 
             {/* RIGHT COLUMN */}
@@ -187,4 +201,6 @@ const styles = StyleSheet.create({
   rightCol: { flex: 1 },
   blurb: { fontSize: 14, color: '#d0d0d0', fontStyle:'italic' },
   icon: { fontSize: 16, color: '#e0e0e0' },
+  blockedBadge: { alignSelf:'flex-start', backgroundColor:'#fff', borderRadius:10, paddingHorizontal:8, paddingVertical:4, marginTop:6, borderWidth:1, borderColor:'#ef4444' },
+  blockedBadgeText: { color:'#ef4444', fontWeight:'800', fontSize:10 },
 }); 

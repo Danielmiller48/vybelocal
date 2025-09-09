@@ -112,7 +112,8 @@ export default function KybOnboardingScreen() {
         },
         body: JSON.stringify({
           name: profile?.name || user?.email || 'VybeLocal Merchant',
-          email: user?.email || 'merchant@vybelocal.com'
+          email: user?.email || 'merchant@vybelocal.com',
+          mcc: '7922'
         })
       });
 

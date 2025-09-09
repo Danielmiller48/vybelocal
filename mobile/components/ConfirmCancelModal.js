@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TouchableOpacity, StyleSheet, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, Modal, TouchableOpacity, StyleSheet, TextInput, ActivityIndicator, Alert, DeviceEventEmitter } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../utils/supabase';
@@ -44,7 +44,11 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
 
         const currentStrikes = strikeData?.strike_count || 0;
         const isPaidEvent = eventData.price_in_cents && eventData.price_in_cents > 0;
-        const rsvpCount = eventData.rsvps?.length || 0;
+        // Exclude the host's own auto-RSVP from attendee counts
+        const attendeeRows = Array.isArray(eventData.rsvps)
+          ? eventData.rsvps.filter(r => r?.user_id && r.user_id !== eventData.host_id)
+          : [];
+        const rsvpCount = attendeeRows.length;
         const hasAttendees = rsvpCount > 0;
         
         // Check if cancellation is within 24 hours
@@ -99,32 +103,18 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
         return;
       }
 
-      // Update event status to cancelled directly in Supabase
-      const { error: updateError } = await supabase
-        .from('events')
-        .update({ 
-          status: 'cancelled',
-          canceled_at: new Date().toISOString(),
-          cancel_reason: reason || null
-        })
-        .eq('id', event.id);
-
-      if (updateError) throw updateError;
-
-      // Add strike record if there are attendees
-      if (preview.willCreateStrike) {
-        const { error: strikeError } = await supabase
-          .from('host_strikes')
-          .insert({
-            host_id: user.id,
-            event_id: event.id,
-            strike_type: 'guest_attended_cancellation',
-            created_at: new Date().toISOString()
-          });
-
-        if (strikeError) {
-          // Don't fail the whole operation for strike recording
-        }
+      // Route cancellation through backend endpoint (handles strikes + locks + refunds)
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const base = (globalThis?.Constants?.expoConfig?.extra?.waitlistApiBaseUrl) || (typeof Constants !== 'undefined' ? Constants.expoConfig?.extra?.waitlistApiBaseUrl : undefined) || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
+      const res = await fetch(`${base}/api/events/${encodeURIComponent(event.id)}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ reason_text: reason || null })
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(t || 'Cancel failed');
       }
 
       // For mobile simplification, we'll skip complex refund processing
@@ -139,6 +129,7 @@ export default function ConfirmCancelModal({ visible, event, onConfirm, onClose 
       }
       
       Alert.alert('Success', successMessage);
+      try { DeviceEventEmitter.emit('event:canceled', { id: event.id }); } catch {}
       onConfirm({ success: true, eventId: event.id });
       
     } catch (error) {

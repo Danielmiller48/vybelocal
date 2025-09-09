@@ -17,6 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 
 
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 function getCardAspect(){
@@ -71,6 +72,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [strikeCount, setStrikeCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingVals, setPendingVals] = useState(null);
+  const [strikeAckKey, setStrikeAckKey] = useState(null);
   const [address, setAddress] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [imageUri, setImageUri] = useState(null);
@@ -370,11 +372,38 @@ export default function HostDrawerOverlay({ onCreated }) {
       image: imageUri
     };
 
-    // If host has at least one prior guest-attended cancellation, show warning modal first
+    // If host has at least one prior guest-attended cancellation, show warning modal first (unless acknowledged)
     if (strikeCount >= 1) {
-      setPendingVals(vals);
-      setConfirmOpen(true);
-      return;
+      // Derive an acknowledgement window from the latest strike timestamp
+      let latestTs = null;
+      try {
+        const { data: last } = await supabase
+          .from('host_cancel_strikes')
+          .select('canceled_at')
+          .eq('host_id', user.id)
+          .order('canceled_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (last?.canceled_at) latestTs = new Date(last.canceled_at).getTime();
+      } catch {}
+
+      if (latestTs) {
+        const key = `ack:publish:strike:${user.id}:${latestTs}`;
+        setStrikeAckKey(key);
+        const raw = await AsyncStorage.getItem(key).catch(() => null);
+        const exp = (() => { try { return JSON.parse(raw)?.exp; } catch { return null; } })();
+        const withinWindow = typeof exp === 'number' && Date.now() < exp;
+        if (!withinWindow) {
+          setPendingVals(vals);
+          setConfirmOpen(true);
+          return;
+        }
+      } else {
+        // No timestamp found; fall back to showing once
+        setPendingVals(vals);
+        setConfirmOpen(true);
+        return;
+      }
     }
     submitEvent(vals);
   };
@@ -417,13 +446,23 @@ export default function HostDrawerOverlay({ onCreated }) {
       const token = sessionData?.session?.access_token;
       if (!token) throw new Error('Not authenticated');
       // console.log('[createEvent] POST /api/events payload', payload);
+      const ctl = new AbortController();
+      const timer = setTimeout(() => { try { ctl.abort(); } catch {} }, 15000);
       const resp = await fetch('https://vybelocal.com/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: ctl.signal,
       });
+      clearTimeout(timer);
       if (!resp.ok) {
-        throw new Error(await extractError(resp));
+        const errMsg = await extractError(resp);
+        if (Platform.OS === 'android') {
+          try { ToastAndroid.show(String(errMsg).slice(0, 150), ToastAndroid.LONG); } catch {}
+        } else {
+          try { Alert.alert('Post rejected', String(errMsg)); } catch {}
+        }
+        throw new Error(errMsg);
       }
       created = true; // success status reached; even if parsing fails, event likely created
       const json = await resp.json();
@@ -565,12 +604,14 @@ export default function HostDrawerOverlay({ onCreated }) {
     } catch (err) {
       if (!created) {
         console.error('submitEvent error', err);
+        const msg = String(err?.message || 'Unable to post event');
+        if (Platform.OS === 'android') {
+          try { ToastAndroid.show(msg.slice(0, 150), ToastAndroid.LONG); } catch {}
+        } else {
+          try { Alert.alert('Post rejected', msg); } catch {}
+        }
       } else {
         console.warn('submitEvent post-success nuisance error suppressed:', err?.message || err);
-      }
-      // Suppress nuisance popup if we already created the event
-      if (!created) {
-        Alert.alert('Error', err?.message || 'Unknown error');
       }
     } finally {
       setBusy(false);
@@ -581,6 +622,19 @@ export default function HostDrawerOverlay({ onCreated }) {
   const handleModalConfirm = () => {
     if (!pendingVals) return;
     setConfirmOpen(false);
+    // Remember acknowledgment until the current strike window ends (~180 days from latest strike)
+    (async()=>{
+      try {
+        const key = strikeAckKey || `ack:publish:strike:${user.id}:generic`;
+        // If strikeAckKey encodes latestTs, derive exp from it; else default 183 days
+        let exp = Date.now() + 183*24*60*60*1000;
+        const tsFromKey = Number(key.split(':').pop());
+        if (Number.isFinite(tsFromKey) && tsFromKey > 0) {
+          exp = tsFromKey + 180*24*60*60*1000;
+        }
+        await AsyncStorage.setItem(key, JSON.stringify({ exp }));
+      } catch{}
+    })();
     submitEvent(pendingVals);
     setPendingVals(null);
   };
@@ -853,7 +907,7 @@ export default function HostDrawerOverlay({ onCreated }) {
               <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowDate(false)} activeOpacity={0.7}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
-              <DateTimePicker value={startTime} minimumDate={getMinStart()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const ns=new Date(date); ns.setHours(startTime.getHours(), startTime.getMinutes(),0,0); const minS=getMinStart(); if(ns<minS) ns.setTime(minS.getTime()); setStartTime(ns); if(endTime-ns<60*60*1000) setEndTime(new Date(ns.getTime()+60*60*1000)); }} />
+              <DateTimePicker value={startTime} minimumDate={getMinStart()} mode="date" display={Platform.OS==='ios'?'spinner':'default'} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const ns=new Date(date); ns.setHours(startTime.getHours(), startTime.getMinutes(),0,0); const minS=getMinStart(); if(ns<minS) ns.setTime(minS.getTime()); setStartTime(ns); if(endTime-ns<60*60*1000) setEndTime(new Date(ns.getTime()+60*60*1000)); if (Platform.OS === 'android') setShowDate(false); }} />
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -866,7 +920,7 @@ export default function HostDrawerOverlay({ onCreated }) {
               <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowStart(false)} activeOpacity={0.7}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
-              <DateTimePicker value={startTime} mode="time" display={Platform.OS==='ios'?'spinner':'default'} minuteInterval={30} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const r=roundToNextHalfHour(date); const minS=getMinStart(); const valid=r<minS?minS:r; setStartTime(valid); if(endTime-valid<60*60*1000) setEndTime(new Date(valid.getTime()+60*60*1000)); }} />
+              <DateTimePicker value={startTime} mode="time" display={Platform.OS==='ios'?'spinner':'default'} minuteInterval={30} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const r=roundToNextHalfHour(date); const minS=getMinStart(); const valid=r<minS?minS:r; setStartTime(valid); if(endTime-valid<60*60*1000) setEndTime(new Date(valid.getTime()+60*60*1000)); if (Platform.OS === 'android') setShowStart(false); }} />
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -879,7 +933,7 @@ export default function HostDrawerOverlay({ onCreated }) {
               <TouchableOpacity style={styles.closeBtn} onPress={()=>setShowEnd(false)} activeOpacity={0.7}>
                 <Ionicons name="close" size={26} color="#fff" />
               </TouchableOpacity>
-              <DateTimePicker value={endTime} mode="time" display={Platform.OS==='ios'?'spinner':'default'} minuteInterval={30} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const r=roundToNextHalfHour(date); if(r-startTime<60*60*1000){ setEndTime(new Date(startTime.getTime()+60*60*1000)); } else { setEndTime(r);} }} />
+              <DateTimePicker value={endTime} mode="time" display={Platform.OS==='ios'?'spinner':'default'} minuteInterval={30} themeVariant="dark" textColor="#fff" onChange={(e,date)=>{ if(!date) return; const r=roundToNextHalfHour(date); if(r-startTime<60*60*1000){ setEndTime(new Date(startTime.getTime()+60*60*1000)); } else { setEndTime(r);} if (Platform.OS === 'android') setShowEnd(false); }} />
             </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
@@ -1147,12 +1201,11 @@ function SecondStrikeModal({ open, onConfirm, onCancel, priceCents, capacity }) 
         <View style={[styles.modalContent, { maxWidth: '90%' }]}>
           <Text style={styles.modalTitle}>You're about to go live.</Text>
           <Text style={styles.modalText}>
-            Thanks for putting something out into the world — we back creators who show up.{'\n\n'}
-            Quick heads-up: you've already cancelled one event after people commited to the plan.
-            If you cancel this one too, you'll have to cover Stripe's processing fees on any paid tickets.{'\n\n'}
-            {feePer ? `Each paid RSVP costs $${(feePer/100).toFixed(2)} in non-refundable Stripe fees.\n\n` : ''}
-            Not sure you can follow through? It's okay to hold off.
-            When you post, we assume you're ready.
+            Thanks for putting something out into the world — we back hosts who show up.{'\n\n'}
+            Heads-up: You’ve already cancelled one event after people tapped in. If you cancel this one too, it’ll count as Strike 2 of 3 on your host record.{'\n\n'}
+            Even though this is a free event, cancellations still affect community trust. Strike 2 triggers a 14-day pause on hosting.{'\n\n'}
+            Not totally sure you can follow through? It’s okay to hold off. When you post, we assume you’re ready.{'\n\n'}
+            (Two cancellation strikes will temporarily lock your account from posting new events for two weeks. You’ll have a chance to appeal if something serious came up.)
           </Text>
           <View style={styles.modalButtons}>
             <TouchableOpacity onPress={onCancel} style={styles.modalCancelBtn}>
@@ -1168,7 +1221,8 @@ function SecondStrikeModal({ open, onConfirm, onCancel, priceCents, capacity }) 
   );
 }
 
-const sage = '#8FB996';
+// Brand primary lavender
+const sage = '#BAA4EB';
 
 const styles = StyleSheet.create({
   container:{ position:'absolute', left:0,right:0,bottom:0, overflow:'visible', zIndex:30 },

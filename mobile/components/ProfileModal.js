@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, View, Text, TouchableOpacity, Image, StyleSheet, ScrollView, Animated, Dimensions, Easing, TextInput, Alert, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { supabase } from '../utils/supabase';
 import { getSignedUrl } from '../utils/signedUrlCache';
 import { useAuth } from '../auth/AuthProvider';
@@ -62,19 +63,15 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
     }
     
     try {
-      
-      const { data, error } = await supabase
-        .from('host_follows')
-        .select('id')
-        .eq('follower_id', user.id)
-        .eq('host_id', hostId)
-        .maybeSingle();
-      
-      if (error) {
-        return;
-      }
-      
-      setIsFollowing(!!data);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const base = Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
+      const res = await fetch(`${base}/api/follows?host_id=${encodeURIComponent(hostId)}` , {
+        headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      setIsFollowing(!!json?.following);
     } catch (error) {
     }
   };
@@ -89,33 +86,25 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
     
     setFollowLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const base = Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
       if (isFollowing) {
-        // Unfollow
-        const { error } = await supabase
-          .from('host_follows')
-          .delete()
-          .eq('follower_id', user.id)
-          .eq('host_id', hostId);
-        
-        if (error) {
-          throw error;
-        }
+        const res = await fetch(`${base}/api/follows`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ host_id: hostId })
+        });
+        if (!res.ok) throw new Error('Unfollow failed');
         setIsFollowing(false);
         Alert.alert('Success', 'You are no longer following this host.');
       } else {
-        // Follow
-        
-        const { data, error } = await supabase
-          .from('host_follows')
-          .insert({
-            follower_id: user.id,
-            host_id: hostId
-          })
-          .select();
-        
-        if (error) {
-          throw error;
-        }
+        const res = await fetch(`${base}/api/follows`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ host_id: hostId })
+        });
+        if (!res.ok) throw new Error('Follow failed');
         setIsFollowing(true);
         Alert.alert('Success', 'You are now following this host! You\'ll see their events in your feed.');
       }
@@ -396,38 +385,33 @@ export default function ProfileModal({ visible, onClose, profile, stats = {} }) 
                     try {
                       const reportedUserId = profile?.uuid || profile?.id;
                       
-                      // Submit the report
-                      const { error: reportError } = await supabase
-                        .from('flags') // Assuming this is the table name
-                        .insert({
+                      // Submit the report via backend API (idempotent)
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const token = session?.access_token;
+                      const resFlag = await fetch(`${Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app'}/api/flags`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+                        body: JSON.stringify({
                           target_type: 'user',
                           target_id: reportedUserId,
-                          reporter_id: user.id,
-                          user_id: reportedUserId, // Same as target_id since we're reporting a user
                           reason_code: reportReason,
                           details: reportReason !== 'no_interaction' ? reportExplanation : null,
-                          severity: 1,
-                          status: 'pending',
-                          source: 'user'
-                        });
-
-                      if (reportError) {
-                        throw reportError;
+                        })
+                      });
+                      if (!resFlag.ok) {
+                        const t = await resFlag.text();
+                        throw new Error(t || 'Flag failed');
                       }
 
                       // If user also wants to block, handle that
                       if (shouldBlock) {
-                        const { error: blockError } = await supabase
-                          .from('blocks')
-                          .insert({
-                            blocker_id: user.id,
-                            blocked_id: reportedUserId
-                          });
-
-                        if (blockError) {
-                          // Don't throw here - report was successful, blocking failed
-                          Alert.alert('Report Submitted', 'Your report was submitted, but there was an issue blocking the user. Please try blocking separately.');
-                          return;
+                        const resBlock = await fetch(`${Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app'}/api/blocks`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+                          body: JSON.stringify({ target_type: 'user', target_id: reportedUserId })
+                        });
+                        if (!resBlock.ok) {
+                          Alert.alert('Report Submitted', 'Your report was submitted, but blocking failed. Please try again.');
                         }
                       }
                       

@@ -47,7 +47,9 @@
     "zod": "^4.0.10",
     "@expo/vector-icons": "^14.1.0",
     "expo-haptics": "~14.1.4",
-    "expo-dev-client": "~5.2.4"
+    "expo-dev-client": "~5.2.4",
+    "expo-web-browser": "~14.2.0",
+    "react-native-webview": "13.13.5"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"

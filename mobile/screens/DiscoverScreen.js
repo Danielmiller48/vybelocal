@@ -12,6 +12,7 @@ import { getSignedUrl } from '../utils/signedUrlCache';
 import { format, endOfWeek, startOfWeek, addDays, set as setTime } from 'date-fns';
 import { useIsFocused } from '@react-navigation/native';
 import RSVPButton from '../components/RSVPButton';
+import { useAuth } from '../auth/AuthProvider';
 
 // helper to group events into sections
 function makeSections(events) {
@@ -188,6 +189,7 @@ function EmptyStateMessage({ vibe, dateFilter }) {
 }
 
 export default function DiscoverScreen() {
+  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -199,6 +201,7 @@ export default function DiscoverScreen() {
 
   // cache events per vibe for snappy switching
   const eventsCache = useRef({});
+  const blockedSetRef = useRef(new Set());
 
   // refs & anims (unconditional to keep hook order)
 
@@ -288,8 +291,11 @@ export default function DiscoverScreen() {
     if(rangeEnd) query = query.lte('starts_at', rangeEnd.toISOString());
     const { data: rows, error } = await query.order('starts_at');
     if (error) setError(error.message);
-    const eventsWithImgs = await Promise.all(
-      (rows||[]).map(async ev => {
+    // Client-side filter to exclude events hosted by users I have blocked
+    const filtered = (rows || []).filter(ev => !blockedSetRef.current.has(ev.host_id));
+
+    let eventsWithImgs = await Promise.all(
+      filtered.map(async ev => {
         if (ev.img_path) {
           try {
             const signed = await getSignedUrl(
@@ -307,6 +313,26 @@ export default function DiscoverScreen() {
         return { ...ev, imageUrl: null };
       })
     );
+
+    // Batch fetch RSVP attendee ids for warning badge
+    try {
+      const eventIds = eventsWithImgs.map(e => e.id);
+      if (eventIds.length) {
+        const { data: rsvps } = await supabase
+          .from('rsvps')
+          .select('event_id, user_id')
+          .in('event_id', eventIds);
+        const map = {};
+        (rsvps || []).forEach(r => {
+          if (!map[r.event_id]) map[r.event_id] = [];
+          map[r.event_id].push(r.user_id);
+        });
+        eventsWithImgs = eventsWithImgs.map(ev => ({
+          ...ev,
+          rsvps_attendee_ids: map[ev.id] || [],
+        }));
+      }
+    } catch {}
 
     eventsCache.current[`${vibe}-${filterKey}`] = eventsWithImgs;
     return eventsWithImgs;
@@ -333,10 +359,24 @@ export default function DiscoverScreen() {
   const isFocused = useIsFocused();
   useEffect(() => {
     if (isFocused) {
-      setActiveVibe('all');
-      loadEvents('all', dateFilter);
+      // Refresh blocked users set, then load events after it's ready
+      (async ()=>{
+        try {
+          if (!user?.id) { blockedSetRef.current = new Set(); }
+          else {
+            const { data: blocks } = await supabase
+              .from('blocks')
+              .select('target_id')
+              .eq('blocker_id', user.id)
+              .eq('target_type', 'user');
+            blockedSetRef.current = new Set((blocks || []).map(b => b.target_id));
+          }
+        } catch {}
+        setActiveVibe('all');
+        await loadEvents('all', dateFilter);
+      })();
     }
-  }, [isFocused, dateFilter, loadEvents]);
+  }, [isFocused, dateFilter, loadEvents, user?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -359,7 +399,7 @@ export default function DiscoverScreen() {
     );
   }
 
-  const renderItem = ({ item }) => (<EventCard event={item} onPress={() => setSelected(item)} />);
+  const renderItem = ({ item }) => (<EventCard event={item} onPress={() => setSelected(item)} blockedIds={blockedSetRef.current} />);
   const renderSectionHeader = ({ section:{title} }) => (
     <View style={{ paddingHorizontal:16, paddingTop:20 }}>
       <View style={{ alignSelf:'flex-start', backgroundColor:colors.secondary, borderRadius:20, paddingHorizontal:18, paddingVertical:6 }}>

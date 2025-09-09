@@ -252,7 +252,7 @@ export default function AppHeader({ onMenuPress = () => {}, onNotifPress = () =>
               <SectionDivider />
               <Text style={{ color:'#9CA3AF', fontSize:12, fontWeight:'700', paddingHorizontal:16, paddingBottom:4 }}>Account & Tools</Text>
               <MenuItem icon="person-circle-outline" label="Profile & Settings" onPress={() => { closeMenu(); (typeof onAvatarPress === 'function') ? onAvatarPress() : navigation.navigate('Home', { screen: 'ProfileSettings' }); }} />
-              <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home'); }} />
+              <MenuItem icon="ban-outline" label="Blocked profiles" onPress={() => { closeMenu(); navigation.navigate('Home', { screen: 'BlockedUsers' }); }} />
               <MenuItem icon="card-outline" label="Payment Methods" onPress={() => { closeMenu(); Linking.openURL('https://vybelocal.com/app/payments'); }} />
 
               {/* Info & Support */}

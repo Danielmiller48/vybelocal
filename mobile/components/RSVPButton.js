@@ -1,6 +1,6 @@
 // mobile/components/RSVPButton.js
 import React, { useEffect, useState } from 'react';
-import { TouchableOpacity, Text, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import { TouchableOpacity, Text, ActivityIndicator, Alert, StyleSheet, Linking } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
@@ -101,6 +101,47 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
 
     setBusy(true);
     if (!joined) {
+      // Paid event flow → hosted checkout
+      const priceCents = Number.isFinite(event?.price_in_cents) ? event.price_in_cents : 0;
+      if (priceCents > 0) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const url = `${API_BASE_URL}/api/payments/tilled/checkout`;
+          const body = JSON.stringify({ event_id: event.id });
+          debug('CHECKOUT start', { url, hasToken: !!token, body });
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body,
+          });
+          const text = await res.text();
+          debug('CHECKOUT response', { status: res.status, body: (text || '').slice(0, 200) });
+          let json; try { json = JSON.parse(text); } catch { json = {}; }
+          if (!res.ok) throw new Error(json?.error || text || 'Failed');
+
+          if (json?.free) {
+            // Safety: treat as free RSVP
+            debug('CHECKOUT free short-circuit');
+          } else if (json?.checkout_url) {
+            try { Linking.openURL(json.checkout_url); } catch {}
+            // Do not mark joined yet; webhook will finalize RSVP and paid flag
+            setBusy(false);
+            return;
+          } else {
+            throw new Error('No checkout URL');
+          }
+        } catch (e) {
+          debug('CHECKOUT error', e?.message || e);
+          Alert.alert('Payment Error', 'Unable to start checkout. Please try again.');
+          setBusy(false);
+          return;
+        }
+      }
+
       // Insert RSVP via API
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -186,7 +227,8 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
   } else if (!joined && capacity && rsvpCount >= capacity) {
     label = 'Max capacity';
   } else {
-    label = 'RSVP';
+    const priceCents = Number.isFinite(event?.price_in_cents) ? event.price_in_cents : 0;
+    label = priceCents > 0 ? `Pay and RSVP — $${(priceCents / 100).toFixed(2)}` : 'RSVP';
   }
 
   const dynamicStyle = compact

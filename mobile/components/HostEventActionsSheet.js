@@ -143,14 +143,16 @@ export default function HostEventActionsSheet({
 
         {/* Actions */}
         <View style={styles.actionsContainer}>
-          <ActionRow
-            icon="chatbubbles"
-            title="Event Chat"
-            subtitle="Connect with attendees"
-            onPress={onOpenChat}
-            color="#4f46e5"
-            backgroundColor="#eef2ff"
-          />
+          {isUpcoming && (
+            <ActionRow
+              icon="chatbubbles"
+              title="Event Chat"
+              subtitle="Connect with attendees"
+              onPress={onOpenChat}
+              color="#4f46e5"
+              backgroundColor="#eef2ff"
+            />
+          )}
 
           <ActionRow
             icon="people"
@@ -172,14 +174,16 @@ export default function HostEventActionsSheet({
             />
           )}
 
-          <ActionRow
-            icon="close-circle"
-            title="Cancel Event"
-            subtitle={isUpcoming ? "Cancel and notify attendees" : "Remove from history"}
-            onPress={onCancelEvent}
-            color="#ef4444"
-            backgroundColor="#fee2e2"
-          />
+          {isUpcoming && (
+            <ActionRow
+              icon="close-circle"
+              title="Cancel Event"
+              subtitle="Cancel and notify attendees"
+              onPress={onCancelEvent}
+              color="#ef4444"
+              backgroundColor="#fee2e2"
+            />
+          )}
         </View>
       </SafeAreaView>
     </Modal>

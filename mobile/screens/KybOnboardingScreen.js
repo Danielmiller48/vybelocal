@@ -344,7 +344,11 @@ export default function KybOnboardingScreen() {
           'Authorization': `Bearer ${token}`,
           'x-idempotency-key': `connected_${user.id}_${Date.now()}`,
         },
-        body: JSON.stringify({ name: profile?.name || user?.email || 'VybeLocal Merchant', email: user?.email || 'merchant@vybelocal.com' })
+        body: JSON.stringify({ 
+          name: profile?.name || user?.email || 'VybeLocal Merchant', 
+          email: user?.email || 'merchant@vybelocal.com',
+          mcc: bizMcc || '7922'
+        })
       });
       if (!res.ok) {
         const err = await res.json().catch(()=>({}));

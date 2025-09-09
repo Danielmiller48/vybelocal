@@ -43,10 +43,16 @@
       "EXPO_PUBLIC_MAPBOX_TOKEN": "YOUR_MAPBOX_TOKEN",
       "UPSTASH_REDIS_REST_URL": "https://enough-quagga-52942.upstash.io",
       "UPSTASH_REDIS_REST_TOKEN": "Ac7OAAIjcDExMDYwMTg1NTg0ZTI0ODgyOTA5YjgzNjg1ZmZlMzFhYXAxMA",
+      "EXPO_PUBLIC_PROCESSOR": "moov",
+      "EXPO_PUBLIC_WAITLIST_API_BASE": "https://vybelocal.com",
+      "EXPO_PUBLIC_MOOV_PUBLIC_KEY": "kE7vIiKjnqcHwLde",
       "eas": {
         "projectId": "59cf4ed4-af4b-44c4-9b10-ae5626ef2f05"
       }
     },
-    "owner": "danielmiller48"
+    "owner": "danielmiller48",
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }

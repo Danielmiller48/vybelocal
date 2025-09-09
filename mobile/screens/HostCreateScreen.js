@@ -3413,6 +3413,19 @@ export default function HostCreateScreen() {
     }
   }, [user]);
 
+  // Remove canceled events from lists immediately after cancel
+  React.useEffect(() => {
+    const sub = (globalThis.DeviceEventEmitter || require('react-native').DeviceEventEmitter).addListener('event:canceled', (payload) => {
+      try {
+        const id = payload?.id;
+        if (!id) return;
+        setEvents(prev => Array.isArray(prev) ? prev.filter(e => e.id !== id) : prev);
+        setPastEvents(prev => Array.isArray(prev) ? prev.filter(e => e.id !== id) : prev);
+      } catch {}
+    });
+    return () => { try { sub.remove(); } catch {} };
+  }, []);
+
   const fetchJoinDate = async () => {
     try {
       const { data: profile } = await supabase
@@ -3434,6 +3447,7 @@ export default function HostCreateScreen() {
         .from('events')
         .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
         .eq('host_id', user.id)
+        .neq('status','canceled')
         .order('starts_at', { ascending: true });
       if (viewMode === 'calendar' && calendarRange?.first && calendarRange?.last) {
         upcomingQuery = upcomingQuery.gte('starts_at', calendarRange.first).lte('starts_at', calendarRange.last);
@@ -3449,6 +3463,7 @@ export default function HostCreateScreen() {
         .from('events')
         .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
         .eq('host_id', user.id)
+        .neq('status','canceled')
         .order('starts_at', { ascending: false });
       if (viewMode === 'calendar' && calendarRange?.first && calendarRange?.last) {
         pastQuery = pastQuery.gte('starts_at', calendarRange.first).lte('starts_at', calendarRange.last);
@@ -4094,7 +4109,37 @@ export default function HostCreateScreen() {
         </View>
       )}
       
-      <HostDrawerOverlay />
+      <HostDrawerOverlay onCreated={() => {
+        // Instagram-style: optimistic UI + refetch on success
+        try { setViewMode('list'); } catch {}
+        try { setLoading(true); } catch {}
+        // Refetch upcoming/past immediately
+        (async ()=>{
+          try {
+            const now = new Date().toISOString();
+            let upcomingQuery = supabase
+              .from('events')
+              .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
+              .eq('host_id', user.id)
+              .neq('status','canceled')
+              .gte('starts_at', now)
+              .order('starts_at', { ascending: true });
+            const { data: upcomingData } = await upcomingQuery;
+            let pastQuery = supabase
+              .from('events')
+              .select('id, host_id, title, status, starts_at, ends_at, vibe, price_in_cents, rsvp_capacity, img_path')
+              .eq('host_id', user.id)
+              .neq('status','canceled')
+              .lt('starts_at', now)
+              .order('starts_at', { ascending: false });
+            const { data: pastData } = await pastQuery;
+            const enrich = async (rows)=> rows || [];
+            setEvents(await enrich(upcomingData||[]));
+            setPastEvents(await enrich(pastData||[]));
+          } catch {}
+          finally { try { setLoading(false); } catch {} }
+        })();
+      }} />
       {/* Calendar-tap actions sheet (same as EventCard) */}
       {calendarSheet.open && (
         <HostEventActionsSheet
