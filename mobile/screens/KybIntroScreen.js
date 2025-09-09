@@ -19,7 +19,6 @@ export default function KybIntroScreen() {
   const panelH = Math.min(140, Math.max(96, Math.floor(winH * 0.14)));
   const pulse = React.useRef(new Animated.Value(1)).current;
   const [submitting, setSubmitting] = React.useState(false);
-  const [mcc, setMcc] = React.useState('7922'); // default: ticketed events/promoters
 
   React.useEffect(() => {
     const loop = Animated.loop(
@@ -128,25 +127,7 @@ export default function KybIntroScreen() {
 
           
 
-          {/* Choose category (maps to MCC) */}
-          <View style={{ marginTop:16, backgroundColor:'#fff', borderRadius:12, padding:16 }}>
-            <Text style={{ fontSize:16, fontWeight:'800', marginBottom:8 }}>Your category</Text>
-            {[
-              { key:'7922', title:'Event ticketing / promoters', desc:'Concerts, shows, paid RSVPs' },
-              { key:'5812', title:'Food & beverage events', desc:'Pop‑ups, tastings, dinners' },
-              { key:'7999', title:'Classes & community', desc:'Workshops, fitness, clubs' },
-              { key:'8299', title:'Education / workshops', desc:'Lessons, seminars' },
-            ].map(opt => (
-              <Pressable key={opt.key} onPress={()=> setMcc(opt.key)} style={{ paddingVertical:10, flexDirection:'row', alignItems:'center' }}>
-                <Ionicons name={mcc===opt.key? 'radio-button-on' : 'radio-button-off'} size={18} color={mcc===opt.key? '#6B46FF':'#9CA3AF'} style={{ marginRight:10 }} />
-                <View style={{ flex:1 }}>
-                  <Text style={{ fontWeight:'700', color:'#111827' }}>{opt.title}</Text>
-                  <Text style={{ color:'#6B7280', fontSize:12 }}>{opt.desc}</Text>
-                </View>
-              </Pressable>
-            ))}
-            <Text style={{ color:'#6b7280', marginTop:8 }}>We’ll set this on your account so Moov skips the big list.</Text>
-          </View>
+          
 
           {/* Requirements */}
           <View style={{ marginTop:16, backgroundColor:'#fff', borderRadius:12, padding:16 }}>

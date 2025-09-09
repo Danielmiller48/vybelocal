@@ -107,7 +107,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
-          const url = `${API_BASE_URL}/api/payments/tilled/checkout`;
+          const url = `${API_BASE_URL}/api/payments/moov/checkout`;
           const body = JSON.stringify({ event_id: event.id });
           debug('CHECKOUT start', { url, hasToken: !!token, body });
           const res = await fetch(url, {
@@ -126,13 +126,28 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
           if (json?.free) {
             // Safety: treat as free RSVP
             debug('CHECKOUT free short-circuit');
-          } else if (json?.checkout_url) {
-            try { Linking.openURL(json.checkout_url); } catch {}
-            // Do not mark joined yet; webhook will finalize RSVP and paid flag
+          } else if (json?.already_paid) {
+            // User already paid for this event
+            debug('CHECKOUT already paid');
+            Alert.alert('Already Paid', 'You have already paid for this event.');
             setBusy(false);
             return;
+          } else if (json?.checkout_url) {
+            // Legacy Tilled hosted checkout
+            try { Linking.openURL(json.checkout_url); } catch {}
+            setBusy(false);
+            return;
+          } else if (json?.ready_for_payment) {
+            // Moov payment processing
+            debug('CHECKOUT moov ready', { processor: json?.processor, amount: json?.amount_cents });
+            Alert.alert(
+              'Payment Processing', 
+              `Moov payment integration coming soon! Amount: $${((json?.amount_cents || 0) / 100).toFixed(2)}`,
+              [{ text: 'OK', onPress: () => setBusy(false) }]
+            );
+            return;
           } else {
-            throw new Error('No checkout URL');
+            throw new Error('No checkout method available');
           }
         } catch (e) {
           debug('CHECKOUT error', e?.message || e);

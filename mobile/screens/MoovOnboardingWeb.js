@@ -1,14 +1,19 @@
 import React from 'react';
-import { View, ActivityIndicator, Alert } from 'react-native';
+import { View, ActivityIndicator, Alert, Pressable, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { supabase } from '../utils/supabase';
+import { useNavigation } from '@react-navigation/native';
 
 export default function MoovOnboardingWeb({ route }) {
   const [loading, setLoading] = React.useState(true);
   const [userBearer, setUserBearer] = React.useState(null);
   const mcc = route?.params?.mcc || null;
-  const acctType = route?.params?.type || 'individual';
+  const acctType = route?.params?.type || null;
+  const navigation = useNavigation();
+  
+  // CRITICAL: Get facilitator ID from React Native context (process.env doesn't work in WebView)
+  const facilitatorId = '17963f1c-3e21-413e-a1ee-6f0fa917e46a'; // Your actual facilitator ID
 
   React.useEffect(()=>{
     (async ()=>{
@@ -31,33 +36,55 @@ export default function MoovOnboardingWeb({ route }) {
       </div>
       <script>
         (async function(){
-          const facilitator = '${process.env.MOOV_FACILITATOR_ACCOUNT_ID || process.env.MOOV_PLATFORM_ACCOUNT_ID || ''}';
-          const chosenMcc = '${mcc || ''}';
+          const facilitator = '${facilitatorId}';
+          const chosenMcc = '${mcc || '7922'}';
           const drop = document.getElementById('drop');
           drop.facilitatorAccountID = facilitator;
           // Do not pre-request capabilities; let Moov Drops determine requirements
           drop.onError = (e)=> { try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:error', payload:e })); } } catch(_) {} };
-          drop.onComplete = ()=> { try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:done' })); } } catch(_) {} };
+          const postDone=()=>{
+            console.log('🎉 postDone called - onboarding should be finishing!');
+            try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:done' })); } } catch(_) {}
+            try { location.hash = '#moov_done'; } catch(_) {}
+          };
+          drop.onComplete = () => { console.log('🎉 onComplete fired!'); postDone(); };
+          drop.onSuccess = () => { console.log('🎉 onSuccess fired!'); postDone(); };
           drop.onResourceCreated = async ({ resourceType, resource })=>{
+            console.log('onResourceCreated called:', resourceType, resource);
             if(resourceType==='account' && resource){
               const acctId = resource.id || resource.accountId || resource.accountID || resource.account_id;
+              console.log('Processing account:', acctId);
+              
               if (acctId) {
-                try { drop.token = await fetchToken(acctId); } catch(e){ console.error('token refresh failed', e); }
-                // Persist association to our DB so webhooks are not required for initial link
-                try { await fetch('https://vybelocal.com/api/payments/moov/associate', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_){ }
-                // Immediately request wallet + collect-funds capabilities (idempotent)
-                try { await fetch('https://vybelocal.com/api/payments/moov/capabilities/request', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_) {}
-                // If user chose business, best‑effort set businessProfile.mcc to skip large list
-                if (chosenMcc && '${acctType}' === 'business') {
-                  try {
-                    await fetch('https://api-sandbox.moov.io/v1/accounts/'+acctId+'/profile', {
-                      method: 'PATCH',
-                      headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer '+drop.token },
-                      body: JSON.stringify({ businessProfile: { mcc: chosenMcc } })
-                    });
-                  } catch(_){ }
+                console.log('Step 1: Token refresh...');
+                try { 
+                  drop.token = await fetchToken(acctId); 
+                  console.log('✅ Token refresh successful');
+                } catch(e){ 
+                  console.error('❌ Token refresh failed:', e); 
                 }
+                
+                console.log('Step 2: DB association...');
+                try { 
+                  const assocRes = await fetch('https://vybelocal.com/api/payments/moov/associate', { 
+                    method:'POST', 
+                    headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, 
+                    body: JSON.stringify({ accountId: acctId }) 
+                  }); 
+                  if (assocRes.ok) {
+                    console.log('✅ DB association successful');
+                  } else {
+                    console.error('❌ DB association failed:', assocRes.status);
+                  }
+                } catch(e){ 
+                  console.error('❌ DB association error:', e); 
+                }
+                
+                console.log('✅ onResourceCreated completed for account:', acctId);
+                // All disabled API calls removed - should complete cleanly now
               }
+            } else {
+              console.log('onResourceCreated for non-account resource:', resourceType);
             }
           };
           async function fetchToken(accountId){
@@ -106,6 +133,7 @@ export default function MoovOnboardingWeb({ route }) {
           originWhitelist={["*"]}
           setSupportMultipleWindows={false}
           mixedContentMode="always"
+          onNavigationStateChange={(st)=>{ try { if ((st?.url||'').includes('moov_done')) { if (navigation?.canGoBack?.()) navigation.goBack(); } } catch(_) {} }}
           onMessage={(evt)=>{
             try {
               const msg = JSON.parse(evt?.nativeEvent?.data||'{}');
@@ -115,7 +143,7 @@ export default function MoovOnboardingWeb({ route }) {
                 return;
               }
               if (msg?.type === 'moov:done') {
-                try { if (global?.navigationRef?.canGoBack?.()) global.navigationRef.goBack(); } catch {}
+                try { if (navigation?.canGoBack?.()) navigation.goBack(); } catch {}
                 try { if (typeof window?.close === 'function') window.close(); } catch {}
                 return;
               }
@@ -123,6 +151,9 @@ export default function MoovOnboardingWeb({ route }) {
           }}
           onError={(e)=>{ Alert.alert('Load error', e?.nativeEvent?.description || 'Unable to load onboarding.'); }}
         />
+        <Pressable onPress={()=>{ try { if (navigation?.canGoBack?.()) navigation.goBack(); } catch {} }} style={{ position:'absolute', right:12, top:12, backgroundColor:'#00000080', paddingVertical:6, paddingHorizontal:10, borderRadius:8 }}>
+          <Text style={{ color:'#fff', fontWeight:'700' }}>Close</Text>
+        </Pressable>
         {loading && (
           <View style={{ position:'absolute', left:0, right:0, top:0, bottom:0, alignItems:'center', justifyContent:'center' }}>
             <ActivityIndicator />
