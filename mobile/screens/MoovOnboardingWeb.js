@@ -7,7 +7,8 @@ import { supabase } from '../utils/supabase';
 export default function MoovOnboardingWeb({ route }) {
   const [loading, setLoading] = React.useState(true);
   const [userBearer, setUserBearer] = React.useState(null);
-  const mcc = route?.params?.mcc || '7922';
+  const mcc = route?.params?.mcc || null;
+  const acctType = route?.params?.type || 'individual';
 
   React.useEffect(()=>{
     (async ()=>{
@@ -25,6 +26,7 @@ export default function MoovOnboardingWeb({ route }) {
     </head>
     <body>
       <div class="wrap">
+        <h3>Getting your onboarding ready…</h3>
         <moov-onboarding id="drop" show-logo></moov-onboarding>
       </div>
       <script>
@@ -43,16 +45,16 @@ export default function MoovOnboardingWeb({ route }) {
                 try { drop.token = await fetchToken(acctId); } catch(e){ console.error('token refresh failed', e); }
                 // Persist association to our DB so webhooks are not required for initial link
                 try { await fetch('https://vybelocal.com/api/payments/moov/associate', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization': 'Bearer ${userBearer || ''}' }, body: JSON.stringify({ accountId: acctId }) }); } catch(_){ }
-                // Best-effort: set businessProfile.mcc so the Drop skips large MCC selection
-                try {
-                  if (chosenMcc) {
+                // If user chose business, best‑effort set businessProfile.mcc to skip large list
+                if (chosenMcc && '${acctType}' === 'business') {
+                  try {
                     await fetch('https://api-sandbox.moov.io/v1/accounts/'+acctId+'/profile', {
                       method: 'PATCH',
                       headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer '+drop.token },
                       body: JSON.stringify({ businessProfile: { mcc: chosenMcc } })
                     });
-                  }
-                } catch(_){ }
+                  } catch(_){ }
+                }
               }
             }
           };
