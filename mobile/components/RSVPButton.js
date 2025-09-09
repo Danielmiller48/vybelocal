@@ -138,11 +138,18 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
             setBusy(false);
             return;
           } else if (json?.ready_for_payment) {
-            // Moov payment processing
-            debug('CHECKOUT moov ready', { processor: json?.processor, amount: json?.amount_cents });
+            // Moov payment processing with fee breakdown
+            debug('CHECKOUT moov ready', { processor: json?.processor, breakdown: json?.fee_breakdown });
+            const breakdown = json?.fee_breakdown || {};
+            
             Alert.alert(
-              'Payment Processing', 
-              `Moov payment integration coming soon! Amount: $${((json?.amount_cents || 0) / 100).toFixed(2)}`,
+              'Payment Breakdown', 
+              `Base Price: $${breakdown.base || '0.00'}\n` +
+              `Platform Fee: $${breakdown.platform || '0.00'}\n` +
+              `Processing Fee: $${breakdown.processing || '0.00'}\n` +
+              `Tax: $${breakdown.tax || '0.00'}\n\n` +
+              `Total: $${breakdown.total || '0.00'}\n\n` +
+              `Moov payment UI coming soon!`,
               [{ text: 'OK', onPress: () => setBusy(false) }]
             );
             return;
