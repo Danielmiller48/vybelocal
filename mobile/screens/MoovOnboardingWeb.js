@@ -41,14 +41,31 @@ export default function MoovOnboardingWeb({ route }) {
           const drop = document.getElementById('drop');
           drop.facilitatorAccountID = facilitator;
           drop.capabilities = ['transfers', 'collect-funds', 'wallet'];
-          drop.onError = (e)=> { try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:error', payload:e })); } } catch(_) {} };
           const postDone=()=>{
             console.log('🎉 postDone called - onboarding should be finishing!');
             try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:done' })); } } catch(_) {}
             try { location.hash = '#moov_done'; } catch(_) {}
           };
-          drop.onComplete = () => { console.log('🎉 onComplete fired!'); postDone(); };
-          drop.onSuccess = () => { console.log('🎉 onSuccess fired!'); postDone(); };
+          
+          drop.onError = (error) => {
+            console.error('❌ Drop onError fired:', error);
+            try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:error', payload: error })); } } catch(_) {}
+          };
+          
+          drop.onCancel = () => {
+            console.log('🚫 Drop onCancel fired - user closed dialog');
+            try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:cancel' })); } } catch(_) {}
+          };
+          
+          drop.onSuccess = () => {
+            console.log('🎉 Drop onSuccess fired - onboarding completed!');
+            postDone();
+          };
+          
+          drop.onComplete = () => {
+            console.log('🎉 Drop onComplete fired!');
+            postDone();
+          };
           drop.onResourceCreated = async ({ resourceType, resource })=>{
             console.log('onResourceCreated called:', resourceType, resource);
             
