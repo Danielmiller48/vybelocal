@@ -40,7 +40,7 @@ export default function MoovOnboardingWeb({ route }) {
           const chosenMcc = '${mcc || '7922'}';
           const drop = document.getElementById('drop');
           drop.facilitatorAccountID = facilitator;
-          // Do not pre-request capabilities; let Moov Drops determine requirements
+          drop.capabilities = ['transfers', 'collect-funds', 'wallet'];
           drop.onError = (e)=> { try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:error', payload:e })); } } catch(_) {} };
           const postDone=()=>{
             console.log('🎉 postDone called - onboarding should be finishing!');
@@ -82,8 +82,23 @@ export default function MoovOnboardingWeb({ route }) {
                   console.error('❌ DB association error:', e); 
                 }
                 
+                console.log('Step 3: Request capabilities...');
+                try {
+                  const capRes = await fetch('https://vybelocal.com/api/payments/moov/capabilities/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ${userBearer || ''}' },
+                    body: JSON.stringify({ accountId: acctId })
+                  });
+                  if (capRes.ok) {
+                    console.log('✅ Capabilities request successful');
+                  } else {
+                    console.error('❌ Capabilities request failed:', capRes.status);
+                  }
+                } catch (e) {
+                  console.error('❌ Capabilities request error:', e);
+                }
+                
                 console.log('✅ onResourceCreated completed for account:', acctId);
-                // All disabled API calls removed - should complete cleanly now
               }
             } else if (resourceType === 'paymentMethod' || resourceType === 'bankAccount') {
               console.log('Payment method created:', resource);
