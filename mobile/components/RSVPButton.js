@@ -144,11 +144,11 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
             
             Alert.alert(
               'Payment Breakdown', 
-              `Base Price: $${breakdown.base || '0.00'}\n` +
-              `Platform Fee: $${breakdown.platform || '0.00'}\n` +
-              `Processing Fee: $${breakdown.processing || '0.00'}\n` +
-              `Tax: $${breakdown.tax || '0.00'}\n\n` +
+              `Ticket: $${breakdown.base || '0.00'}\n` +
+              `Service Fee: $${breakdown.platform || '0.00'} (10%)\n` +
+              `Sales Tax: $${breakdown.tax || '0.00'}\n\n` +
               `Total: $${breakdown.total || '0.00'}\n\n` +
+              `Processing fees included in service fee.\n\n` +
               `Moov payment UI coming soon!`,
               [{ text: 'OK', onPress: () => setBusy(false) }]
             );
