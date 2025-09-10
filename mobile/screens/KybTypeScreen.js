@@ -54,7 +54,7 @@ export default function KybTypeScreen({ navigation }) {
         const j = await res.json();
         if (res.ok) accountId = j?.moov_account_id || null;
       } catch (_) {}
-      navigation.navigate('MoovOnboardingWeb', { mcc: type === 'business' ? mcc : null, accountId });
+      navigation.navigate('MoovTosScreen', { mcc: type === 'business' ? mcc : null, accountId });
     } catch (_) {
       Alert.alert('Error', 'Unable to start verification right now.');
     }
