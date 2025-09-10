@@ -85,7 +85,7 @@ export default function KybIntroScreen() {
         }
         if (status === 'action_required') { navigation.navigate('MoovOnboardingWeb'); return; }
       } catch (_) {}
-      navigation.navigate('MoovOnboardingWeb');
+      navigation.navigate('MoovTosScreen');
     } finally { setSubmitting(false); }
   };
 
