@@ -51,6 +51,8 @@ export default function MoovOnboardingWeb({ route }) {
           drop.onSuccess = () => { console.log('🎉 onSuccess fired!'); postDone(); };
           drop.onResourceCreated = async ({ resourceType, resource })=>{
             console.log('onResourceCreated called:', resourceType, resource);
+            
+            // Handle ALL resource types, not just accounts
             if(resourceType==='account' && resource){
               const acctId = resource.id || resource.accountId || resource.accountID || resource.account_id;
               console.log('Processing account:', acctId);
@@ -83,8 +85,30 @@ export default function MoovOnboardingWeb({ route }) {
                 console.log('✅ onResourceCreated completed for account:', acctId);
                 // All disabled API calls removed - should complete cleanly now
               }
+            } else if (resourceType === 'paymentMethod' || resourceType === 'bankAccount') {
+              console.log('Payment method created:', resource);
+              // Refresh token for payment method operations
+              try {
+                const currentAccountId = drop.accountData?.accountID || resource?.accountID;
+                if (currentAccountId) {
+                  drop.token = await fetchToken(currentAccountId);
+                  console.log('✅ Token refreshed for payment method');
+                }
+              } catch (e) {
+                console.error('❌ Payment method token refresh failed:', e);
+              }
             } else {
-              console.log('onResourceCreated for non-account resource:', resourceType);
+              console.log('onResourceCreated for other resource:', resourceType, resource);
+              // Refresh token for any resource creation
+              try {
+                const currentAccountId = drop.accountData?.accountID || resource?.accountID;
+                if (currentAccountId) {
+                  drop.token = await fetchToken(currentAccountId);
+                  console.log('✅ Token refreshed for resource:', resourceType);
+                }
+              } catch (e) {
+                console.error('❌ Resource token refresh failed:', e);
+              }
             }
           };
           async function fetchToken(accountId){
