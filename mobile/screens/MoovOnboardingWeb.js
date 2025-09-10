@@ -41,6 +41,8 @@ export default function MoovOnboardingWeb({ route }) {
           const drop = document.getElementById('drop');
           drop.facilitatorAccountID = facilitator;
           drop.capabilities = ['transfers', 'collect-funds', 'wallet'];
+          drop.open = true;
+          drop.microDeposits = true;
           const postDone=()=>{
             console.log('🎉 postDone called - onboarding should be finishing!');
             try { if (window.ReactNativeWebView) { window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:done' })); } } catch(_) {}
