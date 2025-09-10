@@ -101,23 +101,8 @@ export default function MoovOnboardingWeb({ route }) {
                   console.error('❌ DB association error:', e); 
                 }
                 
-                console.log('Step 3: Request capabilities...');
-                try {
-                  const capRes = await fetch('https://vybelocal.com/api/payments/moov/capabilities/request', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ${userBearer || ''}' },
-                    body: JSON.stringify({ accountId: acctId })
-                  });
-                  if (capRes.ok) {
-                    console.log('✅ Capabilities request successful');
-                  } else {
-                    console.error('❌ Capabilities request failed:', capRes.status);
-                  }
-                } catch (e) {
-                  console.error('❌ Capabilities request error:', e);
-                }
-                
                 console.log('✅ onResourceCreated completed for account:', acctId);
+                // Let Drop handle capabilities internally via drop.capabilities property
               }
             } else if (resourceType === 'paymentMethod' || resourceType === 'bankAccount') {
               console.log('Payment method created:', resource);
