@@ -494,7 +494,7 @@ export default function KybOnboardingScreen() {
         const presetRes = await fetch(`${API_BASE_URL}/api/payments/moov/preset`, {
           method: 'POST',
             headers,
-          body: JSON.stringify({ mcc: spMcc, type: 'individual' })
+          body: JSON.stringify({ mcc: spMcc, type: 'business' })
         });
         const presetTxt = await presetRes.text();
         let presetJson; try { presetJson = JSON.parse(presetTxt); } catch { presetJson = {}; }
@@ -525,7 +525,7 @@ export default function KybOnboardingScreen() {
           const presetRes = await fetch(`${API_BASE_URL}/api/payments/moov/preset`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ mcc: spMcc, type: 'individual' })
+            body: JSON.stringify({ mcc: spMcc, type: 'business' })
           });
           const presetTxt = await presetRes.text();
           let presetJson; try { presetJson = JSON.parse(presetTxt); } catch { presetJson = {}; }
@@ -602,7 +602,7 @@ export default function KybOnboardingScreen() {
         }
       };
 
-      const res = await fetch(`${API_BASE_URL}/api/payments/moov/individual`, {
+      const res = await fetch(`${API_BASE_URL}/api/payments/moov/representatives`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

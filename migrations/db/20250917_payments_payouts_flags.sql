@@ -12,3 +12,4 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 -- COMMENT ON COLUMN public.profiles.bank_verification_status IS 'NULL|none|unverified|verified';
 
 
+
