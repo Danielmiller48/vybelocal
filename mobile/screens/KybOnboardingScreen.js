@@ -47,6 +47,7 @@ export default function KybOnboardingScreen() {
   const [monthlyTxn, setMonthlyTxn] = React.useState(String(draft.est?.monthly_txn || 20));
   const [maxTicket, setMaxTicket] = React.useState(String(draft.est?.max_ticket_usd || 50));
   const [agreed, setAgreed] = React.useState(false);
+  const [tosToken, setTosToken] = React.useState(null);
   const slide = React.useRef(new Animated.Value(0)).current;
   const fade  = React.useRef(new Animated.Value(1)).current;
   const ANIM_MS = 200;
@@ -318,46 +319,42 @@ export default function KybOnboardingScreen() {
     });
   };
 
-  const createConnectedAccount = async () => {
+  const getTosToken = async () => {
     setCreatingAccount(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) { Alert.alert('Please sign in'); setCreatingAccount(false); return; }
-
-      // Check existing status
-      const statusRes = await fetch(`${API_BASE_URL}/api/payments/tilled/status`, {
-        method: 'GET', headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const status = await statusRes.json().catch(()=>({}));
-      if (statusRes.ok && (status.status === 'has_application' || status.status === 'has_account')) {
-        Alert.alert('Account Found', 'Connected account or application already exists.');
-        animateTo(1, 1);
-        return;
-      }
-
-      // Create a new connected account
-      const res = await fetch(`${API_BASE_URL}/api/payments/tilled/connected-account`, {
+      // Get TOS token for Moov onboarding
+      const tokenRes = await fetch('https://vybelocal.com/api/payments/moov/token', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'x-idempotency-key': `connected_${user.id}_${Date.now()}`,
-        },
-        body: JSON.stringify({ 
-          name: profile?.name || user?.email || 'VybeLocal Merchant', 
-          email: user?.email || 'merchant@vybelocal.com',
-          mcc: bizMcc || '7922'
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
       });
-      if (!res.ok) {
-        const err = await res.json().catch(()=>({}));
-        Alert.alert('Error', err?.error || 'Unable to create account');
+      
+      if (!tokenRes.ok) {
+        Alert.alert('Error', 'Unable to get authorization token');
         return;
       }
+      
+      const tokenData = await tokenRes.json();
+      const authToken = tokenData.access_token;
+      
+      // Get TOS token from Moov
+      const tosRes = await fetch('https://api.moov.io/tos-token', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      
+      if (!tosRes.ok) {
+        Alert.alert('Error', 'Unable to get terms of service');
+        return;
+      }
+      
+      const tosData = await tosRes.json();
+      setTosToken(tosData.token);
+      
+      // Proceed to onboarding with TOS token ready
       animateTo(1, 1);
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Unable to create account');
+      Alert.alert('Error', e?.message || 'Unable to start onboarding');
     } finally {
       setCreatingAccount(false);
     }
@@ -962,31 +959,26 @@ export default function KybOnboardingScreen() {
             <Animated.View style={{ opacity: fade, transform: [{ translateX: slide.interpolate({ inputRange:[-1,0,1], outputRange:[-24,0,24] }) }] , marginTop:0, marginBottom:24, backgroundColor:'#fff', borderRadius:16, padding:16, borderWidth:1, borderColor:'#E0E7FF' }}>
               <Text style={{ fontSize:20, fontWeight:'800', marginBottom:8 }}>Securely verify your details</Text>
               <Text style={{ color:'#4B5563', marginBottom:12 }}>Enter SSN, date of birth, and bank info. We transmit directly to our payments provider without storing any sensitive data.</Text>
-              <View style={{ marginBottom:8, position:'relative' }}>
+              <View style={{ marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>SSN</Text>
-                {/* underlying input captures digits; text hidden; overlay shows mask */}
                 <TextInput
-                  value={ssn}
-                  onChangeText={(t)=> setSsn(String(t||'').replace(/\D/g,'').slice(0,9))}
-                  keyboardType="number-pad"
-                  maxLength={9}
-                  placeholder="***-**-6789"
-                  placeholderTextColor="#9CA3AF"
-                  style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10, color:'transparent' }}
-                />
-                <Text pointerEvents="none" style={{ position:'absolute', left:12, top:36, color:'#111827' }}>
-                  {(function(){
+                  value={(function(){
                     const d = String(ssn||'').replace(/\D/g,'').slice(0,9);
-                    const p1 = d.slice(0,3), p2 = d.slice(3,5), p3 = d.slice(5,9);
-                    const m1 = '*'.repeat(p1.length);
-                    const m2 = '*'.repeat(p2.length);
-                    const segs = [];
-                    if (p1) segs.push(m1);
-                    if (p2) segs.push(m2);
-                    if (p3) segs.push(p3);
-                    return segs.join('-');
+                    if (d.length <= 3) return d;
+                    if (d.length <= 5) return `${d.slice(0,3)}-${d.slice(3)}`;
+                    return `${d.slice(0,3)}-${d.slice(3,5)}-${d.slice(5)}`;
                   })()}
-                </Text>
+                  onChangeText={(t)=> {
+                    // Extract only digits and store them
+                    const digits = String(t||'').replace(/\D/g,'').slice(0,9);
+                    setSsn(digits);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={11} // Allow for dashes: ###-##-####
+                  placeholder="123-45-6789"
+                  placeholderTextColor="#9CA3AF"
+                  style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
+                />
               </View>
               <View style={{ marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Date of birth (MM‑DD‑YYYY)</Text>
@@ -1094,30 +1086,26 @@ export default function KybOnboardingScreen() {
                   </View>
                 </View>
               )}
-              <View style={{ marginTop:8, marginBottom:8, position:'relative' }}>
+              <View style={{ marginTop:8, marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>SSN</Text>
                 <TextInput
-                  value={ssn}
-                  onChangeText={(t)=> setSsn(String(t||'').replace(/\D/g,'').slice(0,9))}
-                  keyboardType="number-pad"
-                  maxLength={9}
-                  placeholder="***-**-6789"
-                  placeholderTextColor="#9CA3AF"
-                  style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10, color:'transparent' }}
-                />
-                <Text pointerEvents="none" style={{ position:'absolute', left:12, top:36, color:'#111827' }}>
-                  {(function(){
+                  value={(function(){
                     const d = String(ssn||'').replace(/\D/g,'').slice(0,9);
-                    const p1 = d.slice(0,3), p2 = d.slice(3,5), p3 = d.slice(5,9);
-                    const m1 = '*'.repeat(p1.length);
-                    const m2 = '*'.repeat(p2.length);
-                    const segs = [];
-                    if (p1) segs.push(m1);
-                    if (p2) segs.push(m2);
-                    if (p3) segs.push(p3);
-                    return segs.join('-');
+                    if (d.length <= 3) return d;
+                    if (d.length <= 5) return `${d.slice(0,3)}-${d.slice(3)}`;
+                    return `${d.slice(0,3)}-${d.slice(3,5)}-${d.slice(5)}`;
                   })()}
-                </Text>
+                  onChangeText={(t)=> {
+                    // Extract only digits and store them
+                    const digits = String(t||'').replace(/\D/g,'').slice(0,9);
+                    setSsn(digits);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={11} // Allow for dashes: ###-##-####
+                  placeholder="123-45-6789"
+                  placeholderTextColor="#9CA3AF"
+                  style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
+                />
               </View>
               <View style={{ marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Date of birth (MM‑DD‑YYYY)</Text>

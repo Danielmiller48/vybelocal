@@ -79,13 +79,19 @@ export default function KybIntroScreen() {
         const res = await fetch('https://vybelocal.com/api/payments/moov/status', { headers: { 'Authorization': `Bearer ${token}` } });
         const j = await res.json();
         const status = (j?.moov_status || '').toLowerCase();
-        if (status === 'in_review' || status === 'active') {
-          Alert.alert('Already submitted', status === 'active' ? 'Your account is active.' : 'Your details are pending review.');
+        const payoutsOk = !!j?.payouts_ok;
+        if (status === 'active' && !payoutsOk) {
+          // Fast-forward to payment method linking (step 5)
+          navigation.navigate('KybOnboardingClean2');
           return;
         }
-        if (status === 'action_required') { navigation.navigate('MoovOnboardingWeb'); return; }
+        if (status === 'in_review') {
+          Alert.alert('Submitted','Your details are pending review.');
+          return;
+        }
+        if (status === 'action_required') { navigation.navigate('KybOnboarding'); return; }
       } catch (_) {}
-      navigation.navigate('MoovTosScreen');
+      navigation.navigate('KybOnboardingClean2');
     } finally { setSubmitting(false); }
   };
 

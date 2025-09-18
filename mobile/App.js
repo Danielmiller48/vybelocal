@@ -27,7 +27,8 @@ import BlockedUsersScreen from './screens/BlockedUsersScreen';
 import PushNotificationService from './utils/pushNotifications';
 import ProfileSettingsScreen from './screens/ProfileSettingsScreen';
 import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
-import KybOnboardingScreen from './screens/KybOnboardingScreen';
+import KybOnboardingScreen from './screens/KybOnboardingClean2';
+import KybOnboardingClean from './screens/KybOnboardingClean';
 import { OnboardingDraftProvider } from './components/OnboardingDraftProvider';
 import KybIntroScreen from './screens/KybIntroScreen';
 import MoovOnboardingWeb from './screens/MoovOnboardingWeb';
@@ -153,6 +154,9 @@ function HomeStackScreen() {
       <HomeStack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
       <HomeStack.Screen name="KybIntro" component={KybIntroScreen} />
       <HomeStack.Screen name="KybOnboarding" component={KybOnboardingScreen} />
+      <HomeStack.Screen name="KybOnboardingClean" component={KybOnboardingClean} />
+      <HomeStack.Screen name="KybOnboardingClean2" component={KybOnboardingScreen} />
+      {/* Removed MoovComposablePiiWeb placeholder screen */}
       <HomeStack.Screen name="MoovTosScreen" component={MoovTosScreen} />
       <HomeStack.Screen name="MoovOnboardingWeb" component={MoovOnboardingWeb} />
     </HomeStack.Navigator>

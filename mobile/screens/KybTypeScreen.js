@@ -40,21 +40,8 @@ export default function KybTypeScreen({ navigation }) {
 
   const start = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) { Alert.alert('Sign in required', 'Please log in to continue.'); return; }
-      // Seed Moov with type + MCC (and website/email handled server-side)
-      let accountId = null;
-      try {
-        const res = await fetch('https://vybelocal.com/api/payments/moov/preset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ type, mcc: type === 'business' ? mcc : null }),
-        });
-        const j = await res.json();
-        if (res.ok) accountId = j?.moov_account_id || null;
-      } catch (_) {}
-      navigation.navigate('MoovTosScreen', { mcc: type === 'business' ? mcc : null, accountId });
+      // Navigate directly to original Tilled KYB flow
+      navigation.navigate('KybOnboardingScreen');
     } catch (_) {
       Alert.alert('Error', 'Unable to start verification right now.');
     }

@@ -37,4 +37,13 @@ b7cf729  2025-08-24 15:27:48 -0600  mobile(analytics): wire peak RSVP window to 
 a22caba  2025-08-24 13:18:07 -0600  merge: tilled-migration into main
 a30895f  2025-08-24 13:17:04 -0600  chore: bump waitlist submodule to d3535ff
 1417eee  2025-08-24 08:37:46 -0600  analytics(rollups): use net_to_host_cents for host_live.total_revenue_cents; recompute from host_monthly; fix seed scripts; backfill step required
-5d165e4  2025-08-23 14:16:05 -0600  mobile(analytics): add Top Revenue events table in avg revenue modal; fix host_monthly net_to_host aggregates; backfill event_live/daily seed + 30d RPCs; cleanup logs; keep public.events intact in cleanup
+5d165e4  2025-08-23 14:16:05 -0600  mobile(analytics): add Top Revenue events table in avg revenue modal; fix host_monthly net_to_host aggregates; backfill event_live/daily seed + 30d RPCs; cleanup logs; keep public.events intact in cleanup[33m741b77b[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m config(moov-drop): explicitly set open=true and microDeposits=true
+[33m76372e6[m feat(moov-drop): add comprehensive event handlers (onError, onCancel, onSuccess)
+[33m82caccb[m fix(moov-drop): re-enable capabilities request (transfers, collect-funds, wallet) - was disabled during troubleshooting
+[33m79c83a8[m feat(moov-drop): add token refresh for all resource types (paymentMethod, bankAccount)
+[33m7d1589c[m feat: update RSVPButton for Moov payment integration
+[33m4d31bc8[m fix(mobile): remove KybType nav; request wallet+collect-funds on account create; finish closes via moov:done
+[33me3f48aa[m revert(mobile): restore Drop flow from a3207fc for Moov onboarding
+[33mef52f25[m revert(kyb): remove interim type screen; route intro -> Moov directly; pass MCC; Drop only applies MCC
+[33m6d58014[m ux(moov): remove interim; add inline type+curated MCC picker inside Drop page and apply via profile PATCH before opening
+[33m35ea18e[m feat(moov): preset entity type in Drop (individualProfile or businessProfile); business still sets MCC

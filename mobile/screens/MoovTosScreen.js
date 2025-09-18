@@ -1,227 +1,107 @@
-import React, { useRef, useState } from 'react';
-import { View, StyleSheet, Alert, ActivityIndicator, Text } from 'react-native';
-import { WebView } from 'react-native-webview';
+import React, { useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { supabase } from '../utils/supabase';
+import { WebView } from 'react-native-webview';
+import { View } from 'react-native';
 
 export default function MoovTosScreen({ route, navigation }) {
   const { mcc, accountId } = route.params || {};
-  const [loading, setLoading] = useState(false);
-  const webViewRef = useRef(null);
+  const webRef = useRef(null);
 
-  const handleWebViewMessage = async (event) => {
-    try {
-      const message = JSON.parse(event.nativeEvent.data);
-      console.log('TOS WebView message:', message);
-
-      if (message.type === 'moov:tos:accepted') {
-        setLoading(true);
-        console.log('TOS accepted, proceeding to onboarding...');
-        navigation.navigate('MoovOnboardingWeb', { mcc, accountId });
-      } else if (message.type === 'moov:tos:error') {
-        Alert.alert('Error', 'There was an issue with terms acceptance. Please try again.');
-        setLoading(false);
-      } else if (message.type === 'moov:tos:cancel') {
-        navigation.goBack();
-      }
-    } catch (e) {
-      console.error('TOS message parse error:', e);
+  const html = `<!doctype html><html><head>
+  <meta charset='utf-8'/>
+  <meta name='viewport' content='width=device-width, initial-scale=1'/>
+  <script src='https://js.moov.io/v1'></script>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;margin:0;background:#f6f7fb}
+    .wrap{max-width:720px;margin:0 auto;padding:16px;position:relative;z-index:0}
+    h3{margin:0 0 12px}
+    .box{background:#fff;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,0.06);padding:12px;position:relative;overflow:auto}
+    moov-terms-of-service{display:block}
+    .btn{margin-top:16px;width:100%;background:#6366f1;color:#fff;border:none;border-radius:8px;padding:12px 16px;font-size:16px;position:relative;z-index:2;pointer-events:auto}
+    .btn:disabled{background:#d1d5db}
+  </style></head><body>
+  <div class='wrap'>
+    <h3>Terms of Service</h3>
+    <div class='box'>
+      <moov-terms-of-service id='tos'></moov-terms-of-service>
+    </div>
+    <button id='go' class='btn' disabled>Continue to Onboarding</button>
+  </div>
+  <script>(async function(){
+    function log(){
+      try{ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify({type:'log', args:[...arguments]})); } }catch(e){}
+      try{ console.log.apply(console, arguments); }catch(e){}
     }
+    const termsOfService = document.querySelector('moov-terms-of-service');
+    const btn = document.getElementById('go');
+    let tosToken=null;
+    log('TOS flow - no accountId needed yet');
+    async function token(){
+      const r = await fetch('https://vybelocal.com/api/payments/moov/token',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({})
+      });
+      const j = await r.json();
+      return j.access_token;
+    }
+    const apiToken = await token();
+    termsOfService.token = apiToken;
+    termsOfService.setAttribute('token', apiToken);
+    termsOfService.textColor='rgb(17,24,39)';
+    termsOfService.linkColor='rgb(37,99,235)';
+    termsOfService.backgroundColor='rgb(255,255,255)';
+    termsOfService.fontSize='16px';
+    termsOfService.onTermsOfServiceTokenReady=(termsOfServiceToken)=>{log('tos ready');tosToken=termsOfServiceToken;btn.disabled=false};
+    termsOfService.onTermsOfServiceTokenError=(error)=>{log('tos error',error)};
+    async function handleGo(){
+      log('btn click');
+      if(!tosToken){alert('Please accept the terms first');return;}
+      try{
+         const res=await fetch('https://vybelocal.com/api/payments/moov/tos/accept',{
+           method:'POST',headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({ tosToken: tosToken })
+        });
+        if(res.ok){
+          if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(JSON.stringify({type:'moov:tos:accepted'}));}
+        }else{
+          log('tos patch failed',res.status);
+        }
+      }catch(err){ log('tos patch error',err) }
+    }
+    btn.addEventListener('click', async function(){
+      log('btn click');
+      if(!tosToken){alert('Please accept the terms first');return;}
+      // Pass TOS token directly to onboarding instead of trying to patch it here
+      if(window.ReactNativeWebView){
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type:'moov:tos:accepted', 
+          tosToken: tosToken
+        }));
+      }
+    });
+  })();</script>
+  </body></html>`;
+
+  const onMessage = (e) => {
+    try {
+      const msg = JSON.parse(e.nativeEvent.data);
+      if (msg.type === 'moov:tos:accepted') {
+        navigation.navigate('MoovOnboardingWeb', { 
+          mcc, 
+          accountId, 
+          tosAccepted: true,
+          tosToken: msg.tosToken 
+        });
+      }
+    } catch {}
   };
 
-  const facilitatorId = '17963f1c-3e21-413e-a1ee-6f0fa917e46a';
-
-  const htmlContent = `
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <script src="https://js.moov.io/v1"></script>
-      <style>
-        body {
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
-          margin: 0;
-          padding: 16px;
-          background: #f6f7fb;
-        }
-        .wrap {
-          max-width: 720px;
-          margin: 0 auto;
-        }
-        .continue-btn {
-          background: #6366f1;
-          color: white;
-          border: none;
-          padding: 12px 24px;
-          border-radius: 8px;
-          font-size: 16px;
-          margin-top: 16px;
-          cursor: pointer;
-          width: 100%;
-        }
-        .continue-btn:disabled {
-          background: #d1d5db;
-          cursor: not-allowed;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="wrap">
-        <h3>Terms of Service</h3>
-        <moov-terms-of-service id="tos-drop"></moov-terms-of-service>
-        <button id="continue-btn" class="continue-btn" disabled>Continue to Onboarding</button>
-      </div>
-      <script>
-        (async function(){
-          const facilitator = '${facilitatorId}';
-          const accountId = '${accountId || ''}';
-          const tosDrop = document.getElementById('tos-drop');
-          const continueBtn = document.getElementById('continue-btn');
-          
-          let tosToken = null;
-          
-          // Get initial token for TOS Drop
-          async function fetchToken() {
-            try {
-              const res = await fetch('/api/payments/moov/token', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ accountId }) 
-              });
-              const j = await res.json();
-              return j?.access_token;
-            } catch (e) {
-              console.error('Token fetch failed:', e);
-              return null;
-            }
-          }
-          
-          try {
-            tosDrop.token = await fetchToken();
-            console.log('✅ TOS Drop token set');
-          } catch (e) {
-            console.error('❌ TOS Drop token failed:', e);
-          }
-
-          tosDrop.onTermsOfServiceTokenReady = (termsOfServiceToken) => {
-            console.log('✅ TOS token generated:', termsOfServiceToken);
-            tosToken = termsOfServiceToken;
-            continueBtn.disabled = false;
-            continueBtn.textContent = 'Continue to Onboarding';
-          };
-
-          tosDrop.onTermsOfServiceTokenError = (error) => {
-            console.error('❌ TOS token error:', error);
-            try { 
-              if (window.ReactNativeWebView) { 
-                window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:tos:error', error })); 
-              } 
-            } catch(_) {}
-          };
-
-          continueBtn.addEventListener('click', async () => {
-            if (!tosToken) {
-              alert('Please accept the terms of service first');
-              return;
-            }
-            
-            continueBtn.disabled = true;
-            continueBtn.textContent = 'Processing...';
-            
-            // Patch TOS token to account
-            if (accountId && tosToken) {
-              try {
-                const res = await fetch('/api/payments/moov/tos/accept', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ accountId, tosToken })
-                });
-                
-                if (res.ok) {
-                  console.log('✅ TOS patched to account');
-                  try { 
-                    if (window.ReactNativeWebView) { 
-                      window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:tos:accepted' })); 
-                    } 
-                  } catch(_) {}
-                } else {
-                  console.error('❌ TOS patch failed:', res.status);
-                  try { 
-                    if (window.ReactNativeWebView) { 
-                      window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:tos:error', status: res.status })); 
-                    } 
-                  } catch(_) {}
-                }
-              } catch (e) {
-                console.error('❌ TOS patch error:', e);
-                try { 
-                  if (window.ReactNativeWebView) { 
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:tos:error', error: e.message })); 
-                  } 
-                } catch(_) {}
-              }
-            } else {
-              try { 
-                if (window.ReactNativeWebView) { 
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ type:'moov:tos:accepted' })); 
-                } 
-              } catch(_) {}
-            }
-          });
-
-          console.log('🚀 TOS Drop initialized');
-        })();
-      </script>
-    </body>
-  </html>`;
-
   return (
-    <SafeAreaView style={styles.container}>
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#6366f1" />
-          <Text style={styles.loadingText}>Processing terms acceptance...</Text>
-        </View>
-      )}
-      <WebView
-        ref={webViewRef}
-        source={{ html: htmlContent }}
-        style={styles.webview}
-        onMessage={handleWebViewMessage}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        startInLoadingState={true}
-        scalesPageToFit={false}
-        mixedContentMode="compatibility"
-        allowsInlineMediaPlayback={true}
-        mediaPlaybackRequiresUserAction={false}
-      />
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }} edges={['top']}> 
+      <View style={{ flex: 1, backgroundColor: '#f6f7fb' }}>
+        <WebView ref={webRef} source={{ html, baseUrl: 'https://vybelocal.com' }} onMessage={onMessage} />
+      </View>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f6f7fb',
-  },
-  webview: {
-    flex: 1,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  loadingText: {
-    color: 'white',
-    marginTop: 10,
-    fontSize: 16,
-  },
-});

@@ -1458,9 +1458,33 @@ export default function KybOnboardingScreen() {
                             el.onSuccess=function(pm){
                               var method = (pm && (pm.paymentMethodType || pm.type)) || (pm && pm.card ? 'card' : (pm && pm.bankAccount ? 'bank' : 'unknown'));
                               var id = pm && (pm.paymentMethodID || pm.id) || null;
-                              post('pm:success', { ok:true, method: method, id: id });
+                              post('pm:success', { ok:true, method: method, id: id, source:'prop:onSuccess' });
                             };
                             el.onError=function(err){ post('pm:error', { message: String(err?.message||err) }); };
+                            try{ el.onExit = function(err, metadata){ post('pm:exit', { message: String(err?.message||err||''), metadata: metadata||null, source:'prop:onExit' }); }; }catch(_){}
+                            try{ el.onComplete = function(){ post('pm:console', { level:'debug', msg:'onComplete fired' }); }; }catch(_){}
+                            try{ el.onPaymentMethodAdded = function(pm){
+                              var method = (pm && (pm.paymentMethodType || pm.type)) || (pm && pm.card ? 'card' : (pm && pm.bankAccount ? 'bank' : 'unknown'));
+                              var id = pm && (pm.paymentMethodID || pm.id) || null;
+                              post('pm:success', { ok:true, method: method, id: id, source:'prop:onPaymentMethodAdded' });
+                            }; }catch(_){}
+                            // Also listen for DOM CustomEvents in case property callbacks don't fire in this environment
+                            try{
+                              var _evtNames=['success','paymentMethodAdded','payment-method-added','paymentmethodadded','added','complete','exit','close'];
+                              _evtNames.forEach(function(n){
+                                try{ el.addEventListener(n, function(e){
+                                  var d=e && (e.detail||{});
+                                  var method=(d.paymentMethodType||d.type)||(d.card?'card':(d.bankAccount?'bank':'unknown'));
+                                  var id=(d.paymentMethodID||d.id)||null;
+                                  post('pm:success', { ok:true, method: method, id: id, source:n });
+                                }); }catch(__){}
+                              });
+                              try{ window.addEventListener('message', function(ev){
+                                try{ var data = (typeof ev.data==='string' && ev.data[0]==='{') ? JSON.parse(ev.data) : ev.data; }catch(__){ var data = ev.data; }
+                                post('pm:console', { level:'debug', msg:'window.message '+JSON.stringify(data).slice(0,200) });
+                              }, false); }catch(__){}
+                              post('pm:console',{ level:'debug', msg:'callbacks attached' });
+                            }catch(__){}
                             const mount=document.getElementById('mount');
                             mount.appendChild(el);
                             try{ el.open = true; el.setAttribute('open','true'); }catch(_){}
@@ -1499,6 +1523,7 @@ export default function KybOnboardingScreen() {
                         }
                       }
                       if(msg.type==='pm:error'){ console.log('[PM error]', msg); }
+                      if(msg.type==='pm:exit'){ console.log('[PM exit]', msg); }
                     }catch{}
                   }}
                 />
