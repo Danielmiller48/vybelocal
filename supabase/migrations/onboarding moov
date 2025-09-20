@@ -1,0 +1,84 @@
+curl --X POST "https://api.moov.io/onboarding-invites" \
+  -H "Authorization: Bearer {token}" \
+  --data-raw '{
+    "returnURL": "https://mycompany.com/account",
+    "termsOfServiceURL": "https://mycompany.com/terms-of-service",
+    "scopes": [
+     "accounts.read"
+    ],
+    "capabilities": [
+      "transfers"
+    ],
+    "feePlanCodes": [
+      "merchant-direct"
+    ],
+    "prefill": {
+      "mode": "sandbox",
+      "accountType": "business",
+      "profile": {
+        "business": {
+          "legalBusinessName": "Whole Body Fitness LLC", // use user's full name
+          "doingBusinessAs": "Whole Body Fitness", // use user's full name
+          "businessType": "soleProprietorship", 
+          "address": {
+            "addressLine1": "123 Main Street", // use user's address
+            "addressLine2": "Apt 302", // use user's address
+            "city": "Boulder", // use user's address
+            "stateOrProvince": "CO", // use user's address
+            "postalCode": "80301", // use user's address
+            "country": "US" // use user's address
+          },
+          "phone": {
+            "number": "8185551212", // use user's phone, pulled from profile
+            "countryCode": "1" // use user's phone, pulled from profile
+          },
+          "email": "amanda@classbooker.dev", // use user's email, pulled from profile
+          "website": "www.wholebodyfitnessgym.com", //use vybelocal slug that we created for tilled// use user's website, pulled from profile
+          "description": "Local fitness center paying out instructors", //use description utility// use user's description, pulled from profile
+          "taxID": {
+            "ein": {
+              "number": "123-45-6789" // use user's SSN ensure strict pii protocol
+            }
+          },
+          "industryCodes": {
+            "naics": "713940", //create naics utility
+            "sic": "7991", //create sic utility
+            "mcc": "7997" //use mcc selector
+          },
+          "primaryRegulator": "FDIC"
+        }
+      },
+      "metadata": {
+        "property1": "string",
+        "property2": "string"
+      },
+      "termsOfService": {
+        "token": "kgT1uxoMAk7QKuyJcmQE8nqW_HjpyuXBabiXPi6T83fUKRJkA3dsFID6fzitMpm2qrOh4"
+      },
+      "foreignID": "4528aba-b9a1-11eb-8529-0242ac13003",
+      "customerSupport": {
+        "phone": {
+          "number": "8185551212", // use user's phone, pulled from profile
+          "countryCode": "1"
+        },
+        "email": "amanda@classbooker.dev", // use user's email, pulled from profile
+        "address": {
+          "addressLine1": "123 Main Street", // use user's address
+          "addressLine2": "Apt 302", // use user's address
+          "city": "Boulder", // use user's address
+          "stateOrProvince": "CO", // use user's address
+          "postalCode": "80301", // use user's address
+          "country": "US"
+        },
+        "website": "www.wholebodyfitnessgym.com" //use vybelocal slug that we created for tilled
+      },
+      "settings": {
+        "cardPayment": {
+          "statementDescriptor": "Whole Body Fitness" //not really sure what we should put here, maybe VybelocalEvents
+        },
+        "achPayment": {
+          "companyName": "Whole Body Fitness" //VybelocalEvents
+        }
+      }
+    }
+  }'\
