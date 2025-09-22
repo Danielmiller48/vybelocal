@@ -97,6 +97,30 @@ export default function PaymentMethodsScreen({ route }) {
     );
   };
 
+  const handleDeleteBank = async (bankAccountID) => {
+    Alert.alert(
+      'Remove bank account',
+      'Are you sure you want to remove this bank from payouts?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            const res = await fetch(`${API_BASE}/api/payments/moov/bank/delete`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accountId: explicitAccountId, bankAccountId: bankAccountID })
+            });
+            const j = await res.json().catch(()=>({}));
+            if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+            Alert.alert('Removed', 'Bank account removed.');
+            fetchSummary();
+          } catch (e) {
+            Alert.alert('Error', e?.message || 'Failed to remove bank');
+          }
+        } }
+      ]
+    );
+  };
+
   const b = data?.business || {};
   const banks = b?.banks || [];
   const cards = b?.cards || [];
@@ -172,14 +196,19 @@ export default function PaymentMethodsScreen({ route }) {
             {banks.length === 0 ? (
               <Text style={styles.muted}>No bank accounts.</Text>
             ) : banks.map((ba) => (
-              <View key={ba.bankAccountID} style={styles.listRow}>
-                <Text style={styles.rowMain}>{ba.bankName || 'Bank'} •••• {ba.lastFourAccountNumber}</Text>
-                <Text style={styles.rowSub}>Status: {ba.status}</Text>
-                {(ba.status === 'new' || ba.status === 'pending') && (
-                  <TouchableOpacity onPress={() => handleVerify(ba.bankAccountID)} style={[styles.primaryBtn,{ alignSelf:'flex-start', marginTop:6 }] }>
-                    <Text style={styles.primaryBtnText}>Verify deposits</Text>
-                  </TouchableOpacity>
-                )}
+              <View key={ba.bankAccountID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}>
+                <View style={{ flex:1, paddingRight:12 }}>
+                  <Text style={styles.rowMain}>{ba.bankName || 'Bank'} •••• {ba.lastFourAccountNumber}</Text>
+                  <Text style={styles.rowSub}>Status: {ba.status}</Text>
+                  {(ba.status === 'new' || ba.status === 'pending') && (
+                    <TouchableOpacity onPress={() => handleVerify(ba.bankAccountID)} style={[styles.primaryBtn,{ alignSelf:'flex-start', marginTop:6 }] }>
+                      <Text style={styles.primaryBtnText}>Verify deposits</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity onPress={() => handleDeleteBank(ba.bankAccountID)} style={{ paddingVertical:6, paddingHorizontal:10 }}>
+                  <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                </TouchableOpacity>
               </View>
             ))}
 
