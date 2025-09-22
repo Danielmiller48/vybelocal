@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
+import { useRoute } from '@react-navigation/native';
 import { useOnboardingDraft } from '../components/OnboardingDraftProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
@@ -32,8 +33,15 @@ const US_STATES = [
 
 export default function KybOnboardingScreen() {
   const { profile, user } = useAuth();
+  const route = useRoute();
   const { draft, updateDraft } = useOnboardingDraft();
-  const [step, setStep] = React.useState(0);
+  const canFastForward = (s) => {
+    const st = String(s || '').toLowerCase();
+    return st === 'active' || st === 'pending';
+  };
+  const ff = route?.params?.ff === true;
+  const [step, setStep] = React.useState(() => (ff || canFastForward(profile?.moov_status)) ? 5 : 0);
+  const [ready, setReady] = React.useState(false);
   const [bizType, setBizType] = React.useState(draft.bizType || 'sp'); // 'sp' | 'llc' | '501c3'
   const [spMcc, setSpMcc] = React.useState(draft.spMcc || '7922'); // individual MCC selection
   const [supportEmail, setSupportEmail] = React.useState(draft.supportEmail || '');
@@ -78,6 +86,15 @@ export default function KybOnboardingScreen() {
   const ssnHiddenRef = React.useRef(null);
   const dropdownSpacer = React.useRef(new Animated.Value(0)).current; // pushes placeholders down
   const dropdownOpacity = React.useRef(new Animated.Value(0)).current;
+  // make initial render flicker-free by seeding account ID and revealing after init
+  React.useLayoutEffect(() => {
+    try {
+      if ((ff || canFastForward(profile?.moov_status)) && profile?.moov_account_id) {
+        setMoovAccountId(profile.moov_account_id);
+      }
+    } catch {}
+    setReady(true);
+  }, [ff, profile?.moov_status, profile?.moov_account_id]);
   const OPTIONS_HEIGHT = 170;
   // Business fields (LLC/Corp)
   const [bizLegalName, setBizLegalName] = React.useState('');
@@ -120,22 +137,29 @@ export default function KybOnboardingScreen() {
   const mccImageOpacity = React.useRef(new Animated.Value(0)).current;
   const PLACEHOLDER_H = 280;
 
-  // Fast-forward into step 5 when account is active but payouts not yet OK
+  // Fast-forward into step 5 when account is active but payouts not yet OK (via Moov status route)
   React.useEffect(()=>{
     (async ()=>{
-      try{
+      try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) return;
-        const r = await fetch('https://vybelocal.com/api/payments/moov/status',{ headers:{ 'Authorization': `Bearer ${token}` } });
-        const j = await r.json();
-        const status = String(j?.moov_status||'').toLowerCase();
-        const payoutsOk = !!j?.payouts_ok;
-        if (status==='active' && !payoutsOk) {
-          if (j?.moov_account_id) setMoovAccountId(j.moov_account_id);
-          setStep(5);
+        // Try primary domain, fallback to waitlist vercel if needed
+        const bases = ['https://vybelocal.com', 'https://vybelocal-waitlist.vercel.app'];
+        for (const base of bases) {
+          try {
+            const r = await fetch(base + '/api/payments/moov/status', { headers:{ 'Authorization': `Bearer ${token}` } });
+            const j = await r.json();
+            if (!r.ok) continue;
+            const status = String(j?.moov_status||'').toLowerCase();
+            if (status==='active' || status==='pending') {
+              if (j?.moov_account_id) setMoovAccountId(j.moov_account_id);
+              setStep(5);
+            }
+            break;
+          } catch {}
         }
-      }catch{}
+      } catch {}
     })();
   },[]);
 
@@ -795,7 +819,7 @@ export default function KybOnboardingScreen() {
 
   return (
     <LinearGradient colors={['rgba(59,130,246,0.18)', 'rgba(14,165,233,0.18)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>        
+      <SafeAreaView style={{ flex: 1, opacity: ready ? 1 : 0 }} edges={['top', 'left', 'right']}>        
         <AppHeader />
         <ScrollView contentContainerStyle={{ padding:16, flexGrow:1, justifyContent:'center' }}>
           <View style={{ alignItems:'center' }}>

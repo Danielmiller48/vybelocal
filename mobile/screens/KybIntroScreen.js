@@ -79,8 +79,7 @@ export default function KybIntroScreen() {
         const res = await fetch('https://vybelocal.com/api/payments/moov/status', { headers: { 'Authorization': `Bearer ${token}` } });
         const j = await res.json();
         const status = (j?.moov_status || '').toLowerCase();
-        const payoutsOk = !!j?.payouts_ok;
-        if (status === 'active' && !payoutsOk) {
+        if (status === 'active' || status === 'pending') {
           // Fast-forward to payment method linking (step 5)
           navigation.navigate('KybOnboardingClean2');
           return;

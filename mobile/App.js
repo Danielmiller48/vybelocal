@@ -33,6 +33,7 @@ import { OnboardingDraftProvider } from './components/OnboardingDraftProvider';
 import KybIntroScreen from './screens/KybIntroScreen';
 import MoovOnboardingWeb from './screens/MoovOnboardingWeb';
 import MoovTosScreen from './screens/MoovTosScreen';
+import PaymentMethodsScreen from './screens/PaymentMethodsScreen';
 
 // Make PushNotificationService available globally for testing
 if (__DEV__) {
@@ -159,6 +160,7 @@ function HomeStackScreen() {
       {/* Removed MoovComposablePiiWeb placeholder screen */}
       <HomeStack.Screen name="MoovTosScreen" component={MoovTosScreen} />
       <HomeStack.Screen name="MoovOnboardingWeb" component={MoovOnboardingWeb} />
+      <HomeStack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
     </HomeStack.Navigator>
   );
 }
