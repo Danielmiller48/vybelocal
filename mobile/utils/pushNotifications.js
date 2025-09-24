@@ -182,22 +182,23 @@ class PushNotificationService {
   setupNotificationListeners() {
     // Listener for when notification is received while app is foregrounded
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      
-      // For chat messages, we could show an in-app banner or update chat UI
-      const data = notification.request.content.data;
-      if (data?.type === 'chat_message') {
-        // Could emit an event here to update chat UI or show in-app notification
-      }
+      const data = notification.request.content.data || {};
+      try {
+        if (data.type === 'bank_created') {
+          // Send a simple event the app can listen to
+          globalThis.__vybe_push_event__ = { type: 'bank_created', accountId: data.accountId, bankAccountId: data.bankAccountId, ts: Date.now() };
+        }
+      } catch {}
     });
 
     // Listener for when user taps on notification
     this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      
-      const data = response.notification.request.content.data;
-      if (data?.type === 'chat_message') {
-        // Navigate to the specific chat/event
-        this.handleChatNotificationTap(data);
-      }
+      const data = response.notification.request.content.data || {};
+      try {
+        if (data.type === 'bank_created') {
+          globalThis.__vybe_push_event__ = { type: 'bank_created', accountId: data.accountId, bankAccountId: data.bankAccountId, ts: Date.now() };
+        }
+      } catch {}
     });
   }
 

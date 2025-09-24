@@ -83,7 +83,7 @@ export default function PaymentMethodsScreen({ route }) {
           if (cleaned.length !== 2) { Alert.alert('Invalid', 'Enter two numbers, e.g., 12,34'); return; }
           const res = await fetch(`${API_BASE}/api/payments/moov/bank-verify`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accountId: explicitAccountId, bankAccountId: bankAccountID, amounts: cleaned })
+            body: JSON.stringify({ accountId: accountIdForWrites, bankAccountId: bankAccountID, amounts: cleaned })
           });
           const j = await res.json();
           if (!res.ok) throw new Error(j?.error || 'Verification failed');
@@ -107,7 +107,7 @@ export default function PaymentMethodsScreen({ route }) {
           try {
             const res = await fetch(`${API_BASE}/api/payments/moov/bank/delete`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ accountId: explicitAccountId, bankAccountId: bankAccountID })
+              body: JSON.stringify({ accountId: accountIdForWrites, bankAccountId: bankAccountID })
             });
             const j = await res.json().catch(()=>({}));
             if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
@@ -121,10 +121,36 @@ export default function PaymentMethodsScreen({ route }) {
     );
   };
 
+  const handleDeleteCard = async (cardID) => {
+    Alert.alert(
+      'Remove card',
+      'Are you sure you want to remove this card?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            const res = await fetch(`${API_BASE}/api/payments/moov/card/delete`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accountId: accountIdForWrites, cardId: cardID })
+            });
+            const j = await res.json().catch(()=>({}));
+            if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+            Alert.alert('Removed', 'Card removed.');
+            fetchSummary();
+          } catch (e) {
+            Alert.alert('Error', e?.message || 'Failed to remove card');
+          }
+        } }
+      ]
+    );
+  };
+
   const b = data?.business || {};
   const banks = b?.banks || [];
   const cards = b?.cards || [];
   const status = b?.moov_status || null;
+  const accountIdForWrites = b?.accountId || explicitAccountId || profile?.moov_account_id || null;
+
 
   // If no host onboarding started yet → replace with CTA
   if (!loading && !error && !status) {
@@ -214,9 +240,14 @@ export default function PaymentMethodsScreen({ route }) {
 
             <Text style={[styles.sectionSmallTitle,{ marginTop: 12 }]}>Business cards</Text>
             {cards.length === 0 ? <Text style={styles.muted}>No cards.</Text> : cards.map((c) => (
-              <View key={c.cardID} style={styles.listRow}>
-                <Text style={styles.rowMain}>{c.brand} {c.cardType?.toUpperCase?.()} •••• {c.lastFourCardNumber}</Text>
-                <Text style={styles.rowSub}>Exp {c.expiration?.month}/{c.expiration?.year}</Text>
+              <View key={c.cardID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}>
+                <View style={{ flex:1, paddingRight:12 }}>
+                  <Text style={styles.rowMain}>{c.brand} {c.cardType?.toUpperCase?.()} •••• {c.lastFourCardNumber}</Text>
+                  <Text style={styles.rowSub}>Exp {c.expiration?.month}/{c.expiration?.year}</Text>
+                </View>
+                <TouchableOpacity onPress={() => handleDeleteCard(c.cardID)} style={{ paddingVertical:6, paddingHorizontal:10 }}>
+                  <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </View>

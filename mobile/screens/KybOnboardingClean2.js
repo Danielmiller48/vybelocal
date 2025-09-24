@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Alert, TextInput, Linking, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Alert, TextInput, Linking, ActivityIndicator, Pressable, Modal } from 'react-native';
 import { WebView } from 'react-native-webview';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -82,6 +82,99 @@ export default function KybOnboardingScreen() {
   const [idemKey, setIdemKey] = React.useState(null);
   const [moovAccountId, setMoovAccountId] = React.useState(null);
   const [pmLinked, setPmLinked] = React.useState(false);
+  const [verifyVisible, setVerifyVisible] = React.useState(false);
+  const [verifyMethod, setVerifyMethod] = React.useState(null); // 'instant' | 'ach' | null
+  const [lastBank, setLastBank] = React.useState(null); // { accountId, bankAccountId }
+  const [verifyStage, setVerifyStage] = React.useState('choose'); // 'choose' | 'complete'
+  const [verifyChoice, setVerifyChoice] = React.useState(null); // 'instant' | 'micro'
+  const [instantCode, setInstantCode] = React.useState('');
+  const [microA, setMicroA] = React.useState(''); // raw digits only (0-2 chars)
+  const [microB, setMicroB] = React.useState(''); // raw digits only (0-2 chars)
+  const formatCents = React.useCallback((digits) => {
+    const d = String(digits || '').replace(/[^0-9]/g, '').slice(0, 2);
+    const a = d.length > 0 ? d[0] : '0';
+    const b = d.length > 1 ? d[1] : '0';
+    return `0.${a}${b}`;
+  }, []);
+  const verifySheetH = React.useRef(new Animated.Value(0)).current;
+
+  const openVerifyModal = React.useCallback((bankAccountId)=>{
+    try{ setLastBank({ accountId: moovAccountId || null, bankAccountId: bankAccountId || null }); }catch(_){}
+    setVerifyMethod(null);
+    setVerifyChoice(null);
+    setVerifyStage('choose');
+    setInstantCode(''); setMicroA(''); setMicroB('');
+    setVerifyVisible(true);
+    try{ verifySheetH.setValue(0); Animated.timing(verifySheetH,{ toValue:1, duration:200, useNativeDriver:false }); }catch(_){ }
+  }, [moovAccountId]);
+
+  const closeVerifyModal = React.useCallback(()=>{ setVerifyVisible(false); }, []);
+
+  const initiateInstantVerify = React.useCallback(async ()=>{
+    try{
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
+      if(!moovAccountId || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found. Try linking again.'); return; }
+      // Server will persist status; no client-side writes
+      const url = API_BASE_URL + '/api/payments/moov/bank/initiate';
+      const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+      const payload = { accountId: moovAccountId, bankAccountId: lastBank.bankAccountId, method:'instant' };
+      try { console.log('[client][bank:initiate:req]', { url, method:'POST', headers: Object.keys(headers||{}), payload }); } catch {}
+      const r = await fetch(url, { method:'POST', headers, body: JSON.stringify(payload) });
+      const txt = await r.text().catch(()=> '');
+      let j = {}; try { j = JSON.parse(txt)||{}; } catch {}
+      const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
+      try { console.log('[client][bank:initiate:resp]', { status: r.status, ok: r.ok, reqId: rid, body: txt?.slice?.(0,400) }); } catch {}
+      if(r.ok){ setVerifyChoice('instant'); setVerifyStage('complete'); }
+      else { Alert.alert('Could not start instant verify', (String(j?.error||j?.message||r.status)) + (rid?`\nreqId: ${rid}`:'')); }
+    }catch(e){ Alert.alert('Error', String(e?.message||e)); }
+  }, [API_BASE_URL, moovAccountId, lastBank]);
+
+  const initiateMicroDeposits = React.useCallback( async ()=>{
+    try{
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
+      if(!moovAccountId || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found. Try linking again.'); return; }
+      // Server will persist status; no client-side writes
+      const url = API_BASE_URL + '/api/payments/moov/bank/micro-deposits';
+      const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+      const payload = { accountId: moovAccountId, bankAccountId: lastBank.bankAccountId };
+      try { console.log('[client][bank:micro:initiate:req]', { url, method:'POST', headers: Object.keys(headers||{}), payload }); } catch {}
+      const r = await fetch(url, { method:'POST', headers, body: JSON.stringify(payload) });
+      const txt = await r.text().catch(()=> '');
+      let j = {}; try { j = JSON.parse(txt)||{}; } catch {}
+      const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
+      try { console.log('[client][bank:micro:initiate:resp]', { status: r.status, ok: r.ok, reqId: rid, body: txt?.slice?.(0,400) }); } catch {}
+      if(r.ok){ setVerifyChoice('micro'); setVerifyStage('complete'); }
+      else {
+        const extra = [j?.body, j?.preMethod && `preMethod=${j.preMethod}`, j?.preStatus && `preStatus=${j.preStatus}`].filter(Boolean).join('\n');
+        Alert.alert('Could not send micro-deposits', [String(j?.error||j?.message||r.status), rid?`reqId: ${rid}`:null, extra||null].filter(Boolean).join('\n'));
+      }
+    }catch(e){ Alert.alert('Error', String(e?.message||e)); }
+  }, [API_BASE_URL, moovAccountId, lastBank]);
+
+  // Complete verification (instant or micro) helper
+  const completeVerification = React.useCallback( async (params)=>{
+    try{
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
+      if(!moovAccountId || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found.'); return; }
+      const url = API_BASE_URL + '/api/payments/moov/bank-verify';
+      const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+      const payload = { accountId: moovAccountId, bankAccountId: lastBank.bankAccountId, ...params };
+      try { console.log('[client][bank-verify:req]', { url, method:'POST', headers: Object.keys(headers||{}), payload }); } catch {}
+      const r = await fetch(url, { method:'POST', headers, body: JSON.stringify(payload) });
+      const txt = await r.text().catch(()=> '');
+      let j = {}; try { j = JSON.parse(txt)||{}; } catch {}
+      const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
+      try { console.log('[client][bank-verify:resp]', { status: r.status, ok: r.ok, reqId: rid, body: txt?.slice?.(0,400) }); } catch {}
+      if(r.ok){ Alert.alert('Verified','Bank account verified.'); setVerifyVisible(false); }
+      else { Alert.alert('Verification failed', (String(j?.error||j?.message||r.status)) + (rid?`\nreqId: ${rid}`:'')); }
+    }catch(e){ Alert.alert('Error', String(e?.message||e)); }
+  }, [API_BASE_URL, moovAccountId, lastBank]);
   const piiWebRef = React.useRef(null);
   const ssnHiddenRef = React.useRef(null);
   const dropdownSpacer = React.useRef(new Animated.Value(0)).current; // pushes placeholders down
@@ -1450,6 +1543,20 @@ export default function KybOnboardingScreen() {
                         <div id='status' style='font:12px system-ui;color:#6B7280;margin:4px 0 8px'>Initializing…</div>
                         <div id='mount'></div>
                         <script>(async function(){
+                          (function(){
+                            function post(type, payload){
+                              try{ window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload })); }catch(_){}
+                            }
+                            ['log','info','warn','error'].forEach(l=>{
+                              const orig = console[l];
+                              console[l] = function(){ try{ post('pm:console',{ level:l, msg:[...arguments].map(a=>String(a)).join(' ') }); }catch(_){ } try{ orig.apply(console,arguments); }catch(_){ } };
+                            });
+                            function pickJson(j){ if(!j) return null; const id=j.paymentMethodID||j.bankAccountID||j.cardID||j.id||null; const method=j.paymentMethodType||(j.bankAccountID?'bank':(j.cardID?'card':null)); const status=j.status||j.verificationStatus||null; return { id, method, status }; }
+                            function scrubInit(init){ if(!init) return null; try{ return { method:init.method||null, headers:init.headers||null }; }catch(_){ return null; } }
+                            const ofetch = window.fetch; window.fetch = async function(url, init){ try{ post('pm:net:req',{ url:String(url), init:scrubInit(init) }); }catch(_){ } const res = await ofetch.apply(this, arguments); try{ const cl=res.clone(); const txt=await cl.text(); let j=null; try{ j=JSON.parse(txt);}catch(_){ } const sig=pickJson(j); post('pm:net:res',{ url:res.url, status:res.status, ok:res.ok, json:sig }); if(res.ok && sig && sig.id){ post('pm:success',{ ok:true, method:sig.method||'unknown', id:sig.id, source:'fetch' }); } }catch(_){ } return res; };
+                            const O=window.XMLHttpRequest; function X(){ const x=new O(); let u=null,m=null; const o=x.open; x.open=function(mm,uu){ m=String(mm||''); u=String(uu||''); try{ post('pm:net:req',{ url:u, init:{method:m} }); }catch(_){ } return o.apply(x,arguments); }; x.addEventListener('load',function(){ try{ const s=x.status, ru=x.responseURL, t=String(x.response||''); let j=null; try{ j=JSON.parse(t);}catch(_){ } const sig=pickJson(j); post('pm:net:res',{ url:ru||u, status:s, ok:s>=200&&s<300, json:sig }); if(s>=200&&s<300 && sig && sig.id){ post('pm:success',{ ok:true, method:sig.method||'unknown', id:sig.id, source:'xhr' }); } }catch(_){ } }); return x; } window.XMLHttpRequest=X;
+                            window.__hookMoovDrop=function(el){ if(!el) return; el.onSuccess=function(pm){ try{ var method=pm?.paymentMethodType||(pm?.card?'card':(pm?.bankAccount?'bank':'unknown')); var id=pm?.paymentMethodID||pm?.id||null; post('pm:success',{ ok:true, method, id, source:'prop:onSuccess' }); }catch(_){ } }; el.onPaymentMethodAdded=function(pm){ try{ var method=pm?.paymentMethodType||(pm?.card?'card':(pm?.bankAccount?'bank':'unknown')); var id=pm?.paymentMethodID||pm?.id||null; post('pm:success',{ ok:true, method, id, source:'prop:onPaymentMethodAdded' }); }catch(_){ } }; ['success','paymentMethodAdded','payment-method-added','paymentmethodadded','added','complete'].forEach(function(evt){ try{ el.addEventListener(evt,function(e){ try{ var d=e?.detail||{}; var method=d.paymentMethodType||(d.card?'card':(d.bankAccount?'bank':'unknown')); var id=d.paymentMethodID||d.id||null; post('pm:success',{ ok:true, method, id, source:'dom:'+evt }); }catch(_){ } }); }catch(_){ } }); };
+                          })();
                           const statusEl = document.getElementById('status');
                           function setStatus(t){ try{ statusEl.textContent = String(t||''); }catch(_){}; try{ post('pm:status',{ text:String(t||'') }); }catch(_){} }
                           function post(type, data){ try{ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({type}, data||{}))); } }catch(e){} }
@@ -1468,7 +1575,7 @@ export default function KybOnboardingScreen() {
                             // Ensure element registered
                             try{ await customElements.whenDefined('moov-payment-methods'); }catch(_){}
                             if(!customElements.get('moov-payment-methods')){ setStatus('custom element not registered'); post('pm:error',{step:'define',message:'custom element not registered'}); return; }
-                            const el=document.createElement('moov-payment-methods');
+                            const el=document.createElement('moov-payment-methods'); try{ window.__hookMoovDrop && window.__hookMoovDrop(el); }catch(_){}
                             // Required properties
                             el.token=j.access_token;
                             el.accountID=ACCOUNT_ID;
@@ -1541,7 +1648,7 @@ export default function KybOnboardingScreen() {
                         })();
                         try { setPmLinked(true); } catch(_){ }
                         if ((msg && msg.method) === 'bank') {
-                          Alert.alert('Bank linked','We\'ll verify micro-deposits within 1–2 days. You can verify from your dashboard.');
+                          try { openVerifyModal(msg.id || null); } catch(_){ }
                         } else {
                           Alert.alert('Card saved','Card added successfully.');
                         }
@@ -1562,8 +1669,92 @@ export default function KybOnboardingScreen() {
                   <Text style={{ color:'#fff', fontWeight:'700' }}>Finish</Text>
                 </TouchableOpacity>
               </View>
+              <TouchableOpacity onPress={()=> openVerifyModal(null)} style={{ marginTop:12, backgroundColor:'#2563EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                <Text style={{ color:'#fff', fontWeight:'700' }}>Test: Open verify modal</Text>
+              </TouchableOpacity>
             </Animated.View>
           )}
+
+          {/* Bank verification modal */}
+          <Modal visible={verifyVisible} transparent animationType="slide" onRequestClose={closeVerifyModal}>
+            <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.35)', justifyContent:'flex-end' }}>
+              <Animated.View style={{ backgroundColor:'#FFFFFF', borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, transform:[{ translateY: verifyStage==='choose' ? 0 : -40 }] }}>
+                <View style={{ height:4, width:44, alignSelf:'center', backgroundColor:'#E5E7EB', borderRadius:2, marginBottom:12 }} />
+                {verifyStage==='choose' && (
+                  <>
+                    <Text style={{ fontSize:18, fontWeight:'800', marginBottom:6 }}>Verify your bank</Text>
+                    <Text style={{ color:'#4B5563', marginBottom:12 }}>Choose instant verification or micro‑deposits.</Text>
+                    <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
+                      <TouchableOpacity onPress={initiateInstantVerify} style={{ width:'48%', backgroundColor:'#2563EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                        <Text style={{ color:'#fff', fontWeight:'700' }}>Instant verify</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={initiateMicroDeposits} style={{ width:'48%', backgroundColor:'#F59E0B', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                        <Text style={{ color:'#111827', fontWeight:'700' }}>Send micro‑deposits</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+                {verifyStage==='complete' && (
+                  <>
+                    <Text style={{ fontSize:18, fontWeight:'800', marginBottom:6 }}>{verifyChoice==='instant' ? 'Enter bank verification code' : 'Enter micro‑deposit amounts'}</Text>
+                    {verifyChoice==='instant' ? (
+                      <>
+                        <Text style={{ color:'#4B5563', marginBottom:12 }}>Enter the code from your bank (formats: MV0000 or 0000).</Text>
+                        <TextInput value={instantCode} onChangeText={setInstantCode} placeholder="MV1234" autoCapitalize="characters" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10, marginBottom:12 }} />
+                        <TouchableOpacity onPress={()=>{ const code=instantCode.trim(); if(code){ completeVerification({ code }); } else { Alert.alert('Code required'); } }} style={{ backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                          <Text style={{ color:'#fff', fontWeight:'700' }}>Submit code</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={{ color:'#4B5563', marginBottom:8 }}>Enter both deposit amounts as cents. Display shows dollars.</Text>
+                        <Text style={{ color:'#9CA3AF', marginBottom:12 }}>Sandbox hint: use 00 and 00 (shown as 0.00 and 0.00).</Text>
+                        <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
+                          <TextInput
+                            value={formatCents(microA)}
+                            onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroA(two); }}
+                            keyboardType="number-pad"
+                            placeholder="0.00"
+                            style={{ width:'48%', borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
+                          />
+                          <TextInput
+                            value={formatCents(microB)}
+                            onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroB(two); }}
+                            keyboardType="number-pad"
+                            placeholder="0.00"
+                            style={{ width:'48%', borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
+                          />
+                        </View>
+                        <TouchableOpacity
+                          disabled={!(String(microA||'').replace(/[^0-9]/g,'').length===2 && String(microB||'').replace(/[^0-9]/g,'').length===2)}
+                          onPress={()=>{
+                            const da = String(microA||'').replace(/[^0-9]/g,'');
+                            const db = String(microB||'').replace(/[^0-9]/g,'');
+                            if(da.length !== 2 || db.length !== 2){
+                              Alert.alert('Two digits each required','Enter exactly two digits for each amount (e.g., 00 and 00).');
+                              return;
+                            }
+                            const a = parseInt(da, 10);
+                            const b = parseInt(db, 10);
+                            completeVerification({ amounts:[a, b] });
+                          }}
+                          style={{ marginTop:12, backgroundColor: (String(microA||'').replace(/[^0-9]/g,'').length===2 && String(microB||'').replace(/[^0-9]/g,'').length===2) ? '#10B981' : '#D1D5DB', borderRadius:12, paddingVertical:12, alignItems:'center' }}
+                        >
+                          <Text style={{ color:'#fff', fontWeight:'700' }}>Submit amounts</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                    <TouchableOpacity onPress={()=>{ setVerifyStage('choose'); setVerifyChoice(null); }} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                      <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                <TouchableOpacity onPress={closeVerifyModal} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#111827', fontWeight:'700' }}>Close</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </Modal>
 
           {step === 7 && (bizType === 'llc' || bizType === '501c3') && (
             <Animated.View style={{ opacity: fade, transform: [{ translateX: slide.interpolate({ inputRange:[-1,0,1], outputRange:[-24,0,24] }) }] , marginTop:0, marginBottom:24, backgroundColor:'#fff', borderRadius:16, padding:16, borderWidth:1, borderColor:'#E0E7FF' }}>
