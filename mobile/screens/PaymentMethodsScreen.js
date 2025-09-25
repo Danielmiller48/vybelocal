@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,8 @@ export default function PaymentMethodsScreen({ route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [deletingBankId, setDeletingBankId] = useState(null);
+  const [deletingCardId, setDeletingCardId] = useState(null);
 
   const fetchSummary = useCallback(async () => {
     setLoading(true); setError(null);
@@ -105,16 +107,25 @@ export default function PaymentMethodsScreen({ route }) {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: async () => {
           try {
+            setDeletingBankId(bankAccountID);
+            // Ensure auth header like other calls
+            let jwt = session?.access_token || null;
+            if (!jwt) {
+              try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+            }
+            const headers = { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) };
             const res = await fetch(`${API_BASE}/api/payments/moov/bank/delete`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers,
               body: JSON.stringify({ accountId: accountIdForWrites, bankAccountId: bankAccountID })
             });
             const j = await res.json().catch(()=>({}));
-            if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+            if (!res.ok) throw new Error((j?.error || `HTTP ${res.status}`) + (j?.reqId ? ` (reqId ${j.reqId})` : ''));
             Alert.alert('Removed', 'Bank account removed.');
             fetchSummary();
           } catch (e) {
             Alert.alert('Error', e?.message || 'Failed to remove bank');
+          } finally {
+            setDeletingBankId(null);
           }
         } }
       ]
@@ -129,16 +140,24 @@ export default function PaymentMethodsScreen({ route }) {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: async () => {
           try {
+            setDeletingCardId(cardID);
+            let jwt = session?.access_token || null;
+            if (!jwt) {
+              try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+            }
+            const headers = { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) };
             const res = await fetch(`${API_BASE}/api/payments/moov/card/delete`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers,
               body: JSON.stringify({ accountId: accountIdForWrites, cardId: cardID })
             });
             const j = await res.json().catch(()=>({}));
-            if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+            if (!res.ok) throw new Error((j?.error || `HTTP ${res.status}`) + (j?.reqId ? ` (reqId ${j.reqId})` : ''));
             Alert.alert('Removed', 'Card removed.');
             fetchSummary();
           } catch (e) {
             Alert.alert('Error', e?.message || 'Failed to remove card');
+          } finally {
+            setDeletingCardId(null);
           }
         } }
       ]
@@ -232,8 +251,15 @@ export default function PaymentMethodsScreen({ route }) {
                     </TouchableOpacity>
                   )}
                 </View>
-                <TouchableOpacity onPress={() => handleDeleteBank(ba.bankAccountID)} style={{ paddingVertical:6, paddingHorizontal:10 }}>
-                  <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                <TouchableOpacity disabled={deletingBankId===ba.bankAccountID} onPress={() => handleDeleteBank(ba.bankAccountID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingBankId===ba.bankAccountID ? 0.5 : 1 }}>
+                  {deletingBankId===ba.bankAccountID ? (
+                    <View style={{ flexDirection:'row', alignItems:'center' }}>
+                      <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
+                      <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
+                    </View>
+                  ) : (
+                    <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             ))}
@@ -245,8 +271,15 @@ export default function PaymentMethodsScreen({ route }) {
                   <Text style={styles.rowMain}>{c.brand} {c.cardType?.toUpperCase?.()} •••• {c.lastFourCardNumber}</Text>
                   <Text style={styles.rowSub}>Exp {c.expiration?.month}/{c.expiration?.year}</Text>
                 </View>
-                <TouchableOpacity onPress={() => handleDeleteCard(c.cardID)} style={{ paddingVertical:6, paddingHorizontal:10 }}>
-                  <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                <TouchableOpacity disabled={deletingCardId===c.cardID} onPress={() => handleDeleteCard(c.cardID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingCardId===c.cardID ? 0.5 : 1 }}>
+                  {deletingCardId===c.cardID ? (
+                    <View style={{ flexDirection:'row', alignItems:'center' }}>
+                      <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
+                      <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
+                    </View>
+                  ) : (
+                    <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             ))}
