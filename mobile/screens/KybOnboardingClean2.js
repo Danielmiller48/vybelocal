@@ -116,6 +116,14 @@ export default function KybOnboardingScreen() {
       const token = session?.access_token;
       if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
       if(!moovAccountId || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found. Try linking again.'); return; }
+      // Persist user's choice independent of Moov initiate
+      try{
+        const stateHeaders = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+        const statePayload = { method:'instant', sourceType:'bank', sourceId:lastBank.bankAccountId, accountId: moovAccountId, accountKind:'business' };
+        // fire-and-forget
+        fetch(API_BASE_URL + '/api/payments/verify/state', { method:'POST', headers: stateHeaders, body: JSON.stringify(statePayload) }).catch(()=>{});
+        try{ console.log('[client][verify-state:instant]', statePayload); }catch(_){ }
+      }catch(_){ }
       // Server will persist status; no client-side writes
       const url = API_BASE_URL + '/api/payments/moov/bank/initiate';
       const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
@@ -137,6 +145,14 @@ export default function KybOnboardingScreen() {
       const token = session?.access_token;
       if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
       if(!moovAccountId || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found. Try linking again.'); return; }
+      // Persist user's choice independent of Moov initiate
+      try{
+        const stateHeaders = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+        const statePayload = { method:'micro', sourceType:'bank', sourceId:lastBank.bankAccountId, accountId: moovAccountId, accountKind:'business' };
+        // fire-and-forget
+        fetch(API_BASE_URL + '/api/payments/verify/state', { method:'POST', headers: stateHeaders, body: JSON.stringify(statePayload) }).catch(()=>{});
+        try{ console.log('[client][verify-state:micro]', statePayload); }catch(_){ }
+      }catch(_){ }
       // Server will persist status; no client-side writes
       const url = API_BASE_URL + '/api/payments/moov/bank/micro-deposits';
       const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
