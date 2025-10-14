@@ -1,12 +1,13 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Alert, TextInput, Linking, ActivityIndicator, Pressable, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Animated, Easing, Dimensions, Alert, TextInput, Linking, ActivityIndicator, Pressable, Modal, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
+import MaskInput from 'react-native-mask-input';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { useOnboardingDraft } from '../components/OnboardingDraftProvider';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
@@ -34,13 +35,14 @@ const US_STATES = [
 export default function KybOnboardingScreen() {
   const { profile, user } = useAuth();
   const route = useRoute();
+  const navigation = useNavigation();
   const { draft, updateDraft } = useOnboardingDraft();
   const canFastForward = (s) => {
     const st = String(s || '').toLowerCase();
     return st === 'active' || st === 'pending';
   };
   const ff = route?.params?.ff === true;
-  const [step, setStep] = React.useState(() => (ff || canFastForward(profile?.moov_status)) ? 5 : 0);
+  const [step, setStep] = React.useState(0);
   const [ready, setReady] = React.useState(false);
   const [bizType, setBizType] = React.useState(draft.bizType || 'sp'); // 'sp' | 'llc' | '501c3'
   const [spMcc, setSpMcc] = React.useState(draft.spMcc || '7922'); // individual MCC selection
@@ -71,6 +73,7 @@ export default function KybOnboardingScreen() {
   const [showOptions, setShowOptions] = React.useState(false);
   const [baseLegal, setBaseLegal] = React.useState(null);
   const [ssn, setSsn] = React.useState(''); // raw digits only
+  const [ssnFocused, setSsnFocused] = React.useState(false);
   const [dobUs, setDobUs] = React.useState(''); // MM-DD-YYYY display
   const [bankHolder, setBankHolder] = React.useState('');
   const [bankName, setBankName] = React.useState('');
@@ -78,6 +81,7 @@ export default function KybOnboardingScreen() {
   const [bankAccount, setBankAccount] = React.useState('');
   const [cpFirstName, setCpFirstName] = React.useState('');
   const [cpLastName, setCpLastName] = React.useState('');
+  const [cpPhone, setCpPhone] = React.useState('');
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [idemKey, setIdemKey] = React.useState(null);
   const [moovAccountId, setMoovAccountId] = React.useState(null);
@@ -97,6 +101,45 @@ export default function KybOnboardingScreen() {
     return `0.${a}${b}`;
   }, []);
   const verifySheetH = React.useRef(new Animated.Value(0)).current;
+  const [loadingInstant, setLoadingInstant] = React.useState(false);
+  const [loadingMicro, setLoadingMicro] = React.useState(false);
+
+  // Ensure Moov account exists early for business/nonprofit flows
+  const bizPresetStartedRef = React.useRef(false);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        if ((bizType === 'llc' || bizType === '501c3') && !moovAccountId && !bizPresetStartedRef.current) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (!token) return;
+          bizPresetStartedRef.current = true;
+          const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+          const body = { type: 'business' };
+          try {
+            if (bizType === '501c3') {
+              if (bizMcc) body.mcc = bizMcc;
+            } else if (bizType === 'llc') {
+              if (bizClass) body.category = bizClass;
+            }
+          } catch {}
+          const res = await fetch(API_BASE_URL + '/api/payments/moov/preset', { method: 'POST', headers, body: JSON.stringify(body) });
+          const txt = await res.text();
+          let j = {}; try { j = JSON.parse(txt); } catch {}
+          if (res.ok && j?.moov_account_id) {
+            try { console.log('[KYB][biz][preset]', j.moov_account_id); } catch {}
+            setMoovAccountId(j.moov_account_id);
+          } else {
+            bizPresetStartedRef.current = false;
+            try { console.warn('[KYB][biz][preset:error]', res.status, (txt||'').slice(0,200)); } catch {}
+          }
+        }
+      } catch (e) {
+        bizPresetStartedRef.current = false;
+        try { console.warn('[KYB][biz][preset:exception]', e?.message || String(e)); } catch {}
+      }
+    })();
+  }, [bizType, moovAccountId, bizClass, bizMcc, API_BASE_URL]);
 
   const openVerifyModal = React.useCallback((bankAccountId)=>{
     try{ setLastBank({ accountId: moovAccountId || null, bankAccountId: bankAccountId || null }); }catch(_){}
@@ -108,10 +151,15 @@ export default function KybOnboardingScreen() {
     try{ verifySheetH.setValue(0); Animated.timing(verifySheetH,{ toValue:1, duration:200, useNativeDriver:false }); }catch(_){ }
   }, [moovAccountId]);
 
-  const closeVerifyModal = React.useCallback(()=>{ setVerifyVisible(false); }, []);
+  const closeVerifyModal = React.useCallback(()=>{
+    try { setVerifyVisible(false); } catch(_){ }
+    try { navigation.navigate('Home', { screen: 'PaymentMethods' }); } catch(_){ }
+  }, [navigation]);
 
   const initiateInstantVerify = React.useCallback(async ()=>{
     try{
+      if (loadingInstant) return;
+      setLoadingInstant(true);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
@@ -137,10 +185,13 @@ export default function KybOnboardingScreen() {
       if(r.ok){ setVerifyChoice('instant'); setVerifyStage('complete'); }
       else { Alert.alert('Could not start instant verify', (String(j?.error||j?.message||r.status)) + (rid?`\nreqId: ${rid}`:'')); }
     }catch(e){ Alert.alert('Error', String(e?.message||e)); }
-  }, [API_BASE_URL, moovAccountId, lastBank]);
+    finally { setLoadingInstant(false); }
+  }, [API_BASE_URL, moovAccountId, lastBank, loadingInstant]);
 
   const initiateMicroDeposits = React.useCallback( async ()=>{
     try{
+      if (loadingMicro) return;
+      setLoadingMicro(true);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if(!token){ Alert.alert('Sign in required','Please sign in again.'); return; }
@@ -169,7 +220,8 @@ export default function KybOnboardingScreen() {
         Alert.alert('Could not send micro-deposits', [String(j?.error||j?.message||r.status), rid?`reqId: ${rid}`:null, extra||null].filter(Boolean).join('\n'));
       }
     }catch(e){ Alert.alert('Error', String(e?.message||e)); }
-  }, [API_BASE_URL, moovAccountId, lastBank]);
+    finally { setLoadingMicro(false); }
+  }, [API_BASE_URL, moovAccountId, lastBank, loadingMicro]);
 
   // Complete verification (instant or micro) helper
   const completeVerification = React.useCallback( async (params)=>{
@@ -187,10 +239,18 @@ export default function KybOnboardingScreen() {
       let j = {}; try { j = JSON.parse(txt)||{}; } catch {}
       const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
       try { console.log('[client][bank-verify:resp]', { status: r.status, ok: r.ok, reqId: rid, body: txt?.slice?.(0,400) }); } catch {}
-      if(r.ok){ Alert.alert('Verified','Bank account verified.'); setVerifyVisible(false); }
+      if(r.ok){
+        setVerifyVisible(false);
+        Alert.alert(
+          'Verification complete',
+          'Your bank is verified. You can manage payment methods anytime.',
+          [ { text: 'Exit to Payment Methods', onPress: ()=> navigation.navigate('Home', { screen: 'PaymentMethods' }) } ],
+          { cancelable: false }
+        );
+      }
       else { Alert.alert('Verification failed', (String(j?.error||j?.message||r.status)) + (rid?`\nreqId: ${rid}`:'')); }
     }catch(e){ Alert.alert('Error', String(e?.message||e)); }
-  }, [API_BASE_URL, moovAccountId, lastBank]);
+  }, [API_BASE_URL, moovAccountId, lastBank, navigation]);
   const piiWebRef = React.useRef(null);
   const ssnHiddenRef = React.useRef(null);
   const dropdownSpacer = React.useRef(new Animated.Value(0)).current; // pushes placeholders down
@@ -198,12 +258,10 @@ export default function KybOnboardingScreen() {
   // make initial render flicker-free by seeding account ID and revealing after init
   React.useLayoutEffect(() => {
     try {
-      if ((ff || canFastForward(profile?.moov_status)) && profile?.moov_account_id) {
-        setMoovAccountId(profile.moov_account_id);
-      }
+      if (profile?.moov_account_id) setMoovAccountId(profile.moov_account_id);
     } catch {}
     setReady(true);
-  }, [ff, profile?.moov_status, profile?.moov_account_id]);
+  }, [profile?.moov_account_id]);
   const OPTIONS_HEIGHT = 170;
   // Business fields (LLC/Corp)
   const [bizLegalName, setBizLegalName] = React.useState('');
@@ -913,18 +971,93 @@ export default function KybOnboardingScreen() {
   };
 
   const isBizContactValid = React.useMemo(() => {
-    const urlOk = !!normalizeUrl(bizWebsite);
+    const urlOk = bizWebsite ? !!normalizeUrl(bizWebsite) : true; // website optional
     const emailOk = /.+@.+\..+/.test(String(bizSupportEmail||''));
     const phoneDigits = String(bizSupportPhone||'').replace(/\D/g,'');
     const phoneOk = /^\d{9,10}$/.test(phoneDigits);
     return urlOk && emailOk && phoneOk;
   }, [bizWebsite, bizSupportEmail, bizSupportPhone]);
 
+  const [loadingBizPatch, setLoadingBizPatch] = React.useState(false);
+
   // Representative draft (business: role + ownership; charity: controller 0%)
   const [cpTitle, setCpTitle] = React.useState('owner');
   const [cpOwnership, setCpOwnership] = React.useState('0');
   const [principals, setPrincipals] = React.useState([]); // {first,last,title,ownership,ssn,dob,address}
+  const [repCert, setRepCert] = React.useState(false); // user certifies reps >=25% owners + one controller
   const resetCpDraft = () => { setCpFirstName(''); setCpLastName(''); setCpTitle('owner'); setCpOwnership('0'); setSsn(''); setDobUs(''); };
+
+  // Auto-skip/fast-forward gate: never show application if already complete
+  const autoGateRef = React.useRef(false);
+  React.useEffect(() => {
+    if (autoGateRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const jwt = session?.access_token;
+        if (!jwt) return;
+        const qs = moovAccountId ? `?accountId=${encodeURIComponent(moovAccountId)}` : '';
+        const r = await fetch(`${API_BASE_URL}/api/payments/moov/status${qs}`, { headers: { 'Authorization': `Bearer ${jwt}`, 'Accept': 'application/json' } });
+        const t = await r.text(); if (cancelled) return;
+        if (!r.ok) return;
+        let j = {}; try { j = JSON.parse(t) } catch {}
+        const { accountGood, hasBank, nextStep, accountType, accountId, businessType } = j || {};
+        try { console.log('[KYB][preflight]', { accountId, accountType, businessType, accountGood, hasBank, nextStep }); } catch {}
+        // Ensure we have the server-linked account id before routing
+        try { if (accountId && !moovAccountId) setMoovAccountId(accountId); } catch {}
+        // Align local pipeline to server businessType if provided
+        let bt = String(businessType||'').toLowerCase();
+        try {
+          if (bt === 'llc' && bizType !== 'llc') setBizType('llc');
+          else if ((bt === 'incorporatednonprofit' || bt === 'incorporated_non_profit' || bt === '501c3') && bizType !== '501c3') setBizType('501c3');
+          else if ((bt === 'soleproprietorship' || bt === 'sole proprietorship' || bt === 'sp') && bizType !== 'sp') setBizType('sp');
+        } catch {}
+        const isSpByType = (bt === 'soleproprietorship' || bt === 'sole proprietorship' || bt === 'sp');
+        const isNpoByType = (bt === 'incorporatednonprofit' || bt === 'incorporated_non_profit' || bt === '501c3');
+        if (accountGood && hasBank) {
+          autoGateRef.current = true;
+          navigation.navigate('Home', { screen: 'PaymentMethods' });
+          return;
+        }
+        if (nextStep === 'patch_reps') {
+          autoGateRef.current = true;
+          // Force business flow to representatives step
+          if (accountType === 'business') {
+            if (isSpByType) {
+              // Sole prop does not need reps; go straight to bank link
+              animateTo(5, 1);
+            } else {
+              try { if (isNpoByType && bizType !== '501c3') setBizType('501c3'); if (!isNpoByType && bizType !== 'llc') setBizType('llc'); } catch {}
+              setStep(7);
+            }
+          }
+          return;
+        }
+        if (nextStep === 'patch_address') {
+          autoGateRef.current = true;
+          // send to business details/address step
+          if (bizType !== 'sp') animateTo(4, 1);
+          return;
+        }
+        if (accountGood && !hasBank) {
+          autoGateRef.current = true;
+          if (isSpByType) {
+            animateTo(5, 1);
+          } else if (accountType === 'business') {
+            try { if (isNpoByType && bizType !== '501c3') setBizType('501c3'); if (!isNpoByType && bizType !== 'llc') setBizType('llc'); } catch {}
+            animateTo(8, 1); // business/nonprofit link bank on step 8
+          } else {
+            animateTo(5, 1); // individual link bank on step 5
+          }
+          return;
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [API_BASE_URL, supabase, moovAccountId, bizType, navigation]);
+
+  // (removed step 8 gate; using preflight at step 0 instead)
 
   return (
     <LinearGradient colors={['rgba(59,130,246,0.18)', 'rgba(14,165,233,0.18)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
@@ -1212,8 +1345,38 @@ export default function KybOnboardingScreen() {
                 <TouchableOpacity onPress={()=>animateTo(5, -1)} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
                   <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={()=>animateTo(7, 1)} style={{ width:'48%', backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#fff', fontWeight:'700' }}>Continue</Text>
+                <TouchableOpacity disabled={loadingBizPatch} onPress={async ()=>{
+                  try{
+                    if (loadingBizPatch) return;
+                    setLoadingBizPatch(true);
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token; if(!token){ Alert.alert('Please sign in'); return; }
+                    if (!moovAccountId){ Alert.alert('Preparing account','We\'re setting up your Moov account. Please try again.'); return; }
+                    const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+                    const patchBody = {
+                      type: 'business',
+                      legalName: bizLegalName || undefined,
+                      businessType: (bizType==='501c3' ? 'incorporatedNonProfit' : 'llc'),
+                    website: bizWebsite ? normalizeUrl(bizWebsite) : undefined,
+                      ein: (function(){ const d=String(bizEin||'').replace(/\D/g,''); return d.length===9 ? d : undefined; })(),
+                      address: (addr1 && city && state && postal) ? { addressLine1: addr1, addressLine2: addr2||null, city, stateOrProvince: state, postalCode: postal, country:'US' } : undefined,
+                      business: { industryCodes: {} }
+                    };
+                    // Industry codes from selector: always send resolved MCC (plus category hint for LLC)
+                    try{
+                      if (bizType === '501c3') {
+                        if (bizMcc) patchBody.mcc = bizMcc;
+                      } else if (bizType === 'llc') {
+                        if (bizClass) patchBody.category = bizClass;
+                        if (bizMcc) patchBody.mcc = bizMcc; // resolved from subclass
+                      }
+                    }catch{}
+                    await fetch(`${API_BASE_URL}/api/payments/moov/preset`, { method:'POST', headers, body: JSON.stringify(patchBody) });
+                  }catch{}
+                  animateTo(7, 1);
+                setLoadingBizPatch(false);
+                }} style={{ width:'48%', backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  {loadingBizPatch ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontWeight:'700' }}>Continue</Text>}
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -1479,23 +1642,30 @@ export default function KybOnboardingScreen() {
               <Text style={{ color:'#4B5563', marginBottom:12 }}>Enter SSN and date of birth. We transmit directly to our payments provider without storing any sensitive data.</Text>
               <View style={{ marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>SSN</Text>
-                <TextInput
-                  value={(function(){
-                    const d = String(ssn||'').replace(/\D/g,'').slice(0,9);
-                    if (d.length <= 3) return d;
-                    if (d.length <= 5) return `${d.slice(0,3)}-${d.slice(3)}`;
-                    return `${d.slice(0,3)}-${d.slice(3,5)}-${d.slice(5)}`;
-                  })()}
-                  onChangeText={(t)=> {
-                    const digits = String(t||'').replace(/\D/g,'').slice(0,9);
-                    setSsn(digits);
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={11}
-                  placeholder="123-45-6789"
-                  placeholderTextColor="#9CA3AF"
-                  style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
-                />
+                {ssnFocused ? (
+                  <MaskInput
+                    autoFocus
+                    value={String(ssn||'').replace(/\D/g,'').slice(0,9)}
+                    onChangeText={(masked, unmasked)=>{ setSsn(String(unmasked||'').slice(0,9)); }}
+                    onBlur={()=> setSsnFocused(false)}
+                    mask={[ /\d/, /\d/, /\d/, '-', /\d/, /\d/, '-', /\d/, /\d/, /\d/, /\d/ ]}
+                    keyboardType="number-pad"
+                    placeholder="***-**-****"
+                    placeholderTextColor="#9CA3AF"
+                    style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10, color:'#111827' }}
+                  />
+                ) : (
+                  <TouchableOpacity onPress={()=> setSsnFocused(true)} activeOpacity={0.9} style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}>
+                    <Text style={{ color: '#111827' }}>
+                      {(function(){
+                        const d = String(ssn||'').replace(/\D/g,'').slice(0,9);
+                        if (!d) return '***-**-****';
+                        const last = d.length >= 6 ? d.slice(-4) : '';
+                        return `***-**-${last || '****'}`;
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
               <View style={{ marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Date of birth (MM‑DD‑YYYY)</Text>
@@ -1538,11 +1708,11 @@ export default function KybOnboardingScreen() {
 
           {step === 5 && bizType === 'sp' && (
             <Animated.View style={{ opacity: fade, transform: [{ translateX: slide.interpolate({ inputRange:[-1,0,1], outputRange:[-24,0,24] }) }] , marginTop:0, marginBottom:24, backgroundColor:'#fff', borderRadius:16, padding:16, borderWidth:1, borderColor:'#E0E7FF' }}>
-              <Text style={{ fontSize:20, fontWeight:'800', marginBottom:8 }}>Add payout method</Text>
-              <Text style={{ color:'#4B5563', marginBottom:12 }}>Link a bank account (micro-deposits) or add a card.</Text>
+              <Text style={{ fontSize:20, fontWeight:'800', marginBottom:8 }}>Add where your money goes</Text>
+              <Text style={{ color:'#4B5563', marginBottom:12 }}>We'll send your earnings straight there.</Text>
               <View style={{ borderRadius:12, overflow:'hidden', borderWidth:1, borderColor:'#E5E7EB' }}>
                 <WebView
-                  style={{ height: 520, backgroundColor:'#fff' }}
+                  style={{ height: 560, backgroundColor:'#fff' }}
                   javaScriptEnabled={true}
                   domStorageEnabled={true}
                   startInLoadingState={true}
@@ -1561,7 +1731,7 @@ export default function KybOnboardingScreen() {
                         <script>(async function(){
                           (function(){
                             function post(type, payload){
-                              try{ window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload })); }catch(_){}
+                              try{ window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload })); }catch(_){ }
                             }
                             ['log','info','warn','error'].forEach(l=>{
                               const orig = console[l];
@@ -1598,8 +1768,10 @@ export default function KybOnboardingScreen() {
                             try{ el.setAttribute('account-id', ACCOUNT_ID); el.setAttribute('token', j.access_token); }catch(_){ }
                             // Options
                             el.paymentMethodTypes=['card','bankAccount'];
+                            el.setAttribute('payment-method-types','card,bankAccount');
                             el.microDeposits=false;
                             el.showLogo=false;
+                            try{ el.setAttribute('show-logo','false'); }catch(_){ }
                             el.style.display='block'; el.style.width='100%'; el.style.minHeight='420px';
                             // Callbacks
                             el.onSuccess=function(pm){
@@ -1635,6 +1807,7 @@ export default function KybOnboardingScreen() {
                             const mount=document.getElementById('mount');
                             mount.appendChild(el);
                             try{ el.open = true; el.setAttribute('open','true'); }catch(_){}
+                            try{ setTimeout(function(){ try{ el.open=true; el.setAttribute('open','true'); }catch(_){} }, 50); }catch(_){ }
                             try{ const rect=mount.getBoundingClientRect(); post('pm:console',{level:'debug', msg:'mounted_children='+mount.children.length+', mount_h='+rect.height}); }catch(_){}
                             setStatus('Ready');
                             post('pm:ready');
@@ -1675,71 +1848,85 @@ export default function KybOnboardingScreen() {
                   }}
                 />
               </View>
-              <View style={{ flexDirection:'row', justifyContent:'space-between', marginTop:12 }}>
-                <TouchableOpacity onPress={()=>animateTo(4, -1)} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={()=>{
-                  Alert.alert('All set','You can return here anytime to add or verify methods.');
-                }} style={{ width:'48%', backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#fff', fontWeight:'700' }}>Finish</Text>
+              {/* Footer CTA for business step 7 */}
+              <View style={{ marginTop:12 }}>
+                <TouchableOpacity onPress={()=> navigation.navigate('Home', { screen: 'PaymentMethods' })} style={{ width:'100%', backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#fff', fontWeight:'700' }}>Go to Payment Methods</Text>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={()=> openVerifyModal(null)} style={{ marginTop:12, backgroundColor:'#2563EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                <Text style={{ color:'#fff', fontWeight:'700' }}>Test: Open verify modal</Text>
-              </TouchableOpacity>
+              {/* Test button removed */}
             </Animated.View>
           )}
 
           {/* Bank verification modal */}
-          <Modal visible={verifyVisible} transparent animationType="slide" onRequestClose={closeVerifyModal}>
-            <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.35)', justifyContent:'flex-end' }}>
-              <Animated.View style={{ backgroundColor:'#FFFFFF', borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, transform:[{ translateY: verifyStage==='choose' ? 0 : -40 }] }}>
-                <View style={{ height:4, width:44, alignSelf:'center', backgroundColor:'#E5E7EB', borderRadius:2, marginBottom:12 }} />
+          <Modal visible={verifyVisible} transparent={false} animationType="slide" onRequestClose={closeVerifyModal}>
+            <View style={{ flex:1, backgroundColor:'#FFFFFF', justifyContent:'center', alignItems:'center' }}>
+              <Animated.View style={{ width:'92%', maxWidth:480, backgroundColor:'#FFFFFF', padding:16, borderRadius:16, shadowColor:'#000', shadowOpacity:0.08, shadowRadius:12, elevation:6 }}>
                 {verifyStage==='choose' && (
                   <>
-                    <Text style={{ fontSize:18, fontWeight:'800', marginBottom:6 }}>Verify your bank</Text>
-                    <Text style={{ color:'#4B5563', marginBottom:12 }}>Choose instant verification or micro‑deposits.</Text>
+                    <Text style={{ fontSize:22, fontWeight:'900', marginBottom:8 }}>Verify your bank</Text>
+                    <Text style={{ color:'#4B5563', marginBottom:4 }}>Choose how you want to confirm your payout account. Fast lane or old‑school — up to you.</Text>
+                    <Text style={{ color:'#6B7280', marginBottom:8 }}>(Not ready? You can always come back from Payment Methods.)</Text>
+                    <View style={{ marginBottom:16 }}>
+                      <Text style={{ color:'#111827', fontWeight:'800', marginBottom:4 }}>Instant (Recommended)</Text>
+                      <Text style={{ color:'#4B5563' }}>{'• We\u2019ll send a $0.01 test deposit with a short code in the description'}</Text>
+                      <Text style={{ color:'#4B5563' }}>{'• Drop the code here to finish verification'}</Text>
+                      <Text style={{ color:'#4B5563', marginBottom:8 }}>{'• Most banks clear it in minutes — no 2-day wait'}</Text>
+                      <Text style={{ color:'#111827', fontWeight:'800', marginBottom:4 }}>Micro‑Deposits</Text>
+                      <Text style={{ color:'#4B5563' }}>{'• We\u2019ll send two tiny deposits to your account'}</Text>
+                      <Text style={{ color:'#4B5563' }}>{'• Start before 4:15 PM ET → usually shows up same day'}</Text>
+                      <Text style={{ color:'#4B5563' }}>{'• After that → lands the next business day'}</Text>
+                    </View>
                     <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
-                      <TouchableOpacity onPress={initiateInstantVerify} style={{ width:'48%', backgroundColor:'#2563EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                        <Text style={{ color:'#fff', fontWeight:'700' }}>Instant verify</Text>
+                      <TouchableOpacity disabled={loadingInstant} onPress={initiateInstantVerify} style={{ width:'48%', backgroundColor: loadingInstant ? '#93C5FD' : '#2563EB', borderRadius:12, paddingVertical:12, alignItems:'center', opacity: loadingInstant ? 0.7 : 1 }}>
+                        <Text style={{ color:'#fff', fontWeight:'700' }}>{loadingInstant ? 'Starting…' : 'Instant verify'}</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={initiateMicroDeposits} style={{ width:'48%', backgroundColor:'#F59E0B', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                        <Text style={{ color:'#111827', fontWeight:'700' }}>Send micro‑deposits</Text>
+                      <TouchableOpacity disabled={loadingMicro} onPress={initiateMicroDeposits} style={{ width:'48%', backgroundColor: loadingMicro ? '#FDE68A' : '#F59E0B', borderRadius:12, paddingVertical:12, alignItems:'center', opacity: loadingMicro ? 0.7 : 1 }}>
+                        <Text style={{ color:'#111827', fontWeight:'700' }}>{loadingMicro ? 'Sending…' : 'Send micro‑deposits'}</Text>
                       </TouchableOpacity>
                     </View>
+                    <TouchableOpacity onPress={closeVerifyModal} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                      <Text style={{ color:'#111827', fontWeight:'700' }}>Back to Payment Methods</Text>
+                    </TouchableOpacity>
                   </>
                 )}
                 {verifyStage==='complete' && (
                   <>
-                    <Text style={{ fontSize:18, fontWeight:'800', marginBottom:6 }}>{verifyChoice==='instant' ? 'Enter bank verification code' : 'Enter micro‑deposit amounts'}</Text>
+                    <Text style={{ fontSize:22, fontWeight:'900', marginBottom:10 }}>{verifyChoice==='instant' ? 'Enter bank verification code' : 'Enter micro‑deposit amounts'}</Text>
                     {verifyChoice==='instant' ? (
                       <>
                         <Text style={{ color:'#4B5563', marginBottom:12 }}>Enter the code from your bank (formats: MV0000 or 0000).</Text>
-                        <TextInput value={instantCode} onChangeText={setInstantCode} placeholder="MV1234" autoCapitalize="characters" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10, marginBottom:12 }} />
+                        <TextInput value={instantCode} onChangeText={setInstantCode} placeholder="MV1234" placeholderTextColor="#9CA3AF" autoCapitalize="characters" style={{ borderWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFFFFF', color:'#111827', borderRadius:10, paddingHorizontal:12, paddingVertical:10, marginBottom:12 }} />
                         <TouchableOpacity onPress={()=>{ const code=instantCode.trim(); if(code){ completeVerification({ code }); } else { Alert.alert('Code required'); } }} style={{ backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
                           <Text style={{ color:'#fff', fontWeight:'700' }}>Submit code</Text>
                         </TouchableOpacity>
+                        <Text style={{ color:'#6B7280', marginTop:10, fontSize:12, textAlign:'center' }}>Instant verification completes immediately after you enter your code. You can return to Payment Methods to resume later.</Text>
                       </>
                     ) : (
                       <>
-                        <Text style={{ color:'#4B5563', marginBottom:8 }}>Enter both deposit amounts as cents. Display shows dollars.</Text>
-                        <Text style={{ color:'#9CA3AF', marginBottom:12 }}>Sandbox hint: use 00 and 00 (shown as 0.00 and 0.00).</Text>
                         <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
-                          <TextInput
-                            value={formatCents(microA)}
-                            onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroA(two); }}
-                            keyboardType="number-pad"
-                            placeholder="0.00"
-                            style={{ width:'48%', borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
-                          />
-                          <TextInput
-                            value={formatCents(microB)}
-                            onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroB(two); }}
-                            keyboardType="number-pad"
-                            placeholder="0.00"
-                            style={{ width:'48%', borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
-                          />
+                          <View style={{ width:'48%' }}>
+                            <Text style={{ color:'#374151', fontWeight:'700', marginBottom:6 }}>Deposit 1</Text>
+                            <TextInput
+                              value={formatCents(microA)}
+                              onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroA(two); }}
+                              keyboardType="number-pad"
+                              placeholder="0.00"
+                              placeholderTextColor="#9CA3AF"
+                              style={{ borderWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFFFFF', color:'#111827', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
+                            />
+                          </View>
+                          <View style={{ width:'48%' }}>
+                            <Text style={{ color:'#374151', fontWeight:'700', marginBottom:6 }}>Deposit 2</Text>
+                            <TextInput
+                              value={formatCents(microB)}
+                              onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroB(two); }}
+                              keyboardType="number-pad"
+                              placeholder="0.00"
+                              placeholderTextColor="#9CA3AF"
+                              style={{ borderWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFFFFF', color:'#111827', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }}
+                            />
+                          </View>
                         </View>
                         <TouchableOpacity
                           disabled={!(String(microA||'').replace(/[^0-9]/g,'').length===2 && String(microB||'').replace(/[^0-9]/g,'').length===2)}
@@ -1756,8 +1943,9 @@ export default function KybOnboardingScreen() {
                           }}
                           style={{ marginTop:12, backgroundColor: (String(microA||'').replace(/[^0-9]/g,'').length===2 && String(microB||'').replace(/[^0-9]/g,'').length===2) ? '#10B981' : '#D1D5DB', borderRadius:12, paddingVertical:12, alignItems:'center' }}
                         >
-                          <Text style={{ color:'#fff', fontWeight:'700' }}>Submit amounts</Text>
+                          <Text style={{ color:'#fff', fontWeight:'700' }}>Finish verification</Text>
                         </TouchableOpacity>
+                        <Text style={{ color:'#6B7280', marginTop:10, fontSize:12, textAlign:'center' }}>This step confirms it's really your account. Deposits usually appear within 48 hours.</Text>
                       </>
                     )}
                     <TouchableOpacity onPress={()=>{ setVerifyStage('choose'); setVerifyChoice(null); }} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
@@ -1765,9 +1953,11 @@ export default function KybOnboardingScreen() {
                     </TouchableOpacity>
                   </>
                 )}
-                <TouchableOpacity onPress={closeVerifyModal} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#111827', fontWeight:'700' }}>Close</Text>
-                </TouchableOpacity>
+                {verifyStage !== 'choose' && (
+                  <TouchableOpacity onPress={closeVerifyModal} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                    <Text style={{ color:'#111827', fontWeight:'700' }}>Back to Payment Methods</Text>
+                  </TouchableOpacity>
+                )}
               </Animated.View>
             </View>
           </Modal>
@@ -1789,6 +1979,10 @@ export default function KybOnboardingScreen() {
                   <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Last name</Text>
                   <TextInput value={cpLastName} onChangeText={setCpLastName} placeholder="Last name" autoCapitalize="words" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
                 </View>
+              </View>
+              <View style={{ marginTop:8, marginBottom:8 }}>
+                <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Representative phone</Text>
+                <TextInput value={cpPhone} onChangeText={setCpPhone} placeholder="(555) 555-5555" keyboardType="phone-pad" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
               </View>
               {/* Role and ownership for business; fixed controller/0% for 501c3 */}
               {bizType === 'llc' && (
@@ -1822,30 +2016,38 @@ export default function KybOnboardingScreen() {
                   </View>
                 </View>
               )}
-              <View style={{ marginTop:8, marginBottom:8, position:'relative' }}>
+              <View style={{ marginTop:8, marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>SSN</Text>
                 <TextInput
-                  value={ssn}
-                  onChangeText={(t)=> setSsn(String(t||'').replace(/\D/g,'').slice(0,9))}
-                  keyboardType="number-pad"
-                  maxLength={9}
-                  placeholder="***-**-6789"
-                  placeholderTextColor="#9CA3AF"
-                  style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10, color:'transparent' }}
-                />
-                <Text pointerEvents="none" style={{ position:'absolute', left:12, top:36, color:'#111827' }}>
-                  {(function(){
+                  value={(function(){
                     const d = String(ssn||'').replace(/\D/g,'').slice(0,9);
-                    const p1 = d.slice(0,3), p2 = d.slice(3,5), p3 = d.slice(5,9);
-                    const m1 = '*'.repeat(p1.length);
-                    const m2 = '*'.repeat(p2.length);
-                    const segs = [];
-                    if (p1) segs.push(m1);
-                    if (p2) segs.push(m2);
-                    if (p3) segs.push(p3);
-                    return segs.join('-');
+                    if (!d) return '';
+                    let result = '';
+                    for (let i = 0; i < d.length; i++) {
+                      if (i === 3 || i === 5) result += '-';
+                      result += d[i];
+                    }
+                    return result;
                   })()}
-                </Text>
+                  onChangeText={(t)=> {
+                    const digits = String(t||'').replace(/\D/g,'').slice(0,9);
+                    setSsn(digits);
+                  }}
+                  keyboardType="number-pad"
+                  placeholder="123-45-6789"
+                  placeholderTextColor="#9CA3AF"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  style={{ 
+                    borderWidth:1, 
+                    borderColor:'#E5E7EB', 
+                    borderRadius:10, 
+                    paddingHorizontal:12, 
+                    paddingVertical:10,
+                    fontSize:16,
+                    color:'#111827'
+                  }}
+                />
               </View>
               <View style={{ marginBottom:8 }}>
                 <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Date of birth (MM‑DD‑YYYY)</Text>
@@ -1888,6 +2090,7 @@ export default function KybOnboardingScreen() {
                     first: cpFirstName.trim(), last: cpLastName.trim(),
                     title: (bizType === '501c3') ? 'controller' : cpTitle,
                     ownership: (bizType === '501c3') ? 0 : Number(cpOwnership || 0),
+                    phone: toE164US(cpPhone) || null,
                     ssn: ssnDigits, dob: (function(){ const d=dobUs.replace(/\D/g,''); return `${d.slice(4,8)}-${d.slice(0,2)}-${d.slice(2,4)}`; })(),
                     address: { line1: addr1, line2: addr2||null, city, state, postal_code: postal }
                   };
@@ -1903,16 +2106,62 @@ export default function KybOnboardingScreen() {
                 <TouchableOpacity onPress={()=>animateTo(6, -1)} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
                   <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={()=>{
-                  // Require at least one representative
+                <TouchableOpacity disabled={isSubmitting || !repCert} onPress={async ()=>{
+                  try{
+                    // Validate reps
                   if (principals.length === 0) { Alert.alert('Add representative','Please add at least one representative.'); return; }
                   if (bizType !== '501c3') {
                     const high = principals.filter(p=> (p.ownership||0) >= 25);
                     if (high.length === 0) { Alert.alert('Ownership check','At least one owner with ≥25% must be listed.'); return; }
                   }
+                  if (!repCert) { Alert.alert('Certification required','Please confirm you have listed all owners ≥25% and a control officer.'); return; }
+                    setIsSubmitting(true);
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token; if(!token){ Alert.alert('Please sign in'); return; }
+                    // Ensure we have a Moov account; attempt on-demand preset if missing
+                    let accountIdForReps = moovAccountId;
+                    if (!accountIdForReps) {
+                      try {
+                        const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+                        const body = { type: 'business' };
+                        try { if (bizType === '501c3') { if (bizMcc) body.mcc = bizMcc; } else if (bizType === 'llc') { if (bizClass) body.category = bizClass; } } catch {}
+                        const presetRes = await fetch(`${API_BASE_URL}/api/payments/moov/preset`, { method:'POST', headers, body: JSON.stringify(body) });
+                        const presetTxt = await presetRes.text();
+                        let pj={}; try{ pj = JSON.parse(presetTxt);}catch{}
+                        if (presetRes.ok && pj?.moov_account_id) { accountIdForReps = pj.moov_account_id; setMoovAccountId(pj.moov_account_id); }
+                      } catch {}
+                    }
+                    if (!accountIdForReps){ Alert.alert('Preparing account','We\'re setting up your Moov account. Please try again.'); setIsSubmitting(false); return; }
+
+                    const toBirthParts = (iso) => { const [y,m,d]=(iso||'').split('-'); return { year:parseInt(y||'0'), month:parseInt(m||'0'), day:parseInt(d||'0') }; };
+                    for (let i=0;i<principals.length;i++){
+                      const p = principals[i];
+                      const moovRepPayload = {
+                        name: { firstName: p.first, lastName: p.last },
+                        email: bizSupportEmail || user?.email || null,
+                        phone: p.phone || toE164US(bizSupportPhone) || null,
+                        address: { addressLine1: p.address?.line1 || p.address?.street || addr1 || '', addressLine2: p.address?.line2 || null, city: p.address?.city || city || '', stateOrProvince: p.address?.state || state || '', postalCode: p.address?.postal_code || postal || '', country: 'US' },
+                        birthDate: toBirthParts(p.dob),
+                        governmentID: { ssn: { full: String(p.ssn||'').replace(/\D/g,'') } },
+                        responsibilities: { jobTitle: p.title || 'owner', ownershipPercentage: typeof p.ownership==='number' ? p.ownership : (bizType==='501c3' ? 0 : 100), isController: (p.title==='controller') || (i===0), isOwner: (bizType!=='501c3') && ((p.ownership||0) > 0) }
+                      };
+                      const r = await fetch(API_BASE_URL + '/api/payments/moov/representatives', { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${token}`,'x-idempotency-key': `${idemKey||`onboard_${user.id}`}_rep_${i}` }, body: JSON.stringify({ accountId: accountIdForReps, representative: moovRepPayload }) });
+                      const t = await r.text(); let j={}; try{ j=JSON.parse(t);}catch{}
+                      if (!r.ok){ const rid = j?.reqId || r.headers?.get?.('x-request-id'); Alert.alert('Representative error', (j?.error||`HTTP ${r.status}`) + (rid?`\nreqId: ${rid}`:'')); setIsSubmitting(false); return; }
+                    }
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const jwt2 = session?.access_token;
+                      await fetch(API_BASE_URL + '/api/payments/moov/accounts/owners-provided', {
+                        method:'POST',
+                        headers:{ 'Content-Type':'application/json', 'Authorization': `Bearer ${jwt2}` },
+                        body: JSON.stringify({ accountId: moovAccountId, ownersProvided: true })
+                      });
+                    } catch{}
                   animateTo(8, 1);
-                }} style={{ width:'48%', backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#fff', fontWeight:'700' }}>Continue</Text>
+                  }catch(e){ Alert.alert('Error', e?.message||'Onboarding failed'); } finally { setIsSubmitting(false); }
+                }} style={{ width:'48%', backgroundColor: isSubmitting ? '#6EE7B7' : '#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontWeight:'700' }}>Continue</Text>}
                 </TouchableOpacity>
               </View>
 
@@ -1924,109 +2173,256 @@ export default function KybOnboardingScreen() {
                       <Text>{p.first} {p.last} — {String(p.title).replace(/\b\w/g, c=>c.toUpperCase())} — {p.ownership}%</Text>
                     </View>
                   ))}
+                  <View style={{ flexDirection:'row', alignItems:'flex-start', marginTop:12 }}>
+                    <Pressable onPress={()=> setRepCert(v=>!v)} style={{ width:22, height:22, borderRadius:4, borderWidth:1, borderColor:'#3B82F6', alignItems:'center', justifyContent:'center', marginRight:10 }}>
+                      {repCert && <View style={{ width:14, height:14, backgroundColor:'#3B82F6', borderRadius:2 }} />}
+                    </Pressable>
+                    <Text style={{ color:'#111827', flex:1 }}>I certify I've listed all owners with 25% or greater stake in my company, and one control officer with significant management authority.</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Identical Moov Drop (parity with individual step 5) */}
+              {false && (
+                <View>
+                  <Text style={{ fontSize:20, fontWeight:'800', marginTop:16, marginBottom:8 }}>Add where your money goes</Text>
+                  <Text style={{ color:'#4B5563', marginBottom:12 }}>We'll send your earnings straight there.</Text>
+                  <View style={{ borderRadius:12, overflow:'hidden', borderWidth:1, borderColor:'#E5E7EB' }}>
+                    <WebView
+                      style={{ height: 560, backgroundColor:'#fff' }}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      startInLoadingState={true}
+                      originWhitelist={['*']}
+                      source={{
+                        html: `<!doctype html><html><head>
+                          <meta charset='utf-8'/>
+                          <meta name='viewport' content='width=device-width, initial-scale=1'/>
+                          <script src='https://js.moov.io/v1'></script>
+                          <script src='https://cards.moov.io/drops/v2.js'></script>
+                          <style>body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827} #mount{min-height:420px} moov-payment-methods{display:block;width:100%;min-height:420px}</style>
+                          </head><body>
+                            <h3 style='margin:0 0 6px;font-weight:800'>Choose a payment method</h3>
+                            <div id='status' style='font:12px system-ui;color:#6B7280;margin:4px 0 8px'>Initializing…</div>
+                            <div id='mount'></div>
+                            <script>(async function(){
+                              (function(){
+                                function post(type, payload){ try{ window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload })); }catch(_){ } }
+                                ['log','info','warn','error'].forEach(l=>{ const orig = console[l]; console[l] = function(){ try{ post('pm:console',{ level:l, msg:[...arguments].map(a=>String(a)).join(' ') }); }catch(_){ } try{ orig.apply(console,arguments); }catch(_){ } }; });
+                                function pickJson(j){ if(!j) return null; const id=j.paymentMethodID||j.bankAccountID||j.cardID||j.id||null; const method=j.paymentMethodType||(j.bankAccountID?'bank':(j.cardID?'card':null)); const status=j.status||j.verificationStatus||null; return { id, method, status }; }
+                                function scrubInit(init){ if(!init) return null; try{ return { method:init.method||null, headers:init.headers||null }; }catch(_){ return null; } }
+                                const ofetch = window.fetch; window.fetch = async function(url, init){ try{ post('pm:net:req',{ url:String(url), init:scrubInit(init) }); }catch(_){ } const res = await ofetch.apply(this, arguments); try{ const cl=res.clone(); const txt=await cl.text(); let j=null; try{ j=JSON.parse(txt);}catch(_){ } const sig=pickJson(j); post('pm:net:res',{ url:res.url, status:res.status, ok:res.ok, json:sig }); if(res.ok && sig && sig.id){ post('pm:success',{ ok:true, method:sig.method||'unknown', id:sig.id, source:'fetch' }); } }catch(_){ } return res; };
+                                const O=window.XMLHttpRequest; function X(){ const x=new O(); let u=null,m=null; const o=x.open; x.open=function(mm,uu){ m=String(mm||''); u=String(uu||''); try{ post('pm:net:req',{ url:u, init:{method:m} }); }catch(_){ } return o.apply(x,arguments); }; x.addEventListener('load',function(){ try{ const s=x.status, ru=x.responseURL, t=String(x.response||''); let j=null; try{ j=JSON.parse(t);}catch(_){ } const sig=pickJson(j); post('pm:net:res',{ url:ru||u, status:s, ok:s>=200&&s<300, json:sig }); if(s>=200&&s<300 && sig && sig.id){ post('pm:success',{ ok:true, method:sig.method||'unknown', id:sig.id, source:'xhr' }); } }catch(_){ } }); return x; } window.XMLHttpRequest=X;
+                                window.__hookMoovDrop=function(el){ if(!el) return; el.onSuccess=function(pm){ try{ var method=pm?.paymentMethodType||(pm?.card?'card':(pm?.bankAccount?'bank':'unknown')); var id=pm?.paymentMethodID||pm?.id||null; post('pm:success',{ ok:true, method, id, source:'prop:onSuccess' }); }catch(_){ } }; el.onPaymentMethodAdded=function(pm){ try{ var method=pm?.paymentMethodType||(pm?.card?'card':(pm?.bankAccount?'bank':'unknown')); var id=pm?.paymentMethodID||pm?.id||null; post('pm:success',{ ok:true, method, id, source:'prop:onPaymentMethodAdded' }); }catch(_){ } }; ['success','paymentMethodAdded','payment-method-added','paymentmethodadded','added','complete'].forEach(function(evt){ try{ el.addEventListener(evt,function(e){ try{ var d=e?.detail||{}; var method=d.paymentMethodType||(d.card?'card':(d.bankAccount?'bank':'unknown')); var id=d.paymentMethodID||d.id||null; post('pm:success',{ ok:true, method, id, source:'dom:'+evt }); }catch(_){ } }); }catch(_){ } }); };
+                              })();
+                              const statusEl = document.getElementById('status');
+                              function setStatus(t){ try{ statusEl.textContent = String(t||''); }catch(_){}; try{ post('pm:status',{ text:String(t||'') }); }catch(_){} }
+                              function post(type, data){ try{ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({type}, data||{}))); } }catch(e){} }
+                              ;['log','warn','error'].forEach(fn=>{ const orig=console[fn]; console[fn]=function(){ try{ post('pm:console',{ level:fn, msg:[...arguments].map(String).join(' ') }); }catch(_){}; try{ orig.apply(console,arguments);}catch(_){} } });
+                              const ACCOUNT_ID = ${JSON.stringify(moovAccountId || '')};
+                              const API_BASE = ${JSON.stringify(API_BASE_URL)};
+                              try{
+                                if(!ACCOUNT_ID){ post('pm:error',{ step:'init', message:'missing_account_id' }); setStatus('Missing account id'); return; }
+                                setStatus('Fetching token…');
+                                const r=await fetch(API_BASE + '/api/payments/moov/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ accountId: ACCOUNT_ID })});
+                                const j=await r.json();
+                                if(!j.access_token){ post('pm:error',{ step:'token', status:r.status, body: JSON.stringify(j).slice(0,200) }); setStatus('Token error'); return; }
+                                try{ post('pm:console',{ level:'debug', msg:'token_scope='+(j.scope||'') }); }catch(_){ }
+                                setStatus('Mounting payment widget…');
+                                try{ await customElements.whenDefined('moov-payment-methods'); }catch(_){}
+                                if(!customElements.get('moov-payment-methods')){ setStatus('custom element not registered'); post('pm:error',{step:'define',message:'custom element not registered'}); return; }
+                                const el=document.createElement('moov-payment-methods'); try{ window.__hookMoovDrop && window.__hookMoovDrop(el); }catch(_){ }
+                                el.token=j.access_token; el.accountID=ACCOUNT_ID; try{ el.setAttribute('account-id', ACCOUNT_ID); el.setAttribute('token', j.access_token); }catch(_){ }
+                                el.paymentMethodTypes=['card','bankAccount']; el.microDeposits=false; el.showLogo=false; el.style.display='block'; el.style.width='100%'; el.style.minHeight='420px';
+                                el.onSuccess=function(pm){ var method=(pm&&(pm.paymentMethodType||pm.type))||(pm&&pm.card?'card':(pm&&pm.bankAccount?'bank':'unknown')); var id=pm&&(pm.paymentMethodID||pm.id)||null; post('pm:success',{ ok:true, method, id, source:'prop:onSuccess' }); };
+                                el.onError=function(err){ post('pm:error', { message: String(err?.message||err) }); };
+                                try{ el.onExit=function(err, metadata){ post('pm:exit',{ message:String(err?.message||err||''), metadata:metadata||null, source:'prop:onExit' }); }; }catch(_){ }
+                                try{ el.onPaymentMethodAdded=function(pm){ var method=(pm&&(pm.paymentMethodType||pm.type))||(pm&&pm.card?'card':(pm&&pm.bankAccount?'bank':'unknown')); var id=pm&&(pm.paymentMethodID||pm.id)||null; post('pm:success',{ ok:true, method, id, source:'prop:onPaymentMethodAdded' }); }; }catch(_){ }
+                                const mount=document.getElementById('mount'); mount.innerHTML=''; mount.appendChild(el); setStatus('Ready');
+                              }catch(e){ setStatus('Error: '+String(e?.message||e)); }
+                            })();</script>
+                          </body></html>`
+                      }}
+                      onMessage={(ev)=>{
+                        try{
+                          const msg = JSON.parse(ev?.nativeEvent?.data||'{}');
+                          if(msg.type==='pm:success' && msg?.id){
+                            const method = (msg && (msg.method||'')).toLowerCase();
+                            (async()=>{
+                              try{
+                                const { data: { session } } = await supabase.auth.getSession();
+                                const token = session?.access_token;
+                                if (token && moovAccountId && msg.id) {
+                                  const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${token}` };
+                                  const payload = { method: method==='bank'?'micro':(method||'bank'), sourceType:'bank', sourceId: msg.id, accountId: moovAccountId, accountKind:'business' };
+                                  fetch(API_BASE_URL + '/api/payments/verify/state', { method:'POST', headers, body: JSON.stringify(payload) }).catch(()=>{});
+                                }
+                              }catch{}
+                            })();
+                            try { setPmLinked(true); } catch(_){}
+                            if ((msg && msg.method) === 'bank') { try { openVerifyModal(msg.id || null); } catch(_){} } else { Alert.alert('Card saved','Card added successfully.'); }
+                          }
+                          if(msg.type==='pm:error'){ console.log('[PM error]', msg); }
+                          if(msg.type==='pm:exit'){ console.log('[PM exit]', msg); }
+                        }catch{}
+                      }}
+                    />
+                  </View>
                 </View>
               )}
             </Animated.View>
           )}
           {step === 8 && (bizType === 'llc' || bizType === '501c3') && (
             <Animated.View style={{ opacity: fade, transform: [{ translateX: slide.interpolate({ inputRange:[-1,0,1], outputRange:[-24,0,24] }) }] , marginTop:0, marginBottom:24, backgroundColor:'#fff', borderRadius:16, padding:16, borderWidth:1, borderColor:'#E0E7FF' }}>
-              <Text style={{ fontSize:20, fontWeight:'800', marginBottom:8 }}>Business bank information</Text>
-              <Text style={{ color:'#4B5563', marginBottom:12 }}>We transmit directly to our provider with zero retention.</Text>
-              <View style={{ marginBottom:8 }}>
-                <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Account holder name</Text>
-                <TextInput value={bankHolder} onChangeText={setBankHolder} placeholder="Legal business name" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
-              </View>
-              <View style={{ marginBottom:8 }}>
-                <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Bank name</Text>
-                <TextInput value={bankName} onChangeText={setBankName} placeholder="e.g., Chase Bank" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
-              </View>
-              <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
-                <View style={{ width:'48%' }}>
-                  <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Routing number</Text>
-                  <TextInput value={bankRouting} onChangeText={(t)=>setBankRouting(t.replace(/\D/g,''))} placeholder="011000015" keyboardType="number-pad" maxLength={9} style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
-                </View>
-                <View style={{ width:'48%' }}>
-                  <Text style={{ fontWeight:'700', color:'#111827', marginBottom:6 }}>Account number</Text>
-                  <TextInput value={bankAccount} onChangeText={(t)=>setBankAccount(t.replace(/\s/g,''))} placeholder="000123456789" keyboardType="number-pad" style={{ borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
-                </View>
-              </View>
-              <View style={{ flexDirection:'row', alignItems:'flex-start', marginTop:12 }}>
-                <TouchableOpacity onPress={()=>setAgreed(!agreed)} style={{ marginRight:8 }}>
-                  <View style={{ width:22, height:22, borderRadius:6, borderWidth:1, borderColor:'#c7cdd9', backgroundColor: agreed ? '#10B981' : '#fff', alignItems:'center', justifyContent:'center' }}>
-                    {agreed && <Ionicons name="checkmark" size={16} color="#fff" />}
-                  </View>
-                </TouchableOpacity>
-                <Text style={{ color:'#111827', flex:1 }}>
-                  I agree to the pricing, Merchant Terms and Conditions, <Text style={{ color:'#2563EB' }} onPress={()=>Linking.openURL(POLICY_URL)}>Portal Terms of Use</Text>, and <Text style={{ color:'#2563EB' }} onPress={()=>Linking.openURL(PRIVACY_URL)}>Privacy Policy</Text>. I also confirm that the information provided is accurate and that I am authorized by my company to enter into this agreement.
-                </Text>
-              </View>
-              <View style={{ flexDirection:'row', justifyContent:'space-between', marginTop:16 }}>
-                <TouchableOpacity onPress={()=>animateTo(7, -1)} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity disabled={isSubmitting} onPress={async ()=>{
-                  try {
-                    setIsSubmitting(true);
+              <Text style={{ fontSize:20, fontWeight:'800', marginBottom:8 }}>Add where your money goes</Text>
+              <Text style={{ color:'#4B5563', marginBottom:12 }}>We'll send your earnings straight there.</Text>
+              <View style={{ borderRadius:12, overflow:'hidden', borderWidth:1, borderColor:'#E5E7EB' }}>
+                <WebView
+                  style={{ height: 560, backgroundColor:'#fff' }}
+                  javaScriptEnabled={true}
+                  domStorageEnabled={true}
+                  startInLoadingState={true}
+                  originWhitelist={['*']}
+                  source={{
+                    html: `<!doctype html><html><head>
+                      <meta charset='utf-8'/>
+                      <meta name='viewport' content='width=device-width, initial-scale=1'/>
+                      <script src='https://js.moov.io/v1'></script>
+                      <script src='https://cards.moov.io/drops/v2.js'></script>
+                      <style>body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827} #mount{min-height:420px} moov-payment-methods{display:block;width:100%;min-height:420px}</style>
+                      </head><body>
+                        <h3 style='margin:0 0 6px;font-weight:800'>Choose a payment method</h3>
+                        <div id='status' style='font:12px system-ui;color:#6B7280;margin:4px 0 8px'>Initializing…</div>
+                        <div id='mount'></div>
+                        <script>(async function(){
+                          (function(){
+                            function post(type, payload){
+                              try{ window.ReactNativeWebView.postMessage(JSON.stringify({ type, ...payload })); }catch(_){ }
+                            }
+                            ['log','info','warn','error'].forEach(l=>{
+                              const orig = console[l];
+                              console[l] = function(){ try{ post('pm:console',{ level:l, msg:[...arguments].map(a=>String(a)).join(' ') }); }catch(_){ } try{ orig.apply(console,arguments); }catch(_){ } };
+                            });
+                            function pickJson(j){ if(!j) return null; const id=j.paymentMethodID||j.bankAccountID||j.cardID||j.id||null; const method=j.paymentMethodType||(j.bankAccountID?'bank':(j.cardID?'card':null)); const status=j.status||j.verificationStatus||null; return { id, method, status }; }
+                            function scrubInit(init){ if(!init) return null; try{ return { method:init.method||null, headers:init.headers||null }; }catch(_){ return null; } }
+                            const ofetch = window.fetch; window.fetch = async function(url, init){ try{ post('pm:net:req',{ url:String(url), init:scrubInit(init) }); }catch(_){ } const res = await ofetch.apply(this, arguments); try{ const cl=res.clone(); const txt=await cl.text(); let j=null; try{ j=JSON.parse(txt);}catch(_){ } const sig=pickJson(j); post('pm:net:res',{ url:res.url, status:res.status, ok:res.ok, json:sig }); if(res.ok && sig && sig.id){ post('pm:success',{ ok:true, method:sig.method||'unknown', id:sig.id, source:'fetch' }); } }catch(_){ } return res; };
+                            const O=window.XMLHttpRequest; function X(){ const x=new O(); let u=null,m=null; const o=x.open; x.open=function(mm,uu){ m=String(mm||''); u=String(uu||''); try{ post('pm:net:req',{ url:u, init:{method:m} }); }catch(_){ } return o.apply(x,arguments); }; x.addEventListener('load',function(){ try{ const s=x.status, ru=x.responseURL, t=String(x.response||''); let j=null; try{ j=JSON.parse(t);}catch(_){ } const sig=pickJson(j); post('pm:net:res',{ url:ru||u, status:s, ok:s>=200&&s<300, json:sig }); if(s>=200&&s<300 && sig && sig.id){ post('pm:success',{ ok:true, method:sig.method||'unknown', id:sig.id, source:'xhr' }); } }catch(_){ } }); return x; } window.XMLHttpRequest=X;
+                            window.__hookMoovDrop=function(el){ if(!el) return; el.onSuccess=function(pm){ try{ var method=pm?.paymentMethodType||(pm?.card?'card':(pm?.bankAccount?'bank':'unknown')); var id=pm?.paymentMethodID||pm?.id||null; post('pm:success',{ ok:true, method, id, source:'prop:onSuccess' }); }catch(_){ } }; el.onPaymentMethodAdded=function(pm){ try{ var method=pm?.paymentMethodType||(pm?.card?'card':(pm?.bankAccount?'bank':'unknown')); var id=pm?.paymentMethodID||pm?.id||null; post('pm:success',{ ok:true, method, id, source:'prop:onPaymentMethodAdded' }); }catch(_){ } }; ['success','paymentMethodAdded','payment-method-added','paymentmethodadded','added','complete'].forEach(function(evt){ try{ el.addEventListener(evt,function(e){ try{ var d=e?.detail||{}; var method=d.paymentMethodType||(d.card?'card':(d.bankAccount?'bank':'unknown')); var id=d.paymentMethodID||d.id||null; post('pm:success',{ ok:true, method, id, source:'dom:'+evt }); }catch(_){ } }); }catch(_){ } }); };
+                          })();
+                          const statusEl = document.getElementById('status');
+                          function setStatus(t){ try{ statusEl.textContent = String(t||''); }catch(_){}; try{ post('pm:status',{ text:String(t||'') }); }catch(_){} }
+                          function post(type, data){ try{ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({type}, data||{}))); } }catch(e){} }
+                          // Bridge console logs
+                          ;['log','warn','error'].forEach(fn=>{ const orig=console[fn]; console[fn]=function(){ try{ post('pm:console',{ level:fn, msg:[...arguments].map(String).join(' ') }); }catch(_){}; try{ orig.apply(console,arguments);}catch(_){} } });
+                          const ACCOUNT_ID = ${JSON.stringify(moovAccountId || '')};
+                          const API_BASE = ${JSON.stringify(API_BASE_URL)};
+                          try{
+                            if(!ACCOUNT_ID){ post('pm:error',{ step:'init', message:'missing_account_id' }); setStatus('Missing account id'); return; }
+                            setStatus('Fetching token…');
+                            const r=await fetch(API_BASE + '/api/payments/moov/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ accountId: ACCOUNT_ID })});
+                            const j=await r.json();
+                            if(!j.access_token){ post('pm:error',{ step:'token', status:r.status, body: JSON.stringify(j).slice(0,200) }); setStatus('Token error'); return; }
+                            try{ post('pm:console',{ level:'debug', msg:'token_scope='+(j.scope||'') }); }catch(_){ }
+                            setStatus('Mounting payment widget…');
+                            // Ensure element registered
+                            try{ await customElements.whenDefined('moov-payment-methods'); }catch(_){}
+                            if(!customElements.get('moov-payment-methods')){ setStatus('custom element not registered'); post('pm:error',{step:'define',message:'custom element not registered'}); return; }
+                            const el=document.createElement('moov-payment-methods'); try{ window.__hookMoovDrop && window.__hookMoovDrop(el); }catch(_){ }
+                            // Required properties
+                            el.token=j.access_token;
+                            el.accountID=ACCOUNT_ID;
+                            try{ el.setAttribute('account-id', ACCOUNT_ID); el.setAttribute('token', j.access_token); }catch(_){ }
+                            // Options
+                            el.paymentMethodTypes=['card','bankAccount'];
+                            el.setAttribute('payment-method-types','card,bankAccount');
+                            el.microDeposits=false;
+                            el.showLogo=false;
+                            try{ el.setAttribute('show-logo','false'); }catch(_){ }
+                            el.style.display='block'; el.style.width='100%'; el.style.minHeight='420px';
+                            // Callbacks
+                            el.onSuccess=function(pm){
+                              var method = (pm && (pm.paymentMethodType || pm.type)) || (pm && pm.card ? 'card' : (pm && pm.bankAccount ? 'bank' : 'unknown'));
+                              var id = pm && (pm.paymentMethodID || pm.id) || null;
+                              post('pm:success', { ok:true, method: method, id: id, source:'prop:onSuccess' });
+                            };
+                            el.onError=function(err){ post('pm:error', { message: String(err?.message||err) }); };
+                            try{ el.onExit = function(err, metadata){ post('pm:exit', { message: String(err?.message||err||''), metadata: metadata||null, source:'prop:onExit' }); }; }catch(_){}
+                            try{ el.onComplete = function(){ post('pm:console', { level:'debug', msg:'onComplete fired' }); }; }catch(_){}
+                            try{ el.onPaymentMethodAdded = function(pm){
+                              var method = (pm && (pm.paymentMethodType || pm.type)) || (pm && pm.card ? 'card' : (pm && pm.bankAccount ? 'bank' : 'unknown'));
+                              var id = pm && (pm.paymentMethodID || pm.id) || null;
+                              post('pm:success', { ok:true, method: method, id: id, source:'prop:onPaymentMethodAdded' });
+                            }; }catch(_){}
+                            // Also listen for DOM CustomEvents in case property callbacks don't fire in this environment
+                            try{
+                              var _evtNames=['success','paymentMethodAdded','payment-method-added','paymentmethodadded','added','complete','exit','close'];
+                              _evtNames.forEach(function(n){
+                                try{ el.addEventListener(n, function(e){
+                                  var d=e && (e.detail||{});
+                                  var method=(d.paymentMethodType||d.type)||(d.card?'card':(d.bankAccount?'bank':'unknown'));
+                                  var id=(d.paymentMethodID||d.id)||null;
+                                  post('pm:success', { ok:true, method: method, id: id, source:n });
+                                }); }catch(__){}
+                              });
+                              try{ window.addEventListener('message', function(ev){
+                                try{ var data = (typeof ev.data==='string' && ev.data[0]==='{') ? JSON.parse(ev.data) : ev.data; }catch(__){ var data = ev.data; }
+                                post('pm:console', { level:'debug', msg:'window.message '+JSON.stringify(data).slice(0,200) });
+                              }, false); }catch(__){}
+                              post('pm:console',{ level:'debug', msg:'callbacks attached' });
+                            }catch(__){}
+                            const mount=document.getElementById('mount');
+                            mount.appendChild(el);
+                            try{ el.open = true; el.setAttribute('open','true'); }catch(_){}
+                            try{ setTimeout(function(){ try{ el.open=true; el.setAttribute('open','true'); }catch(_){} }, 50); }catch(_){ }
+                            try{ const rect=mount.getBoundingClientRect(); post('pm:console',{level:'debug', msg:'mounted_children='+mount.children.length+', mount_h='+rect.height}); }catch(_){}
+                            setStatus('Ready');
+                            post('pm:ready');
+                          }catch(e){ post('pm:error',{ message:e.message }); }
+                        })();</script>
+                      </body></html>`,
+                    baseUrl: 'https://vybelocal.com'
+                  }}
+                  onMessage={(e) => {
+                    try {
+                      const msg = JSON.parse(e.nativeEvent.data);
+                      if (msg.type === 'pm:console') { console.log('[PM console]', msg); }
+                      if (msg.type === 'pm:status') { console.log('[PM status]', msg.text); }
+                      if (msg.type === 'pm:success' || msg.type === 'pm:added') {
+                        (async () => {
+                          try {
                     const { data: { session } } = await supabase.auth.getSession();
                     const token = session?.access_token;
-                    if (!token) { Alert.alert('Please sign in'); return; }
-                    if (principals.length === 0) { Alert.alert('Missing representatives','Add at least one representative.'); return; }
-                    if (!/^\d{9}$/.test(String(bankRouting||'').replace(/\D/g,''))) { Alert.alert('Routing number','Enter a 9‑digit routing number.'); return; }
-                    if (!String(bankAccount||'').replace(/\s/g,'')) { Alert.alert('Account number','Enter a bank account number.'); return; }
-                    if (!agreed) { Alert.alert('Agreement required','Please agree to the Terms before submitting.'); return; }
-                    const body = {
-                      business: {
-                        type: bizType === '501c3' ? 'corporation' : 'llc',
-                        legal_name: bizLegalName,
-                        tax_id: String(bizEin||'').replace(/\D/g,''),
-                        start_or_incorp_date: (function(){ const d=bizIncorpUs.replace(/\D/g,''); return `${d.slice(4,8)}-${d.slice(0,2)}-${d.slice(2,4)}`; })(),
-                        address: { line1: addr1, line2: addr2||null, city, state, postal_code: postal },
-                        website: normalizeUrl(bizWebsite),
-                        support: { email: bizSupportEmail || user?.email, phone: toE164US(bizSupportPhone) },
-                        mcc: bizMcc || '7922',
-                        is_501c3: bizType === '501c3',
-                      },
-                      bank: { holder: bankHolder || bizLegalName, routing: String(bankRouting).replace(/\D/g,''), account: String(bankAccount).replace(/\s/g,''), bank_name: bankName || null },
-                      control_person: { // send first principal as control person for now
-                        first_name: principals[0].first,
-                        last_name: principals[0].last,
-                        address: principals[0].address,
-                        dob: principals[0].dob,
-                        ssn: principals[0].ssn,
-                        title: principals[0].title,
-                        ownership: principals[0].ownership,
-                      },
-                    };
-                    if (__DEV__) {
-                      try {
-                        const masked = JSON.parse(JSON.stringify(body));
-                        if (masked?.control_person?.ssn) masked.control_person.ssn = '***MASKED***';
-                        if (masked?.bank?.account) masked.bank.account = '***MASKED***';
-                        if (masked?.bank?.routing) masked.bank.routing = '***MASKED***';
-                        console.log('[KYB][client][biz] submit body:', JSON.stringify(masked, null, 2));
+                            if (token) {
+                              const method = (msg && (msg.method || (msg.type === 'pm:added' ? 'card' : 'card'))) || 'card';
+                              await fetch(API_BASE_URL + '/api/payments/profile/payouts', {
+                                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                body: JSON.stringify({ method })
+                              });
+                            }
                       } catch {}
-                    }
-                    const res = await fetch(`${API_BASE_URL}/api/payments/tilled/onboarding`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`,
-                        'x-idempotency-key': idemKey || `onboard_${user.id}_${Date.now()}`,
-                      },
-                      body: JSON.stringify(body)
-                    });
-                    const txt = await res.text();
-                    let json; try { json = JSON.parse(txt); } catch { json = {}; }
-                    if (__DEV__) {
-                      try { console.log('[KYB][client][biz] response:', res.status, JSON.stringify(json, null, 2)); } catch {}
-                    }
-                    if (!res.ok) { Alert.alert('Error', json?.error || 'Onboarding failed'); return; }
-                    Alert.alert('Submitted','Your business application was submitted.');
-                  } catch (e) {
-                    Alert.alert('Error', e?.message || 'Onboarding failed');
-                  } finally { setIsSubmitting(false); }
-                }} style={{ width:'48%', backgroundColor: isSubmitting ? '#6EE7B7' : '#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontWeight:'700' }}>Submit & Verify</Text>}
+                        })();
+                        try { setPmLinked(true); } catch (_) { }
+                        if ((msg && msg.method) === 'bank') {
+                          try { openVerifyModal(msg.id || null); } catch (_) { }
+                        } else {
+                          Alert.alert('Card saved', 'Card added successfully.');
+                        }
+                      }
+                      if (msg.type === 'pm:error') { console.log('[PM error]', msg); }
+                      if (msg.type === 'pm:exit') { console.log('[PM exit]', msg); }
+                    } catch {}
+                  }}
+                />
+              </View>
+              <View style={{ marginTop:12 }}>
+                <TouchableOpacity onPress={()=> navigation.navigate('Home', { screen: 'PaymentMethods' })} style={{ width:'100%', backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#fff', fontWeight:'700' }}>Go to Payment Methods</Text>
+                </TouchableOpacity>
+              </View>
+              {/* TEMP: Back button for testing ownersProvided flow */}
+              <View style={{ marginTop:12 }}>
+                <TouchableOpacity onPress={()=> animateTo(7, -1)} style={{ width:'100%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
                 </TouchableOpacity>
               </View>
             </Animated.View>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ const LAVENDER = '#CBB4E3';
 const MIDNIGHT = '#111827';
 
 const API_BASE = Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+const WAITLIST_API_BASE = Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
 
 export default function PaymentMethodsScreen({ route }) {
   const { profile, session } = useAuth();
@@ -24,6 +25,16 @@ export default function PaymentMethodsScreen({ route }) {
   const [error, setError] = useState(null);
   const [deletingBankId, setDeletingBankId] = useState(null);
   const [deletingCardId, setDeletingCardId] = useState(null);
+  // Verify modal state
+  const [verifyVisible, setVerifyVisible] = useState(false);
+  const [verifyStage, setVerifyStage] = useState('choose'); // 'choose' | 'complete'
+  const [verifyChoice, setVerifyChoice] = useState(null); // 'instant' | 'micro' | null
+  const [lastBank, setLastBank] = useState({ accountId: null, bankAccountId: null });
+  const [loadingInstant, setLoadingInstant] = useState(false);
+  const [loadingMicro, setLoadingMicro] = useState(false);
+  const [instantCode, setInstantCode] = useState('');
+  const [microA, setMicroA] = useState('');
+  const [microB, setMicroB] = useState('');
 
   const fetchSummary = useCallback(async () => {
     setLoading(true); setError(null);
@@ -167,36 +178,133 @@ export default function PaymentMethodsScreen({ route }) {
   const b = data?.business || {};
   const banks = b?.banks || [];
   const cards = b?.cards || [];
+  const sources = Array.isArray(b?.sources) ? b.sources : [];
   const status = b?.moov_status || null;
   const accountIdForWrites = b?.accountId || explicitAccountId || profile?.moov_account_id || null;
+  const hasHostAccount = !!(b?.accountId || profile?.moov_account_id || explicitAccountId);
+  const missingAccount = String(error || '').toLowerCase().includes('missing_account');
+
+  try {
+    console.log('[PM][empty-check]', {
+      loading,
+      error: !!error ? String(error) : null,
+      status,
+      bAccountId: b?.accountId || null,
+      profileAccountId: profile?.moov_account_id || null,
+      explicitAccountId: explicitAccountId || null,
+      accountIdForWrites: accountIdForWrites || null,
+      hasHostAccount,
+      missingAccount
+    });
+  } catch(_) {}
+
+  // Find any pending bank verification from normalized sources
+  const pendingBank = React.useMemo(() => {
+    const normalized = (sources || []).filter((s) => s && s.source_type === 'bank' && s.status && s.status !== 'deleted');
+    // handle 'pending' and older variants
+    const isPending = (st) => {
+      const v = String(st || '').toLowerCase();
+      return v === 'pending' || v === 'pending-instant' || v === 'pending-microdeposits' || v === 'pending-micro';
+    };
+    return normalized.find((s) => isPending(s.status)) || null;
+  }, [sources]);
+
+  const getMethodForBankId = React.useCallback((bankAccountID) => {
+    try {
+      const hit = (sources || []).find((s) => s && s.source_type === 'bank' && String(s.source_id) === String(bankAccountID) && s.status !== 'deleted');
+      return (hit && hit.verification_method) || null;
+    } catch { return null; }
+  }, [sources]);
+
+  const formatCents = React.useCallback((digits) => {
+    const d = String(digits || '').replace(/[^0-9]/g, '').slice(0, 2);
+    const a = d.length > 0 ? d[0] : '0';
+    const b2 = d.length > 1 ? d[1] : '0';
+    return `0.${a}${b2}`;
+  }, []);
+
+  const openVerifyModal = React.useCallback((bankAccountId) => {
+    try { setLastBank({ accountId: accountIdForWrites || null, bankAccountId }); } catch {}
+    const m = (getMethodForBankId(bankAccountId) || '').toLowerCase();
+    if (m === 'instant' || m === 'micro') { setVerifyChoice(m); setVerifyStage('complete'); }
+    else { setVerifyChoice(null); setVerifyStage('choose'); }
+    setInstantCode(''); setMicroA(''); setMicroB('');
+    setVerifyVisible(true);
+  }, [accountIdForWrites, getMethodForBankId]);
+
+  const initiateInstantVerify = React.useCallback(async ()=>{
+    try{
+      if (loadingInstant) return; setLoadingInstant(true);
+      // Ensure JWT
+      let jwt = session?.access_token || null;
+      if (!jwt) { try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+      }
+      if(!jwt){ Alert.alert('Sign in required','Please sign in again.'); return; }
+      if(!accountIdForWrites || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found. Try linking again.'); return; }
+      // Persist choice
+      try{
+        const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${jwt}` };
+        const payload = { method:'instant', sourceType:'bank', sourceId:lastBank.bankAccountId, accountId: accountIdForWrites, accountKind:'business' };
+        fetch(`${WAITLIST_API_BASE}/api/payments/verify/state`, { method:'POST', headers, body: JSON.stringify(payload) }).catch(()=>{});
+      }catch{}
+      // Initiate with Moov
+      const r = await fetch(`${WAITLIST_API_BASE}/api/payments/moov/bank/initiate`, {
+        method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${jwt}` },
+        body: JSON.stringify({ accountId: accountIdForWrites, bankAccountId: lastBank.bankAccountId, method:'instant' })
+      });
+      const txt = await r.text().catch(()=> ''); let j={}; try{ j=JSON.parse(txt)||{}; }catch{}
+      const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
+      if(r.ok){ setVerifyChoice('instant'); setVerifyStage('complete'); }
+      else { Alert.alert('Could not start instant verify', (String(j?.error||j?.message||r.status)) + (rid?`\nreqId: ${rid}`:'')); }
+    }catch(e){ Alert.alert('Error', String(e?.message||e)); }
+    finally { setLoadingInstant(false); }
+  }, [API_BASE, session?.access_token, accountIdForWrites, lastBank, loadingInstant]);
+
+  const initiateMicroDeposits = React.useCallback(async ()=>{
+    try{
+      if (loadingMicro) return; setLoadingMicro(true);
+      let jwt = session?.access_token || null;
+      if (!jwt) { try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+      }
+      if(!jwt){ Alert.alert('Sign in required','Please sign in again.'); return; }
+      if(!accountIdForWrites || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found. Try linking again.'); return; }
+      // Persist choice
+      try{
+        const headers = { 'Content-Type':'application/json','Authorization':`Bearer ${jwt}` };
+        const payload = { method:'micro', sourceType:'bank', sourceId:lastBank.bankAccountId, accountId: accountIdForWrites, accountKind:'business' };
+        fetch(`${WAITLIST_API_BASE}/api/payments/verify/state`, { method:'POST', headers, body: JSON.stringify(payload) }).catch(()=>{});
+      }catch{}
+      // Initiate Moov micro-deposits
+      const r = await fetch(`${WAITLIST_API_BASE}/api/payments/moov/bank/micro-deposits`, {
+        method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${jwt}` },
+        body: JSON.stringify({ accountId: accountIdForWrites, bankAccountId: lastBank.bankAccountId })
+      });
+      const txt = await r.text().catch(()=> ''); let j={}; try{ j=JSON.parse(txt)||{}; }catch{}
+      const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
+      if(r.ok){ setVerifyChoice('micro'); setVerifyStage('complete'); }
+      else { const extra = [j?.body, j?.preMethod && `preMethod=${j.preMethod}`, j?.preStatus && `preStatus=${j.preStatus}`].filter(Boolean).join('\n'); Alert.alert('Could not send micro-deposits', [String(j?.error||j?.message||r.status), rid?`reqId: ${rid}`:null, extra||null].filter(Boolean).join('\n')); }
+    }catch(e){ Alert.alert('Error', String(e?.message||e)); }
+    finally { setLoadingMicro(false); }
+  }, [API_BASE, session?.access_token, accountIdForWrites, lastBank, loadingMicro]);
+
+  const completeVerification = React.useCallback(async (params)=>{
+    try{
+      let jwt = session?.access_token || null;
+      if (!jwt) { try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+      }
+      if(!jwt){ Alert.alert('Sign in required','Please sign in again.'); return; }
+      if(!accountIdForWrites || !lastBank?.bankAccountId){ Alert.alert('Missing info','No bank account found.'); return; }
+      const payload = { accountId: accountIdForWrites, bankAccountId: lastBank.bankAccountId, ...params };
+      const r = await fetch(`${WAITLIST_API_BASE}/api/payments/moov/bank-verify`, { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':`Bearer ${jwt}` }, body: JSON.stringify(payload) });
+      const txt = await r.text().catch(()=> ''); let j={}; try{ j=JSON.parse(txt)||{}; }catch{}
+      const rid = j?.reqId || r.headers?.get?.('x-request-id') || null;
+      if(r.ok){ setVerifyVisible(false); Alert.alert('Verification complete','Your bank is verified.', [ { text:'Back to Payment Methods' } ], { cancelable:false }); fetchSummary(); }
+      else { Alert.alert('Verification failed', (String(j?.error||j?.message||r.status)) + (rid?`\nreqId: ${rid}`:'')); }
+    }catch(e){ Alert.alert('Error', String(e?.message||e)); }
+  }, [WAITLIST_API_BASE, session?.access_token, accountIdForWrites, lastBank, fetchSummary]);
 
 
-  // If no host onboarding started yet → replace with CTA
-  if (!loading && !error && !status) {
-    return (
-      <LinearGradient colors={['rgba(203,180,227,0.2)', 'rgba(255,200,162,0.4)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
-          <AppHeader />
-          <ScrollView contentContainerStyle={[styles.container,{ paddingHorizontal:16 }]}>
-            <View style={[styles.card,{ alignItems:'center' }]}>
-              <Ionicons name="card-outline" size={28} color={MIDNIGHT} style={{ marginBottom: 8 }} />
-              <Text style={styles.title}>Set up payments</Text>
-              <Text style={[styles.subtitle,{ textAlign:'center', marginTop: 4 }]}>Start host onboarding to link your payout method.</Text>
-              <TouchableOpacity style={[styles.primaryBtn,{ marginTop: 12 }]} onPress={()=> navigation.navigate('Home', { screen: 'KybIntro' })}>
-                <Text style={styles.primaryBtnText}>Begin onboarding</Text>
-              </TouchableOpacity>
-            </View>
-            {!!error && (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle" size={16} color="#b91c1c" style={{ marginRight:8 }} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
+  // removed early return; host placeholder renders inline below
 
   return (
     <LinearGradient colors={['rgba(203,180,227,0.2)', 'rgba(255,200,162,0.4)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
@@ -214,75 +322,116 @@ export default function PaymentMethodsScreen({ route }) {
                 <Ionicons name="cash-outline" size={18} color={MIDNIGHT} style={{ marginRight:8 }} />
                 <Text style={styles.sectionTitle}>Host payouts</Text>
               </View>
-              <View style={{ flexDirection:'row', flexWrap:'wrap', gap:8 }}>
-                <Chip icon="checkmark-circle-outline" label={`Status: ${b?.moov_status || 'unknown'}`} />
-                <Chip icon="business-outline" label={`Bank: ${b?.bank_verification_status || 'none'}`} />
-                <Chip icon="card-outline" label={`Payouts: ${b?.payouts_ok ? 'ready' : 'not ready'}`} />
-              </View>
             </View>
 
-            <TouchableOpacity
-              onPress={()=> navigation.navigate('KybOnboardingClean2', { ff: true })}
-              style={{ marginTop:12, backgroundColor: LAVENDER, borderRadius: 10, paddingVertical: 10, alignItems:'center', borderWidth:1, borderColor:'rgba(186,164,235,0.6)' }}
-            >
-              <Text style={{ color:'#fff', fontWeight:'800' }}>Add payment method</Text>
-            </TouchableOpacity>
-
-            {status === 'pending' && (
-              <View style={styles.infoBox}>
-                <Ionicons name="time-outline" size={16} color="#92400e" style={{ marginRight:8 }} />
-                <Text style={styles.infoText}>Underwriting in review. You can still add and view payout methods.</Text>
+            {loading ? (
+              <View style={{ paddingVertical:12, alignItems:'center' }}>
+                <ActivityIndicator size="small" color="#6B7280" />
+                <Text style={{ color:'#6B7280', marginTop:8 }}>Loading…</Text>
               </View>
-            )}
+            ) : (!hasHostAccount || missingAccount) ? (
+              <>
+                <View style={{ marginTop:8 }}>
+                  <Text style={{ color: MIDNIGHT, fontWeight:'800', marginBottom:6 }}>Want to get paid for RSVPs?</Text>
+                  <Text style={{ color:'#6b7280' }}>Create your host payouts account to start receiving earnings. You can link a bank or card during onboarding.</Text>
+                </View>
+                <TouchableOpacity style={[styles.primaryBtn,{ marginTop:12, alignSelf:'flex-start' }]} onPress={()=> navigation.navigate('Home', { screen: 'KybIntro' })}>
+                  <Text style={styles.primaryBtnText}>Start host onboarding</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View style={{ flexDirection:'row', flexWrap:'wrap', gap:8, marginTop:8 }}>
+                  <Chip icon="checkmark-circle-outline" label={`Status: ${b?.moov_status || 'unknown'}`} />
+                  <Chip icon="business-outline" label={`Bank: ${b?.bank_verification_status || 'none'}`} />
+                  <Chip icon="card-outline" label={`Payouts: ${b?.payouts_ok ? 'ready' : 'not ready'}`} />
+                </View>
 
-            <View style={styles.divider} />
-
-            <Text style={styles.sectionSmallTitle}>Banks</Text>
-            {banks.length === 0 ? (
-              <Text style={styles.muted}>No bank accounts.</Text>
-            ) : banks.map((ba) => (
-              <View key={ba.bankAccountID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}>
-                <View style={{ flex:1, paddingRight:12 }}>
-                  <Text style={styles.rowMain}>{ba.bankName || 'Bank'} •••• {ba.lastFourAccountNumber}</Text>
-                  <Text style={styles.rowSub}>Status: {ba.status}</Text>
-                  {(ba.status === 'new' || ba.status === 'pending') && (
-                    <TouchableOpacity onPress={() => handleVerify(ba.bankAccountID)} style={[styles.primaryBtn,{ alignSelf:'flex-start', marginTop:6 }] }>
-                      <Text style={styles.primaryBtnText}>Verify deposits</Text>
+                {pendingBank && (
+                  <View style={[styles.infoBox,{ borderColor:'#BFDBFE', backgroundColor:'#EFF6FF' }]}> 
+                    <Ionicons name="information-circle-outline" size={16} color="#1D4ED8" style={{ marginRight:8 }} />
+                    <View style={{ flex:1 }}>
+                      <Text style={{ color:'#1D4ED8', fontWeight:'700' }}>Bank verification pending</Text>
+                      <Text style={{ color:'#1D4ED8', fontSize:12 }}>Resume verification now or anytime from here.</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate('KybOnboardingClean2', { openVerify: true, bankAccountId: pendingBank.source_id, method: pendingBank.verification_method || 'micro' })}
+                      style={{ marginLeft:8, backgroundColor:'#2563EB', borderRadius:8, paddingVertical:8, paddingHorizontal:12 }}
+                    >
+                      <Text style={{ color:'#fff', fontWeight:'700' }}>Resume</Text>
                     </TouchableOpacity>
-                  )}
-                </View>
-                <TouchableOpacity disabled={deletingBankId===ba.bankAccountID} onPress={() => handleDeleteBank(ba.bankAccountID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingBankId===ba.bankAccountID ? 0.5 : 1 }}>
-                  {deletingBankId===ba.bankAccountID ? (
-                    <View style={{ flexDirection:'row', alignItems:'center' }}>
-                      <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
-                      <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
-                    </View>
-                  ) : (
-                    <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ))}
+                  </View>
+                )}
 
-            <Text style={[styles.sectionSmallTitle,{ marginTop: 12 }]}>Business cards</Text>
-            {cards.length === 0 ? <Text style={styles.muted}>No cards.</Text> : cards.map((c) => (
-              <View key={c.cardID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}>
-                <View style={{ flex:1, paddingRight:12 }}>
-                  <Text style={styles.rowMain}>{c.brand} {c.cardType?.toUpperCase?.()} •••• {c.lastFourCardNumber}</Text>
-                  <Text style={styles.rowSub}>Exp {c.expiration?.month}/{c.expiration?.year}</Text>
-                </View>
-                <TouchableOpacity disabled={deletingCardId===c.cardID} onPress={() => handleDeleteCard(c.cardID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingCardId===c.cardID ? 0.5 : 1 }}>
-                  {deletingCardId===c.cardID ? (
-                    <View style={{ flexDirection:'row', alignItems:'center' }}>
-                      <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
-                      <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
-                    </View>
-                  ) : (
-                    <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
-                  )}
+                <TouchableOpacity
+                  onPress={()=> {
+                    const hasVerifiedBank = Array.isArray(banks) && banks.some(ba => String(ba?.status||'').toLowerCase() === 'verified');
+                    const hasVerifiedSource = Array.isArray(sources) && sources.some(s => s && s.source_type==='bank' && String(s.status||'').toLowerCase()==='verified');
+                    const oc = !!(b?.payouts_ok || hasVerifiedBank || hasVerifiedSource);
+                    navigation.navigate('KybOnboardingClean2', { ff: true, oc });
+                  }}
+                  style={{ marginTop:12, backgroundColor: LAVENDER, borderRadius: 10, paddingVertical: 10, alignItems:'center', borderWidth:1, borderColor:'rgba(186,164,235,0.6)' }}
+                >
+                  <Text style={{ color:'#fff', fontWeight:'800' }}>Add payment method</Text>
                 </TouchableOpacity>
-              </View>
-            ))}
+
+                {status === 'pending' && (
+                  <View style={styles.infoBox}>
+                    <Ionicons name="time-outline" size={16} color="#92400e" style={{ marginRight:8 }} />
+                    <Text style={styles.infoText}>Underwriting in review. You can still add and view payout methods.</Text>
+                  </View>
+                )}
+
+                <View style={styles.divider} />
+
+                <Text style={styles.sectionSmallTitle}>Banks</Text>
+                {banks.length === 0 ? (
+                  <Text style={styles.muted}>No bank accounts.</Text>
+                ) : banks.map((ba) => (
+                  <View key={ba.bankAccountID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}> 
+                    <View style={{ flex:1, paddingRight:12 }}>
+                      <Text style={styles.rowMain}>{ba.bankName || 'Bank'} •••• {ba.lastFourAccountNumber}</Text>
+                      <Text style={styles.rowSub}>Status: {ba.status}</Text>
+                      {(ba.status === 'new' || ba.status === 'pending') && (
+                        <TouchableOpacity onPress={() => openVerifyModal(ba.bankAccountID)} style={[styles.primaryBtn,{ alignSelf:'flex-start', marginTop:6 }] }>
+                          <Text style={styles.primaryBtnText}>Verify account</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <TouchableOpacity disabled={deletingBankId===ba.bankAccountID} onPress={() => handleDeleteBank(ba.bankAccountID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingBankId===ba.bankAccountID ? 0.5 : 1 }}>
+                      {deletingBankId===ba.bankAccountID ? (
+                        <View style={{ flexDirection:'row', alignItems:'center' }}>
+                          <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
+                          <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
+                        </View>
+                      ) : (
+                        <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                <Text style={[styles.sectionSmallTitle,{ marginTop: 12 }]}>Business cards</Text>
+                {cards.length === 0 ? <Text style={styles.muted}>No cards.</Text> : cards.map((c) => (
+                  <View key={c.cardID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}> 
+                    <View style={{ flex:1, paddingRight:12 }}>
+                      <Text style={styles.rowMain}>{c.brand} {c.cardType?.toUpperCase?.()} •••• {c.lastFourCardNumber}</Text>
+                      <Text style={styles.rowSub}>Exp {c.expiration?.month}/{c.expiration?.year}</Text>
+                    </View>
+                    <TouchableOpacity disabled={deletingCardId===c.cardID} onPress={() => handleDeleteCard(c.cardID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingCardId===c.cardID ? 0.5 : 1 }}>
+                      {deletingCardId===c.cardID ? (
+                        <View style={{ flexDirection:'row', alignItems:'center' }}>
+                          <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
+                          <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
+                        </View>
+                      ) : (
+                        <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
+            )}
           </View>
 
           {!!error && (
@@ -291,14 +440,97 @@ export default function PaymentMethodsScreen({ route }) {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
-          {loading && <Text style={[styles.muted,{ textAlign:'center', marginTop:8 }]}>Loading…</Text>}
+          {/* Loading indicator moved into the Host payouts card */}
 
           <View style={{ height: 24 }} />
         </ScrollView>
+
+        {/* Verification Modal (cloned from onboarding, simplified) */}
+        <Modal visible={verifyVisible} transparent={false} animationType="slide" onRequestClose={()=> setVerifyVisible(false)}>
+          <View style={{ flex:1, backgroundColor:'#FFFFFF', justifyContent:'center', alignItems:'center' }}>
+            <View style={{ width:'92%', maxWidth:480, backgroundColor:'#FFFFFF', padding:16, borderRadius:16, shadowColor:'#000', shadowOpacity:0.08, shadowRadius:12, elevation:6 }}>
+            {verifyStage === 'choose' && (
+              <>
+                <Text style={{ fontSize:22, fontWeight:'900', marginBottom:8 }}>Verify your bank</Text>
+                <Text style={{ color:'#4B5563', marginBottom:4 }}>Choose how you want to confirm your payout account. Fast lane or old‑school — up to you.</Text>
+                <Text style={{ color:'#6B7280', marginBottom:8 }}>(Not ready? You can always come back from Payment Methods.)</Text>
+                <View style={{ marginBottom:16 }}>
+                  <Text style={{ color:'#111827', fontWeight:'800', marginBottom:4 }}>Instant (Recommended)</Text>
+                  <Text style={{ color:'#4B5563' }}>{'• We\u2019ll send a $0.01 test deposit with a short code in the description'}</Text>
+                  <Text style={{ color:'#4B5563' }}>{'• Drop the code here to finish verification'}</Text>
+                  <Text style={{ color:'#4B5563', marginBottom:8 }}>{'• Most banks clear it in minutes — no 2-day wait'}</Text>
+                  <Text style={{ color:'#111827', fontWeight:'800', marginBottom:4 }}>Micro‑Deposits</Text>
+                  <Text style={{ color:'#4B5563' }}>{'• We\u2019ll send two tiny deposits to your account'}</Text>
+                  <Text style={{ color:'#4B5563' }}>{'• Start before 4:15 PM ET → usually shows up same day'}</Text>
+                  <Text style={{ color:'#4B5563' }}>{'• After that → lands the next business day'}</Text>
+                </View>
+                <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
+                  <TouchableOpacity disabled={loadingInstant} onPress={initiateInstantVerify} style={{ width:'48%', backgroundColor: loadingInstant ? '#93C5FD' : '#2563EB', borderRadius:12, paddingVertical:12, alignItems:'center', opacity: loadingInstant ? 0.7 : 1 }}>
+                    <Text style={{ color:'#fff', fontWeight:'700' }}>{loadingInstant ? 'Starting…' : 'Instant verify'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity disabled={loadingMicro} onPress={initiateMicroDeposits} style={{ width:'48%', backgroundColor: loadingMicro ? '#FDE68A' : '#F59E0B', borderRadius:12, paddingVertical:12, alignItems:'center', opacity: loadingMicro ? 0.7 : 1 }}>
+                    <Text style={{ color:'#111827', fontWeight:'700' }}>{loadingMicro ? 'Sending…' : 'Send micro‑deposits'}</Text>
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity onPress={()=> setVerifyVisible(false)} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#111827', fontWeight:'700' }}>Back to Payment Methods</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {verifyStage === 'complete' && (
+              <>
+                <Text style={{ fontSize:22, fontWeight:'900', marginBottom:10 }}>{verifyChoice==='instant' ? 'Enter bank verification code' : 'Enter micro‑deposit amounts'}</Text>
+                {verifyChoice === 'instant' ? (
+                  <>
+                    <Text style={{ color:'#4B5563', marginBottom:12 }}>Enter the code from your bank (formats: MV0000 or 0000).</Text>
+                    <TextInput value={instantCode} onChangeText={setInstantCode} placeholder="MV1234" placeholderTextColor="#9CA3AF" autoCapitalize="characters" style={{ borderWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFFFFF', color:'#111827', borderRadius:10, paddingHorizontal:12, paddingVertical:10, marginBottom:12 }} />
+                    <TouchableOpacity onPress={()=>{ const code=instantCode.trim(); if(code){ completeVerification({ code }); } else { Alert.alert('Code required'); } }} style={{ backgroundColor:'#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                      <Text style={{ color:'#fff', fontWeight:'700' }}>Finish verification</Text>
+                    </TouchableOpacity>
+                    <Text style={{ color:'#6B7280', marginTop:10, fontSize:12, textAlign:'center' }}>Instant verification completes immediately after you enter your code.</Text>
+                  </>
+                ) : (
+                  <>
+                    <View style={{ flexDirection:'row', justifyContent:'space-between' }}>
+                      <View style={{ width:'48%' }}>
+                        <Text style={{ color:'#374151', fontWeight:'700', marginBottom:6 }}>Deposit 1</Text>
+                        <TextInput value={formatCents(microA)} onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroA(two); }} keyboardType="number-pad" placeholder="0.00" placeholderTextColor="#9CA3AF" style={{ borderWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFFFFF', color:'#111827', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
+                      </View>
+                      <View style={{ width:'48%' }}>
+                        <Text style={{ color:'#374151', fontWeight:'700', marginBottom:6 }}>Deposit 2</Text>
+                        <TextInput value={formatCents(microB)} onChangeText={(t)=>{ const only=String(t||'').replace(/[^0-9]/g,''); const two=only.length<=2?only:only.slice(only.length-2); setMicroB(two); }} keyboardType="number-pad" placeholder="0.00" placeholderTextColor="#9CA3AF" style={{ borderWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFFFFF', color:'#111827', borderRadius:10, paddingHorizontal:12, paddingVertical:10 }} />
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      disabled={!(String(microA||'').replace(/[^0-9]/g,'').length===2 && String(microB||'').replace(/[^0-9]/g,'').length===2)}
+                      onPress={()=>{
+                        const da = String(microA||'').replace(/[^0-9]/g,'');
+                        const db = String(microB||'').replace(/[^0-9]/g,'');
+                        if(da.length !== 2 || db.length !== 2){ Alert.alert('Two digits each required','Enter exactly two digits for each amount (e.g., 00 and 00).'); return; }
+                        const a = parseInt(da, 10); const b = parseInt(db, 10);
+                        completeVerification({ amounts:[a, b] });
+                      }}
+                      style={{ marginTop:12, backgroundColor: (String(microA||'').replace(/[^0-9]/g,'').length===2 && String(microB||'').replace(/[^0-9]/g,'').length===2) ? '#10B981' : '#D1D5DB', borderRadius:12, paddingVertical:12, alignItems:'center' }}
+                    >
+                      <Text style={{ color:'#fff', fontWeight:'700' }}>Finish verification</Text>
+                    </TouchableOpacity>
+                    <Text style={{ color:'#9CA3AF', marginTop:10, fontSize:12, textAlign:'center' }}>This step confirms it’s really your account. Deposits usually appear within 48 hours.</Text>
+                  </>
+                )}
+                <TouchableOpacity onPress={()=> setVerifyVisible(false)} style={{ marginTop:12, backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
+                  <Text style={{ color:'#111827', fontWeight:'700' }}>Close</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
 }
+
+// Append verification modal UI inside component return (placed before closing tags above)
 
 function Chip({ icon, label, onPress }){
   return (

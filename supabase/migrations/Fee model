@@ -1,0 +1,122 @@
+// Hybrid VybeLocal fee model (JS)
+// - $5–$9.99 tickets: flat $1 service fee
+// - $10+ tickets: anchored curve, 7% at $30, tapering toward ~2.5% floor
+
+/**
+ * Anchored logistic curve that passes through ~7% at $30 and approaches a 2.5% floor.
+ * @param {number} basePrice Face value set by host (pre-fees/tax)
+ * @param {number} pMin      Floor percent (default 2.5%)
+ * @param {number} p30       Target percent at $30 (default 7%)
+ */
+function platformPct(basePrice, pMin = 0.025, p30 = 0.07, K = 50, alpha = 6) {
+  const numerator = 1 + Math.pow(30 / K, alpha);
+  const denominator = 1 + Math.pow(Math.max(basePrice, 0.01) / K, alpha);
+  return pMin + (p30 - pMin) * (numerator / denominator);
+}
+
+/**
+ * Original fee calc (no tax), kept for reference.
+ */
+export function calcFees(price) {
+  const procRate = 0.029;
+  const procFixed = 0.30;
+
+  let platformFee;
+  let procFee;
+  let totalFee;
+
+  if (price >= 5 && price < 10) {
+    totalFee = 1.0;
+    procFee = procRate * price + procFixed;
+    platformFee = Math.max(totalFee - procFee, 0);
+  } else {
+    procFee = procRate * price + procFixed;
+    const platPct = platformPct(price);
+    platformFee = platPct * price;
+    totalFee = platformFee + procFee;
+  }
+
+  const roundTo = (val, step = 0.1) => Math.round(val / step) * step;
+
+  return {
+    ticketPrice: price,
+    platformFee: roundTo(platformFee),
+    processingFee: roundTo(procFee),
+    totalFee: roundTo(totalFee),
+    platformPct: (platformFee / price) * 100,
+    totalPct: (totalFee / price) * 100,
+  };
+}
+
+/**
+ * Tax-aware quote with fee-on-top pricing (recommended for clarity and to keep host payout whole).
+ * User charge = (base + platform + tax) + 0.029*(base + platform + tax) + 0.30
+ * Host does not pay tax. PlatformTake should be >= processingFee if curve is set reasonably.
+ *
+ * @param {number} basePrice   Host-set face value before fees/tax
+ * @param {number} taxRate     Sales tax rate (e.g., 0.0825)
+ * @param {object} opts        { round: 0.01 | 0.10, flatWindow: [5,10) }
+ */
+export function quoteWithTax(basePrice, taxRate, opts = {}) {
+  const procRate = 0.029;
+  const procFixed = 0.30;
+  const roundStep = opts.round ?? 0.01; // default to cents; set 0.10 for nicer optics
+  const flatMin = (opts.flatWindow?.[0] ?? 5);
+  const flatMax = (opts.flatWindow?.[1] ?? 10);
+
+  const roundTo = (val, step = roundStep) => Math.round(val / step) * step;
+
+  // Platform fee by curve or $1 bucket
+  const platformFeeRaw = (basePrice >= flatMin && basePrice < flatMax)
+    ? 1.0
+    : platformPct(basePrice) * basePrice;
+
+  // Taxable base = base + platform (platform service typically taxable)
+  const taxAmountRaw = Math.max(basePrice + platformFeeRaw, 0) * Math.max(taxRate || 0, 0);
+
+  // Processor costs apply to full charged amount excluding the fixed $0.30
+  const procBase = basePrice + platformFeeRaw + taxAmountRaw;
+  const processingFeeRaw = procRate * procBase + procFixed;
+
+  // Final user charge (fee-on-top)
+  const userChargeRaw = procBase + processingFeeRaw;
+
+  // Splits for Transfer Groups
+  const hostPayoutRaw = basePrice;                 // host stays whole
+  const platformTakeRaw = platformFeeRaw;          // platform revenue
+  const taxLiabilityRaw = taxAmountRaw;            // held for remittance
+
+  // Round outputs
+  const platformFee = roundTo(platformFeeRaw);
+  const taxAmount = roundTo(taxAmountRaw);
+  const processingFee = roundTo(processingFeeRaw);
+  const userCharge = roundTo(userChargeRaw);
+  const hostPayout = roundTo(hostPayoutRaw);
+  const platformTake = roundTo(platformTakeRaw);
+  const taxLiability = roundTo(taxLiabilityRaw);
+
+  return {
+    inputs: { basePrice, taxRate },
+    userCharge,
+    hostPayout,
+    platformTake,
+    taxLiability,
+    breakdown: {
+      platformFee,
+      processingFee,
+      taxAmount,
+      subtotalBeforeProcessor: roundTo(basePrice + platformFee + taxAmount),
+    },
+    transferGroup: {
+      parentAmount: userCharge,                // customer → platform wallet
+      children: [
+        { to: 'host', amount: hostPayout },   // wallet → host method
+        { to: 'platform', amount: platformTake },
+        { to: 'tax', amount: taxLiability },
+      ],
+    },
+    guardrails: {
+      platformCoversProcessor: platformTake >= processingFee,
+    },
+  };
+}
