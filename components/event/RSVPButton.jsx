@@ -36,6 +36,8 @@ export default function RSVPButton({
   }, [initialRsvpCount]);
   const [capacity, setCapacity] = useState(capacityProp);
   const [showPayModal, setShowPayModal] = useState(false);
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [quoteCents, setQuoteCents] = useState(null);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -180,7 +182,24 @@ export default function RSVPButton({
   const priceCents = Number(price) || 0;
   const isPaidEvent = priceCents > 0;
 
-  const totalWithFees = isPaidEvent ? calcFees(priceCents).total : 0;
+  // Fetch accurate all-in quote for qty=1
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchQuote() {
+      if (!isPaidEvent) { setQuoteCents(0); return; }
+      setQuoteBusy(true);
+      try {
+        const res = await fetch(`/api/payments/quote?eventId=${encodeURIComponent(eventId)}&qty=1`, { headers: { Accept: 'application/json' } });
+        const t = await res.text(); let j={}; try{ j=JSON.parse(t);}catch{}
+        if (!cancelled) setQuoteCents(Number.isFinite(j?.userChargeCents) ? j.userChargeCents : null);
+      } catch { if (!cancelled) setQuoteCents(null); }
+      finally { if (!cancelled) setQuoteBusy(false); }
+    }
+    fetchQuote();
+    return () => { cancelled = true; };
+  }, [eventId, isPaidEvent]);
+
+  const totalWithFees = isPaidEvent ? (quoteCents ?? calcFees(priceCents).total) : 0;
 
   return (
     <>
@@ -205,8 +224,8 @@ export default function RSVPButton({
             ? "Max capacity reached"
             : isPaidEvent
               ? capacity
-                ? `Pay $${(totalWithFees/100).toFixed(2)} (${Math.max(0, capacity - rsvpCount)} left)`
-                : `Pay $${(totalWithFees/100).toFixed(2)}`
+                ? (quoteBusy ? `Calculating… (${Math.max(0, capacity - rsvpCount)} left)` : `Pay $${(totalWithFees/100).toFixed(2)} (${Math.max(0, capacity - rsvpCount)} left)`)
+                : (quoteBusy ? 'Calculating…' : `Pay $${(totalWithFees/100).toFixed(2)}`)
               : capacity 
                 ? `RSVP (${Math.max(0, capacity - rsvpCount)} left)`
                 : "RSVP"

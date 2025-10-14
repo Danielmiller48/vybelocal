@@ -39,6 +39,23 @@ const palette = {
   emeraldDark: '#059669',
 };
 
+// Local fallback quote calculator (mirrors server)
+function platformPctLocal(basePrice, pMin = 0.025, p30 = 0.07, K = 50, alpha = 6) {
+  const numerator = 1 + Math.pow(30 / K, alpha);
+  const denominator = 1 + Math.pow(Math.max(basePrice, 0.01) / K, alpha);
+  return pMin + (p30 - pMin) * (numerator / denominator);
+}
+function localUserChargeCents(subtotalDollars, taxRate = 0.0825) {
+  if (!subtotalDollars || subtotalDollars <= 0) return 0;
+  const procRate = 0.029; const procFixed = 0.30;
+  const platformFee = (subtotalDollars >= 5 && subtotalDollars < 10) ? 1.0 : platformPctLocal(subtotalDollars) * subtotalDollars;
+  const taxAmt = Math.max(subtotalDollars + platformFee, 0) * Math.max(taxRate || 0, 0);
+  const procBase = subtotalDollars + platformFee + taxAmt;
+  const procFee = procRate * procBase + procFixed;
+  const total = procBase + procFee;
+  return Math.round(total * 100);
+}
+
 export default function HostDrawerOverlay({ onCreated }) {
   const sheetH = Dimensions.get('window').height * 0.8;
   const peek   = 28; // visible when closed
@@ -84,6 +101,8 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [showEnd, setShowEnd]     = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [busy, setBusy]      = useState(false);
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [guestPreview, setGuestPreview] = useState(null); // cents
   const [canCharge, setCanCharge] = useState(false);
   const kyb = useKybStatus();
   const [contentH, setContentH] = useState(0);
@@ -175,6 +194,37 @@ export default function HostDrawerOverlay({ onCreated }) {
   const getMinStart = ()=>{ const now=Date.now(); const base = (canCharge && parseFloat(price)>0)? now+7*24*60*60*1000 : now; return roundToNextHalfHour(new Date(base)); };
 
   React.useEffect(()=>{ const minS=getMinStart(); if(startTime<minS){ setStartTime(minS); setEndTime(new Date(minS.getTime()+60*60*1000)); } },[price, canCharge]);
+
+  // Quote preview when price changes (debounced on blur or pause)
+  React.useEffect(() => {
+    const val = parseFloat(price);
+    if (!priceEnabled || Number.isNaN(val)) { setGuestPreview(null); return; }
+    const ctl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        setQuoteBusy(true);
+        const cents = Math.round(val * 100);
+        const base = process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || Constants?.expoConfig?.extra?.waitlistApiBaseUrl || 'https://vybelocal-waitlist.vercel.app';
+        const url = `${base}/api/payments/quote?basePriceCents=${cents}&qty=1`;
+        let updated = false;
+        try {
+          const res = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
+          const txt = await res.text(); let j={}; try{ j=JSON.parse(txt);}catch{}
+          const num = Number(j?.userChargeCents);
+          if (res.ok && Number.isFinite(num)) { setGuestPreview(num); updated = true; }
+        } catch {}
+        if (!updated) {
+          // Fallback: compute locally so the user always sees something
+          const local = localUserChargeCents(val, 0.0825);
+          setGuestPreview(local);
+        }
+      } catch {
+        // ignore; keep last preview
+      }
+      finally { setQuoteBusy(false); }
+    }, 300);
+    return () => { clearTimeout(t); try{ ctl.abort(); }catch{} };
+  }, [priceEnabled, price]);
 
         async function pickImage(){
      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -809,6 +859,11 @@ export default function HostDrawerOverlay({ onCreated }) {
                 placeholderTextColor="#666"
                 keyboardType="decimal-pad"
               />
+              {(quoteBusy || guestPreview != null) && (
+                <Text style={{ marginTop:6, color:'#6b7280', fontSize:12 }}>
+                  {quoteBusy ? 'Calculating…' : `Guests pay $${(guestPreview/100).toFixed(2)} (incl. fees & tax)`}
+                </Text>
+              )}
 
               {/* Refund Policy */}
               <Text style={[styles.label, { marginTop: 10 }]}>Refund Policy</Text>

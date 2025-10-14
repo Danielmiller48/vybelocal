@@ -109,7 +109,12 @@ export async function POST(req) {
   /* 5 — trigger moderation */
   try {
     console.log('Triggering moderation for new event:', data.id);
-    const modResponse = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/moderate`, {
+    const origin = process.env.NEXTAUTH_URL 
+      || process.env.NEXT_PUBLIC_SITE_URL 
+      || (req?.headers?.get?.('origin'))
+      || (`${req?.headers?.get?.('x-forwarded-proto') || 'https'}://${req?.headers?.get?.('host')}`);
+    const base = origin && origin.startsWith('http') ? origin : `https://${origin}`;
+    const modResponse = await fetch(`${base}/api/moderate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'event', id: data.id }),

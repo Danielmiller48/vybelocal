@@ -20,6 +20,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
 
   const MAIN_API_BASE_URL = Constants.expoConfig?.extra?.mainApiBaseUrl || process.env?.EXPO_PUBLIC_MAIN_API_BASE_URL;
   const API_BASE_URL = MAIN_API_BASE_URL || Constants.expoConfig?.extra?.apiBaseUrl || process.env?.EXPO_PUBLIC_API_BASE_URL || 'https://vybelocal.com';
+  const WAITLIST_API_BASE = Constants.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
   const debug = (...args) => { try { console.log('[mobile][RSVP]', ...args); } catch {} };
   debug('config', { MAIN_API_BASE_URL: !!MAIN_API_BASE_URL ? MAIN_API_BASE_URL : null, API_BASE_URL });
 
@@ -101,64 +102,50 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
 
     setBusy(true);
     if (!joined) {
-      // Paid event flow → hosted checkout
+      // Paid event flow → create payment, then charge (ledger write)
       const priceCents = Number.isFinite(event?.price_in_cents) ? event.price_in_cents : 0;
       if (priceCents > 0) {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
-          const url = `${API_BASE_URL}/api/payments/moov/checkout`;
-          const body = JSON.stringify({ event_id: event.id });
-          debug('CHECKOUT start', { url, hasToken: !!token, body });
-          const res = await fetch(url, {
+          const idem = `mobile_rsvp_${user.id}_${event.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+          // 1) Create payment (computes quote and writes payments row)
+          const createUrl = `${WAITLIST_API_BASE}/api/payments/create`;
+          const createRes = await fetch(createUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'x-idempotency-key': idem,
               ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             },
-            body,
+            body: JSON.stringify({ event_id: event.id, qty: 1 })
           });
-          const text = await res.text();
-          debug('CHECKOUT response', { status: res.status, body: (text || '').slice(0, 200) });
-          let json; try { json = JSON.parse(text); } catch { json = {}; }
-          if (!res.ok) throw new Error(json?.error || text || 'Failed');
+          const createTxt = await createRes.text();
+          let createJson = {}; try { createJson = JSON.parse(createTxt); } catch {}
+          debug('PAYMENTS create resp', { status: createRes.status, body: (createTxt||'').slice(0,200) });
+          if (!createRes.ok) throw new Error(createJson?.error || 'create_failed');
+          const paymentId = createJson?.payment_id;
+          if (!paymentId) throw new Error('missing_payment_id');
 
-          if (json?.free) {
-            // Safety: treat as free RSVP
-            debug('CHECKOUT free short-circuit');
-          } else if (json?.already_paid) {
-            // User already paid for this event
-            debug('CHECKOUT already paid');
-            Alert.alert('Already Paid', 'You have already paid for this event.');
-            setBusy(false);
-            return;
-          } else if (json?.checkout_url) {
-            // Legacy Tilled hosted checkout
-            try { Linking.openURL(json.checkout_url); } catch {}
-            setBusy(false);
-            return;
-          } else if (json?.ready_for_payment) {
-            // Moov payment processing with fee breakdown
-            debug('CHECKOUT moov ready', { processor: json?.processor, breakdown: json?.fee_breakdown });
-            const breakdown = json?.fee_breakdown || {};
-            
-            Alert.alert(
-              'Payment Breakdown', 
-              `Ticket: $${breakdown.base || '0.00'}\n` +
-              `Service Fee: $${breakdown.platform || '0.00'} (10%)\n` +
-              `Sales Tax: $${breakdown.tax || '0.00'}\n\n` +
-              `Total: $${breakdown.total || '0.00'}\n\n` +
-              `Processing fees included in service fee.\n\n` +
-              `Moov payment UI coming soon!`,
-              [{ text: 'OK', onPress: () => setBusy(false) }]
-            );
-            return;
-          } else {
-            throw new Error('No checkout method available');
-          }
+          // 2) Charge (creates ledger transfers, sets status authorized)
+          const chargeUrl = `${WAITLIST_API_BASE}/api/payments/charge`;
+          const chargeRes = await fetch(chargeUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-idempotency-key': idem,
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ payment_id: paymentId })
+          });
+          const chargeTxt = await chargeRes.text();
+          let chargeJson = {}; try { chargeJson = JSON.parse(chargeTxt); } catch {}
+          debug('PAYMENTS charge resp', { status: chargeRes.status, body: (chargeTxt||'').slice(0,200) });
+          if (!chargeRes.ok) throw new Error(chargeJson?.error || 'charge_failed');
         } catch (e) {
-          debug('CHECKOUT error', e?.message || e);
-          Alert.alert('Payment Error', 'Unable to start checkout. Please try again.');
+          debug('PAYMENTS flow error', e?.message || e);
+          Alert.alert('Payment Error', 'Unable to process payment. Please try again.');
           setBusy(false);
           return;
         }
@@ -239,6 +226,34 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
 
   const disabled = (!joined && capacity && rsvpCount >= capacity) || busy;
 
+  // --- Quote: all-in total (qty=1) ---
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [quoteCents, setQuoteCents] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchQuote() {
+      try {
+        const priceCents = Number.isFinite(event?.price_in_cents) ? event.price_in_cents : 0;
+        if (!priceCents) { setQuoteCents(0); return; }
+        setQuoteBusy(true);
+        const url = `${WAITLIST_API_BASE}/api/payments/quote?eventId=${encodeURIComponent(event.id)}&qty=1`;
+        debug('QUOTE start', { url });
+        const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+        const txt = await res.text();
+        let j={}; try{ j=JSON.parse(txt);}catch{}
+        debug('QUOTE resp', { status: res.status, body: (txt||'').slice(0,120) });
+        if (!cancelled) setQuoteCents(res.ok && Number.isFinite(j?.userChargeCents) ? j.userChargeCents : null);
+      } catch (e) {
+        if (!cancelled) setQuoteCents(null);
+      } finally {
+        if (!cancelled) setQuoteBusy(false);
+      }
+    }
+    fetchQuote();
+    return () => { cancelled = true; };
+  }, [event?.id, event?.price_in_cents]);
+
   let label;
   if (isHost) {
     label = 'Hosting';
@@ -250,7 +265,13 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     label = 'Max capacity';
   } else {
     const priceCents = Number.isFinite(event?.price_in_cents) ? event.price_in_cents : 0;
-    label = priceCents > 0 ? `Pay and RSVP — $${(priceCents / 100).toFixed(2)}` : 'RSVP';
+    if (priceCents > 0) {
+      if (quoteBusy) label = 'Calculating…';
+      else if (quoteCents != null) label = `Pay and RSVP — $${(quoteCents / 100).toFixed(2)}`;
+      else label = `Pay and RSVP — $${(priceCents / 100).toFixed(2)}`;
+    } else {
+      label = 'RSVP';
+    }
   }
 
   const dynamicStyle = compact
