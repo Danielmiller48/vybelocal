@@ -114,22 +114,26 @@ export async function POST(req) {
       || (req?.headers?.get?.('origin'))
       || (`${req?.headers?.get?.('x-forwarded-proto') || 'https'}://${req?.headers?.get?.('host')}`);
     const base = origin && origin.startsWith('http') ? origin : `https://${origin}`;
-    const modResponse = await fetch(`${base}/api/moderate`, {
+    const modUrl = `${base}/api/moderate`;
+    const modResponse = await fetch(modUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'event', id: data.id }),
     });
-    
+    const modText = await modResponse.text();
+    let modJson = {}; try { modJson = JSON.parse(modText); } catch {}
+    console.log('Moderation response', { url: modUrl, status: modResponse.status, ok: modResponse.ok, body: (modText||'').slice(0,300) });
+
     if (!modResponse.ok) {
-      const modError = await modResponse.json();
-      console.error('Moderation failed:', modError);
+      const modError = modJson || { reason: modText };
+      console.error('Moderation failed:', { status: modResponse.status, modError });
       
       // Delete the event since moderation failed
       await sb.from("events").delete().eq('id', data.id);
       
       // Return the moderation error to the frontend
       return NextResponse.json({ 
-        error: modError.reason || 'Content moderation failed',
+        error: modError.reason || modError.error || 'Content moderation failed',
         moderationError: true 
       }, { status: 400 });
     } else {
@@ -144,7 +148,8 @@ export async function POST(req) {
     // Return the moderation error to the frontend
     return NextResponse.json({ 
       error: 'Content moderation failed - please try again',
-      moderationError: true 
+      moderationError: true,
+      detail: modError?.message || String(modError)
     }, { status: 400 });
   }
 
