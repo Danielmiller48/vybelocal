@@ -21,7 +21,7 @@
     "@upstash/redis": "^1.35.2",
     "date-fns": "^4.1.0",
     "event-target-polyfill": "^0.0.4",
-    "expo": "^54.0.9",
+    "expo": "^54.0.13",
     "expo-blur": "~14.1.5",
     "expo-constants": "~17.1.7",
     "expo-dev-client": "~5.2.4",

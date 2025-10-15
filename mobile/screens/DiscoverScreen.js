@@ -364,12 +364,33 @@ export default function DiscoverScreen() {
         try {
           if (!user?.id) { blockedSetRef.current = new Set(); }
           else {
-            const { data: blocks } = await supabase
-              .from('blocks')
-              .select('target_id')
-              .eq('blocker_id', user.id)
-              .eq('target_type', 'user');
-            blockedSetRef.current = new Set((blocks || []).map(b => b.target_id));
+            // Users I blocked
+            let myBlocks = [];
+            try {
+              const { data } = await supabase
+                .from('blocks')
+                .select('target_id')
+                .eq('blocker_id', user.id)
+                .eq('target_type', 'user');
+              myBlocks = data || [];
+            } catch {}
+
+            // Users who blocked me
+            let blockedMe = [];
+            try {
+              const { data } = await supabase
+                .from('blocks')
+                .select('blocker_id')
+                .eq('target_id', user.id)
+                .eq('target_type', 'user');
+              blockedMe = data || [];
+            } catch {}
+
+            const excludeHostIds = new Set([
+              ...myBlocks.map(b => b.target_id),
+              ...blockedMe.map(b => b.blocker_id),
+            ]);
+            blockedSetRef.current = excludeHostIds;
           }
         } catch {}
         setActiveVibe('all');

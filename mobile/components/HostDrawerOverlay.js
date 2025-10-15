@@ -91,6 +91,8 @@ export default function HostDrawerOverlay({ onCreated }) {
   const [pendingVals, setPendingVals] = useState(null);
   const [strikeAckKey, setStrikeAckKey] = useState(null);
   const [address, setAddress] = useState('');
+  const [addressLat, setAddressLat] = useState(null);
+  const [addressLng, setAddressLng] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const [imageUri, setImageUri] = useState(null);
   const roundToNextHalfHour = (d)=>{ const ms=30*60*1000; return new Date(Math.ceil(d.getTime()/ms)*ms); };
@@ -179,6 +181,7 @@ export default function HostDrawerOverlay({ onCreated }) {
   const priceEnabled = paid && canCharge && parseFloat(price) > 0;
 
   const MAPBOX_TOKEN = Constants?.expoConfig?.extra?.mapboxToken || process.env?.EXPO_PUBLIC_MAPBOX_TOKEN || process.env?.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+  const WAITLIST_API_BASE = Constants?.expoConfig?.extra?.waitlistApiBaseUrl || process.env?.EXPO_PUBLIC_WAITLIST_API_BASE_URL || 'https://vybelocal-waitlist.vercel.app';
 
   React.useEffect(()=>{
     if(!address || address.trim().length<3 || !MAPBOX_TOKEN){ setSuggestions([]); return; }
@@ -260,18 +263,11 @@ export default function HostDrawerOverlay({ onCreated }) {
         
         try {
           // Read file as base64
-          const base64 = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-          
-          // Convert base64 to blob
-          const byteCharacters = atob(base64);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          blob = new Blob([byteArray], { type: 'image/jpeg' });
+          // Read raw file and build Blob without Base64 to avoid atob on Hermes
+          const fileInfo = await FileSystem.getInfoAsync(uri, { size: true });
+          if (!fileInfo.exists) throw new Error('Image file missing');
+          const res = await fetch(uri);
+          blob = await res.blob();
         } catch (fsError) {
           // Fallback to fetch if FileSystem fails
           
@@ -489,6 +485,7 @@ export default function HostDrawerOverlay({ onCreated }) {
         price_in_cents: baseCents,
         rsvp_capacity: vals.rsvp_capacity,
         img_path: null,
+        ...(addressLat!=null && addressLng!=null ? { latitude: addressLat, longitude: addressLng } : {}),
       };
 
       // Secure backend route handles auth, moderation, creation, auto-RSVP, and notification
@@ -498,7 +495,7 @@ export default function HostDrawerOverlay({ onCreated }) {
       // console.log('[createEvent] POST /api/events payload', payload);
       const ctl = new AbortController();
       const timer = setTimeout(() => { try { ctl.abort(); } catch {} }, 15000);
-      const resp = await fetch('https://vybelocal.com/api/events', {
+      const resp = await fetch(`${WAITLIST_API_BASE}/api/events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload),
@@ -566,12 +563,8 @@ export default function HostDrawerOverlay({ onCreated }) {
             } catch (e) {
               // Fallback: read as base64 then re-fetch via a data URI to obtain a Blob
               try {
-                const base64 = workingUri.startsWith('data:')
-                  ? (workingUri.split(',')[1] || '')
-                  : await FileSystem.readAsStringAsync(workingUri, { encoding: FileSystem.EncodingType.Base64 });
-                const dataUri = `data:image/jpeg;base64,${base64}`;
-                const resp2 = await fetch(dataUri);
-                blob = await resp2.blob();
+              const resp2 = await fetch(workingUri);
+              blob = await resp2.blob();
               } catch (e2) {
                 throw e2;
               }
@@ -584,50 +577,73 @@ export default function HostDrawerOverlay({ onCreated }) {
             
 
             const contentType = blob.type || 'image/jpeg';
+            const dbg = (...args) => { try { console.log('[host][img]', ...args); } catch {} };
 
             // Presign request
-            const presignResp = await fetch('https://vybelocal.com/api/events/images/presign', {
+            const presignUrl = `${WAITLIST_API_BASE}/api/events/images/presign`;
+            dbg('presign:start', { url: presignUrl, eventId: data.id, contentType });
+            const presignResp = await fetch(presignUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ eventId: data.id, contentType })
             });
-            if (!presignResp.ok) throw new Error('Failed to presign image');
-            const presignJson = await presignResp.json();
-            const { path: signedPath, token: uploadToken } = presignJson || {};
+            const presignText = await presignResp.text();
+            dbg('presign:resp', { status: presignResp.status, ok: presignResp.ok, body: (presignText||'').slice(0,200) });
+            if (!presignResp.ok) throw new Error(`Failed to presign image (HTTP ${presignResp.status})`);
+            const presignJson = (()=>{ try { return JSON.parse(presignText); } catch { return {}; } })();
+            const { path: signedPath, token: uploadToken, signedUrl } = presignJson || {};
             if (!signedPath || !uploadToken) throw new Error('Invalid presign response');
-            
+            dbg('presign:ok', { signedPath: signedPath?.slice?.(0,60), tokenLen: String(uploadToken||'').length });
 
-            // Convert to ArrayBuffer to avoid RN zero-byte uploads
-            let arrayBuffer;
+            // Upload to signed URL via Supabase helper (expects Blob/File)
+            dbg('upload:start', { signedPath });
+            let uploadedOk = false;
             try {
-              arrayBuffer = await blob.arrayBuffer();
-            } catch (_) {
-              // Fallback from base64
-              const base64 = workingUri.startsWith('data:')
-                ? (workingUri.split(',')[1] || '')
-                : await FileSystem.readAsStringAsync(workingUri, { encoding: FileSystem.EncodingType.Base64 });
-              const byteChars = atob(base64);
-              const byteNums = new Array(byteChars.length);
-              for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
-              arrayBuffer = new Uint8Array(byteNums).buffer;
+              const uploadRes = await supabase.storage
+                .from('event-images')
+                .uploadToSignedUrl(signedPath, uploadToken, blob);
+              dbg('upload:resp', { error: uploadRes?.error || null, path: uploadRes?.path || signedPath });
+              if (uploadRes?.error) throw uploadRes.error;
+              uploadedOk = true;
+            } catch (e) {
+              dbg('upload:fallback', { reason: e?.message || String(e), hasSignedUrl: !!signedUrl });
+              // Fallback A: direct native upload to bucket path via Supabase SDK (RN supports { uri, name, type })
+              try {
+                const { data: upData, error: upErr } = await supabase.storage
+                  .from('event-images')
+                  .upload(signedPath, { uri: workingUri, name: signedPath.split('/').pop() || 'upload.jpg', type: contentType }, { upsert: false, contentType });
+                dbg('upload:direct:resp', { error: upErr || null, path: upData?.path || signedPath });
+                if (upErr) throw upErr;
+                uploadedOk = true;
+              } catch (e2) {
+                // Fallback B: direct PUT to signedUrl if available
+                if (!signedUrl) throw e2;
+                try {
+                  const putRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: blob });
+                  dbg('upload:put:resp', { status: putRes.status, ok: putRes.ok });
+                  if (!putRes.ok) throw new Error(`PUT failed ${putRes.status}`);
+                  uploadedOk = true;
+                } catch (e3) {
+                  dbg('upload:put:error', e3?.message || String(e3));
+                  throw e3;
+                }
+              }
             }
-            
-
-            // Upload to signed URL via Supabase helper using ArrayBuffer body
-            const uploadRes = await supabase.storage
-              .from('event-images')
-              .uploadToSignedUrl(signedPath, uploadToken, arrayBuffer, { contentType, upsert: false });
-            if (uploadRes?.error) throw uploadRes.error;
+            if (!uploadedOk) throw new Error('upload failed');
 
             // Commit to attach to event
-            const commitResp = await fetch('https://vybelocal.com/api/events/images/commit', {
+            const commitUrl = `${WAITLIST_API_BASE}/api/events/images/commit`;
+            dbg('commit:start', { url: commitUrl, eventId: data.id, path: signedPath });
+            const commitResp = await fetch(commitUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
               body: JSON.stringify({ eventId: data.id, path: signedPath })
             });
+            const commitText = await commitResp.text();
+            dbg('commit:resp', { status: commitResp.status, ok: commitResp.ok, body: (commitText||'').slice(0,200) });
             // Best-effort; if commit fails, event still exists
           } catch (imgErr) {
-            console.warn('Image upload via presign failed; event created without image', imgErr?.message || imgErr);
+            try { console.warn('[host][img] failed', imgErr?.message || imgErr); } catch {}
           }
         })();
       }
@@ -1000,8 +1016,15 @@ export default function HostDrawerOverlay({ onCreated }) {
           visible={showAddressModal}
           address={address}
           onClose={() => setShowAddressModal(false)}
-          onSelectAddress={(selectedAddress) => {
-            setAddress(selectedAddress);
+          onSelectAddress={(sel) => {
+            try {
+              const a = typeof sel === 'string' ? sel : sel?.address;
+              const la = typeof sel === 'object' ? sel?.latitude ?? null : null;
+              const lo = typeof sel === 'object' ? sel?.longitude ?? null : null;
+              setAddress(a || '');
+              setAddressLat(la);
+              setAddressLng(lo);
+            } catch {}
             setShowAddressModal(false);
           }}
           suggestions={suggestions}
@@ -1072,7 +1095,19 @@ function AddressInputModal({ visible, address, onClose, onSelectAddress, suggest
     return () => ctl.abort();
   }, [localAddress, MAPBOX_TOKEN, setSuggestions]);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    try {
+      if (MAPBOX_TOKEN && localAddress && localAddress.trim().length > 3) {
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(localAddress)}.json?limit=1&access_token=${MAPBOX_TOKEN}`;
+        const r = await fetch(url);
+        const j = await r.json();
+        const f = Array.isArray(j?.features) && j.features[0];
+        if (f?.center && Array.isArray(f.center) && f.center.length === 2) {
+          onSelectAddress({ address: localAddress, latitude: f.center[1], longitude: f.center[0] });
+          return;
+        }
+      }
+    } catch {}
     onSelectAddress(localAddress);
   };
 
@@ -1121,7 +1156,7 @@ function AddressInputModal({ visible, address, onClose, onSelectAddress, suggest
             <TouchableOpacity
               key={suggestion.id}
               style={styles.suggestionItem}
-              onPress={() => onSelectAddress(suggestion.place_name)}
+              onPress={() => onSelectAddress({ address: suggestion.place_name, latitude: suggestion.center?.[1] ?? null, longitude: suggestion.center?.[0] ?? null })}
             >
               <Ionicons name="location-outline" size={20} color="#666" style={styles.suggestionIcon} />
               <View style={styles.suggestionText}>
