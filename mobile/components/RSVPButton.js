@@ -1,6 +1,7 @@
 // mobile/components/RSVPButton.js
 import React, { useEffect, useState } from 'react';
 import { TouchableOpacity, Text, ActivityIndicator, Alert, StyleSheet, Linking } from 'react-native';
+import CheckoutModal from './CheckoutModal';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../auth/AuthProvider';
 import { supabase } from '../utils/supabase';
@@ -105,50 +106,9 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
       // Paid event flow → create payment, then charge (ledger write)
       const priceCents = Number.isFinite(event?.price_in_cents) ? event.price_in_cents : 0;
       if (priceCents > 0) {
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          const idem = `mobile_rsvp_${user.id}_${event.id}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-          // 1) Create payment (computes quote and writes payments row)
-          const createUrl = `${WAITLIST_API_BASE}/api/payments/create`;
-          const createRes = await fetch(createUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-idempotency-key': idem,
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ event_id: event.id, qty: 1 })
-          });
-          const createTxt = await createRes.text();
-          let createJson = {}; try { createJson = JSON.parse(createTxt); } catch {}
-          debug('PAYMENTS create resp', { status: createRes.status, body: (createTxt||'').slice(0,200) });
-          if (!createRes.ok) throw new Error(createJson?.error || 'create_failed');
-          const paymentId = createJson?.payment_id;
-          if (!paymentId) throw new Error('missing_payment_id');
-
-          // 2) Charge (creates ledger transfers, sets status authorized)
-          const chargeUrl = `${WAITLIST_API_BASE}/api/payments/charge`;
-          const chargeRes = await fetch(chargeUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-idempotency-key': idem,
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ payment_id: paymentId })
-          });
-          const chargeTxt = await chargeRes.text();
-          let chargeJson = {}; try { chargeJson = JSON.parse(chargeTxt); } catch {}
-          debug('PAYMENTS charge resp', { status: chargeRes.status, body: (chargeTxt||'').slice(0,200) });
-          if (!chargeRes.ok) throw new Error(chargeJson?.error || 'charge_failed');
-        } catch (e) {
-          debug('PAYMENTS flow error', e?.message || e);
-          Alert.alert('Payment Error', 'Unable to process payment. Please try again.');
-          setBusy(false);
-          return;
-        }
+        setBusy(false);
+        setShowPay(true);
+        return;
       }
 
       // Insert RSVP via API
@@ -224,6 +184,8 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     }
   };
 
+  const [showPay, setShowPay] = useState(false);
+
   const disabled = (!joined && capacity && rsvpCount >= capacity) || busy;
 
   // --- Quote: all-in total (qty=1) ---
@@ -284,6 +246,7 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
     : {};
 
   return (
+    <>
     <TouchableOpacity
       style={[
         styles.button,
@@ -301,6 +264,26 @@ export default function RSVPButton({ event, onCountChange, compact = false }) {
         <Text style={styles.text}>{label}</Text>
       )}
     </TouchableOpacity>
+    <CheckoutModal
+      open={showPay}
+      eventId={event?.id}
+      amountCents={quoteCents ?? event?.price_in_cents ?? 0}
+      onClose={()=> setShowPay(false)}
+      onSuccess={async ()=>{
+        try{
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          const url = `${API_BASE_URL}/api/rsvps`;
+          const body = JSON.stringify({ event_id: event.id });
+          const res = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }, body });
+          if (res.ok) {
+            setJoined(true);
+            const newCount = rsvpCount + 1; setRsvpCount(newCount); onCountChange?.(newCount);
+          }
+        }catch{}
+      }}
+    />
+    </>
   );
 }
 

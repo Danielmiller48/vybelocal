@@ -117,6 +117,10 @@ export default function KybOnboardingScreen() {
           const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
           const body = { type: 'business' };
           try {
+            const mapped = (bizType === '501c3') ? 'incorporatedNonProfit' : (bizType === 'llc' ? 'llc' : (bizType === 'sp' ? 'soleProprietorship' : null));
+            if (mapped) body.businessType = mapped;
+          } catch {}
+          try {
             if (bizType === '501c3') {
               if (bizMcc) body.mcc = bizMcc;
             } else if (bizType === 'llc') {
@@ -685,7 +689,7 @@ export default function KybOnboardingScreen() {
         const presetRes = await fetch(`${API_BASE_URL}/api/payments/moov/preset`, {
           method: 'POST',
             headers,
-          body: JSON.stringify({ mcc: spMcc, type: 'business' })
+          body: JSON.stringify({ mcc: spMcc, type: 'business', businessType: 'soleProprietorship' })
         });
         const presetTxt = await presetRes.text();
         let presetJson; try { presetJson = JSON.parse(presetTxt); } catch { presetJson = {}; }
@@ -716,7 +720,7 @@ export default function KybOnboardingScreen() {
           const presetRes = await fetch(`${API_BASE_URL}/api/payments/moov/preset`, {
             method: 'POST',
             headers,
-            body: JSON.stringify({ mcc: spMcc, type: 'business' })
+            body: JSON.stringify({ mcc: spMcc, type: 'business', businessType: 'soleProprietorship' })
           });
           const presetTxt = await presetRes.text();
           let presetJson; try { presetJson = JSON.parse(presetTxt); } catch { presetJson = {}; }
@@ -970,6 +974,43 @@ export default function KybOnboardingScreen() {
     return `https://${v}`;
   };
 
+  // Underwriting presets per lane
+  const getUnderwritingPreset = React.useCallback((lane) => {
+    const t = String(lane || bizType || '').toLowerCase();
+    if (t === 'sp' || t === 'soleproprietorship' || t === 'sole proprietorship') {
+      return {
+        averageTransactionSize: 25,
+        maxTransactionSize: 250,
+        averageMonthlyTransactionVolume: 3000,
+        collectFunds: {
+          cardPayments: { estimatedActivity: { averageTransactionAmount: 25, maximumTransactionAmount: 250, monthlyVolumeRange: 'under-10k' } },
+          ach: { estimatedActivity: { averageTransactionAmount: 50, maximumTransactionAmount: 500, monthlyVolumeRange: 'under-10k' } }
+        }
+      };
+    }
+    if (t === '501c3' || t === 'incorporatednonprofit' || t === 'incorporated_non_profit') {
+      return {
+        averageTransactionSize: 30,
+        maxTransactionSize: 300,
+        averageMonthlyTransactionVolume: 5000,
+        collectFunds: {
+          cardPayments: { estimatedActivity: { averageTransactionAmount: 30, maximumTransactionAmount: 300, monthlyVolumeRange: 'under-10k' } },
+          ach: { estimatedActivity: { averageTransactionAmount: 60, maximumTransactionAmount: 600, monthlyVolumeRange: 'under-10k' } }
+        }
+      };
+    }
+    // LLC / default business
+    return {
+      averageTransactionSize: 45,
+      maxTransactionSize: 500,
+      averageMonthlyTransactionVolume: 10000,
+      collectFunds: {
+        cardPayments: { estimatedActivity: { averageTransactionAmount: 45, maximumTransactionAmount: 500, monthlyVolumeRange: '10k-50k' } },
+        ach: { estimatedActivity: { averageTransactionAmount: 75, maximumTransactionAmount: 750, monthlyVolumeRange: 'under-10k' } }
+      }
+    };
+  }, [bizType]);
+
   const isBizContactValid = React.useMemo(() => {
     const urlOk = bizWebsite ? !!normalizeUrl(bizWebsite) : true; // website optional
     const emailOk = /.+@.+\..+/.test(String(bizSupportEmail||''));
@@ -989,8 +1030,46 @@ export default function KybOnboardingScreen() {
 
   // Auto-skip/fast-forward gate: never show application if already complete
   const autoGateRef = React.useRef(false);
+  const addMethodConsumedRef = React.useRef(false);
   React.useEffect(() => {
     if (autoGateRef.current) return;
+    // If user came from Payment Methods with intent to add, ensure account exists then jump straight to linking step
+    if (ff && !addMethodConsumedRef.current) {
+      addMethodConsumedRef.current = true;
+      (async () => {
+        try {
+          if (!moovAccountId) {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token || null;
+            if (token) {
+              const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+              const body = { type: 'business' };
+              try {
+                const mapped = (bizType === '501c3') ? 'incorporatedNonProfit' : (bizType === 'llc' ? 'llc' : (bizType === 'sp' ? 'soleProprietorship' : null));
+                if (mapped) body.businessType = mapped;
+                if (bizType === 'sp' && spMcc) body.mcc = spMcc;
+                if (bizType === 'llc' && bizClass) { body.category = bizClass; if (bizMcc) body.mcc = bizMcc; }
+                if (bizType === '501c3' && bizMcc) body.mcc = bizMcc;
+              } catch {}
+              try {
+                const res = await fetch(`${API_BASE_URL}/api/payments/moov/preset`, { method:'POST', headers, body: JSON.stringify(body) });
+                const txt = await res.text(); let j={}; try{ j=JSON.parse(txt);}catch{}
+                if (res.ok && j?.moov_account_id) setMoovAccountId(j.moov_account_id);
+              } catch {}
+            }
+          }
+        } catch {}
+        autoGateRef.current = true;
+        try {
+          if (bizType === 'sp' || bizType === 'soleProprietorship') {
+            animateTo(5, 1);
+          } else {
+            animateTo(8, 1);
+          }
+        } catch {}
+      })();
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -1092,7 +1171,7 @@ export default function KybOnboardingScreen() {
                     source={{ 
                       html: `<!doctype html><html><head>
                         <meta charset='utf-8'/>
-                        <meta name='viewport' content='width=device-width, initial-scale=1'/>
+                        <meta name='viewport' content='width=device-width, initial-scale=0.9, maximum-scale=0.9'/>
                         <script src='https://js.moov.io/v1'></script>
                         <style>
                           body{font-family:system-ui;margin:0;padding:8px;background:#fff;min-height:180px}
@@ -1372,6 +1451,15 @@ export default function KybOnboardingScreen() {
                       }
                     }catch{}
                     await fetch(`${API_BASE_URL}/api/payments/moov/preset`, { method:'POST', headers, body: JSON.stringify(patchBody) });
+                    // Submit underwriting after review for business/501c3
+                    try {
+                      const uw = getUnderwritingPreset(bizType);
+                      const uwBody = { accountId: moovAccountId, underwriting: uw };
+                      const uwRes = await fetch(`${API_BASE_URL}/api/payments/moov/underwriting`, { method:'POST', headers, body: JSON.stringify(uwBody) });
+                      try { const uwTxt = await uwRes.text(); console.log('[KYB][underwriting]', uwRes.status, (uwTxt||'').slice(0,200)); } catch {}
+                    } catch (e) {
+                      try { console.warn('[KYB][underwriting:error]', e?.message || String(e)); } catch {}
+                    }
                   }catch{}
                   animateTo(7, 1);
                 setLoadingBizPatch(false);
@@ -1686,9 +1774,8 @@ export default function KybOnboardingScreen() {
               </View>
               <Text style={{ color:'#6B7280', marginBottom:8 }}>You'll add your payout method on the next step.</Text>
               <View style={{ flexDirection:'row', justifyContent:'space-between', marginTop:16 }}>
-                <TouchableOpacity onPress={()=>animateTo(3, -1)} style={{ width:'48%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
-                </TouchableOpacity>
+                {/* Hide Back on step 5 to avoid loop when adding methods */}
+                <View style={{ width:'48%' }} />
                 <TouchableOpacity disabled={isSubmitting || !moovAccountId} onPress={finalizeIndividual} style={{ width:'48%', backgroundColor: (isSubmitting || !moovAccountId) ? '#6EE7B7' : '#10B981', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
                   {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={{ color:'#fff', fontWeight:'700' }}>{moovAccountId ? 'Submit & Verify' : 'Setting up...'}</Text>}
                 </TouchableOpacity>
@@ -1720,10 +1807,16 @@ export default function KybOnboardingScreen() {
                   source={{
                     html: `<!doctype html><html><head>
                       <meta charset='utf-8'/>
-                      <meta name='viewport' content='width=device-width, initial-scale=1'/>
+                      <meta name='viewport' content='width=device-width, initial-scale=0.9, maximum-scale=0.9'/>
                       <script src='https://js.moov.io/v1'></script>
                       <script src='https://cards.moov.io/drops/v2.js'></script>
-                      <style>body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827} #mount{min-height:420px} moov-payment-methods{display:block;width:100%;min-height:420px}</style>
+                      <style>
+                        html,body{width:100%;max-width:100%;overflow-x:hidden}
+                        body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827}
+                        #mount{min-height:600px; padding:0 15px; box-sizing:border-box; width:100%; max-width:100%; overflow:hidden}
+                        moov-payment-methods{display:block; width:calc(100% - 30px); max-width:100%; min-height:600px; box-sizing:border-box; margin:0 auto}
+                        iframe{width:100% !important; max-width:100% !important; min-width:0 !important; border:0; display:block}
+                      </style>
                       </head><body>
                         <h3 style='margin:0 0 6px;font-weight:800'>Choose a payment method</h3>
                         <div id='status' style='font:12px system-ui;color:#6B7280;margin:4px 0 8px'>Initializing…</div>
@@ -1746,6 +1839,23 @@ export default function KybOnboardingScreen() {
                           const statusEl = document.getElementById('status');
                           function setStatus(t){ try{ statusEl.textContent = String(t||''); }catch(_){}; try{ post('pm:status',{ text:String(t||'') }); }catch(_){} }
                           function post(type, data){ try{ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({type}, data||{}))); } }catch(e){} }
+                          function enforceWidth(){ try{
+                            var el=document.querySelector('moov-payment-methods'); 
+                            if(el){ 
+                              el.style.width='calc(100% - 30px)'; 
+                              el.style.maxWidth='calc(100% - 30px)'; 
+                              el.style.margin='0 auto'; 
+                              el.style.boxSizing='border-box';
+                              el.style.overflow='hidden';
+                            }
+                            document.querySelectorAll('iframe').forEach(function(f){ 
+                              f.style.width='100%'; 
+                              f.style.maxWidth='100%'; 
+                              f.style.minWidth='0'; 
+                              f.style.border='0'; 
+                              f.style.display='block'; 
+                            });
+                          }catch(_){}}
                           // Bridge console logs
                           ;['log','warn','error'].forEach(fn=>{ const orig=console[fn]; console[fn]=function(){ try{ post('pm:console',{ level:fn, msg:[...arguments].map(String).join(' ') }); }catch(_){}; try{ orig.apply(console,arguments);}catch(_){} } });
                           const ACCOUNT_ID = ${JSON.stringify(moovAccountId || '')};
@@ -1756,6 +1866,7 @@ export default function KybOnboardingScreen() {
                             const r=await fetch(API_BASE + '/api/payments/moov/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ accountId: ACCOUNT_ID })});
                             const j=await r.json();
                             if(!j.access_token){ post('pm:error',{ step:'token', status:r.status, body: JSON.stringify(j).slice(0,200) }); setStatus('Token error'); return; }
+                            enforceWidth();
                             try{ post('pm:console',{ level:'debug', msg:'token_scope='+(j.scope||'') }); }catch(_){ }
                             setStatus('Mounting payment widget…');
                             // Ensure element registered
@@ -1806,6 +1917,12 @@ export default function KybOnboardingScreen() {
                             }catch(__){}
                             const mount=document.getElementById('mount');
                             mount.appendChild(el);
+                            enforceWidth();
+                            // Re-assert on moov inframe events and iframe additions
+                            try{ window.addEventListener('message',function(ev){ try{ var d=(typeof ev.data==='string'&&ev.data[0]==='{')?JSON.parse(ev.data):ev.data; if(d&&d.type==='moov-inframe-event'){ enforceWidth(); } }catch(_){ } }); }catch(_){ }
+                            try{ new MutationObserver(function(m){ m.forEach(function(x){ if(x.addedNodes&&x.addedNodes.length){ enforceWidth(); } }); }).observe(document.body,{ childList:true, subtree:true }); }catch(_){ }
+                            enforceWidth();
+                            window.addEventListener('message',function(ev){ try{ var d=(typeof ev.data==='string'&&ev.data[0]==='{')?JSON.parse(ev.data):ev.data; if(d&&d.type==='moov-inframe-event'){ enforceWidth(); } }catch(_){ } });
                             try{ el.open = true; el.setAttribute('open','true'); }catch(_){}
                             try{ setTimeout(function(){ try{ el.open=true; el.setAttribute('open','true'); }catch(_){} }, 50); }catch(_){ }
                             try{ const rect=mount.getBoundingClientRect(); post('pm:console',{level:'debug', msg:'mounted_children='+mount.children.length+', mount_h='+rect.height}); }catch(_){}
@@ -2197,7 +2314,7 @@ export default function KybOnboardingScreen() {
                       source={{
                         html: `<!doctype html><html><head>
                           <meta charset='utf-8'/>
-                          <meta name='viewport' content='width=device-width, initial-scale=1'/>
+                          <meta name='viewport' content='width=device-width, initial-scale=0.9, maximum-scale=0.9'/>
                           <script src='https://js.moov.io/v1'></script>
                           <script src='https://cards.moov.io/drops/v2.js'></script>
                           <style>body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827} #mount{min-height:420px} moov-payment-methods{display:block;width:100%;min-height:420px}</style>
@@ -2286,10 +2403,16 @@ export default function KybOnboardingScreen() {
                   source={{
                     html: `<!doctype html><html><head>
                       <meta charset='utf-8'/>
-                      <meta name='viewport' content='width=device-width, initial-scale=1'/>
+                      <meta name='viewport' content='width=device-width, initial-scale=0.9, maximum-scale=0.9'/>
                       <script src='https://js.moov.io/v1'></script>
                       <script src='https://cards.moov.io/drops/v2.js'></script>
-                      <style>body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827} #mount{min-height:420px} moov-payment-methods{display:block;width:100%;min-height:420px}</style>
+                      <style>
+                        html,body{width:100%;max-width:100%;overflow-x:hidden}
+                        body{font-family:system-ui;margin:0;padding:16px;background:#fff;color:#111827}
+                        #mount{min-height:600px; padding:0 15px; box-sizing:border-box; width:100%; max-width:100%; overflow:hidden}
+                        moov-payment-methods{display:block; width:calc(100% - 30px); max-width:100%; min-height:600px; box-sizing:border-box; margin:0 auto}
+                        iframe{width:100% !important; max-width:100% !important; min-width:0 !important; border:0; display:block}
+                      </style>
                       </head><body>
                         <h3 style='margin:0 0 6px;font-weight:800'>Choose a payment method</h3>
                         <div id='status' style='font:12px system-ui;color:#6B7280;margin:4px 0 8px'>Initializing…</div>
@@ -2312,6 +2435,23 @@ export default function KybOnboardingScreen() {
                           const statusEl = document.getElementById('status');
                           function setStatus(t){ try{ statusEl.textContent = String(t||''); }catch(_){}; try{ post('pm:status',{ text:String(t||'') }); }catch(_){} }
                           function post(type, data){ try{ if(window.ReactNativeWebView){ window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({type}, data||{}))); } }catch(e){} }
+                          function enforceWidth(){ try{
+                            var el=document.querySelector('moov-payment-methods'); 
+                            if(el){ 
+                              el.style.width='calc(100% - 30px)'; 
+                              el.style.maxWidth='calc(100% - 30px)'; 
+                              el.style.margin='0 auto'; 
+                              el.style.boxSizing='border-box';
+                              el.style.overflow='hidden';
+                            }
+                            document.querySelectorAll('iframe').forEach(function(f){ 
+                              f.style.width='100%'; 
+                              f.style.maxWidth='100%'; 
+                              f.style.minWidth='0'; 
+                              f.style.border='0'; 
+                              f.style.display='block'; 
+                            });
+                          }catch(_){}}
                           // Bridge console logs
                           ;['log','warn','error'].forEach(fn=>{ const orig=console[fn]; console[fn]=function(){ try{ post('pm:console',{ level:fn, msg:[...arguments].map(String).join(' ') }); }catch(_){}; try{ orig.apply(console,arguments);}catch(_){} } });
                           const ACCOUNT_ID = ${JSON.stringify(moovAccountId || '')};
@@ -2322,6 +2462,7 @@ export default function KybOnboardingScreen() {
                             const r=await fetch(API_BASE + '/api/payments/moov/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ accountId: ACCOUNT_ID })});
                             const j=await r.json();
                             if(!j.access_token){ post('pm:error',{ step:'token', status:r.status, body: JSON.stringify(j).slice(0,200) }); setStatus('Token error'); return; }
+                            enforceWidth();
                             try{ post('pm:console',{ level:'debug', msg:'token_scope='+(j.scope||'') }); }catch(_){ }
                             setStatus('Mounting payment widget…');
                             // Ensure element registered
@@ -2372,6 +2513,11 @@ export default function KybOnboardingScreen() {
                             }catch(__){}
                             const mount=document.getElementById('mount');
                             mount.appendChild(el);
+                            enforceWidth();
+                            try{ window.addEventListener('message',function(ev){ try{ var d=(typeof ev.data==='string'&&ev.data[0]==='{')?JSON.parse(ev.data):ev.data; if(d&&d.type==='moov-inframe-event'){ enforceWidth(); } }catch(_){ } }); }catch(_){ }
+                            try{ new MutationObserver(function(m){ m.forEach(function(x){ if(x.addedNodes&&x.addedNodes.length){ enforceWidth(); } }); }).observe(document.body,{ childList:true, subtree:true }); }catch(_){ }
+                            enforceWidth();
+                            window.addEventListener('message',function(ev){ try{ var d=(typeof ev.data==='string'&&ev.data[0]==='{')?JSON.parse(ev.data):ev.data; if(d&&d.type==='moov-inframe-event'){ enforceWidth(); } }catch(_){ } });
                             try{ el.open = true; el.setAttribute('open','true'); }catch(_){}
                             try{ setTimeout(function(){ try{ el.open=true; el.setAttribute('open','true'); }catch(_){} }, 50); }catch(_){ }
                             try{ const rect=mount.getBoundingClientRect(); post('pm:console',{level:'debug', msg:'mounted_children='+mount.children.length+', mount_h='+rect.height}); }catch(_){}
@@ -2419,12 +2565,7 @@ export default function KybOnboardingScreen() {
                   <Text style={{ color:'#fff', fontWeight:'700' }}>Go to Payment Methods</Text>
                 </TouchableOpacity>
               </View>
-              {/* TEMP: Back button for testing ownersProvided flow */}
-              <View style={{ marginTop:12 }}>
-                <TouchableOpacity onPress={()=> animateTo(7, -1)} style={{ width:'100%', backgroundColor:'#E5E7EB', borderRadius:12, paddingVertical:12, alignItems:'center' }}>
-                  <Text style={{ color:'#111827', fontWeight:'700' }}>Back</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Back hidden on step 8 to prevent navigation loop */}
             </Animated.View>
           )}
 

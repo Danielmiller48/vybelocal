@@ -25,6 +25,8 @@ export default function PaymentMethodsScreen({ route }) {
   const [error, setError] = useState(null);
   const [deletingBankId, setDeletingBankId] = useState(null);
   const [deletingCardId, setDeletingCardId] = useState(null);
+  const [deletingWalletCardId, setDeletingWalletCardId] = useState(null);
+  const [walletBusy, setWalletBusy] = useState(false);
   // Verify modal state
   const [verifyVisible, setVerifyVisible] = useState(false);
   const [verifyStage, setVerifyStage] = useState('choose'); // 'choose' | 'complete'
@@ -184,6 +186,13 @@ export default function PaymentMethodsScreen({ route }) {
   const hasHostAccount = !!(b?.accountId || profile?.moov_account_id || explicitAccountId);
   const missingAccount = String(error || '').toLowerCase().includes('missing_account');
 
+  // Consumer (Vybe Wallet)
+  const c = data?.consumer || {};
+  const cBanks = Array.isArray(c?.banks) ? c.banks : [];
+  const cCards = Array.isArray(c?.cards) ? c.cards : [];
+  const cSources = Array.isArray(c?.sources) ? c.sources : [];
+  const cAccountId = c?.accountId || null;
+
   try {
     console.log('[PM][empty-check]', {
       loading,
@@ -303,26 +312,80 @@ export default function PaymentMethodsScreen({ route }) {
     }catch(e){ Alert.alert('Error', String(e?.message||e)); }
   }, [WAITLIST_API_BASE, session?.access_token, accountIdForWrites, lastBank, fetchSummary]);
 
+  const handleDeleteWalletCard = async (cardID) => {
+    Alert.alert(
+      'Remove card',
+      'Are you sure you want to remove this card from your Vybe Wallet?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            setDeletingWalletCardId(cardID);
+            let jwt = session?.access_token || null;
+            if (!jwt) { try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+            }
+            if (!cAccountId) throw new Error('Wallet not set up');
+            const headers = { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) };
+            const res = await fetch(`${API_BASE}/api/payments/moov/card/delete`, {
+              method: 'POST', headers,
+              body: JSON.stringify({ accountId: cAccountId, cardId: cardID })
+            });
+            const j = await res.json().catch(()=>({}));
+            if (!res.ok) throw new Error((j?.error || `HTTP ${res.status}`) + (j?.reqId ? ` (reqId ${j.reqId})` : ''));
+            Alert.alert('Removed', 'Card removed from Vybe Wallet.');
+            fetchSummary();
+          } catch (e) {
+            Alert.alert('Error', e?.message || 'Failed to remove card');
+          } finally {
+            setDeletingWalletCardId(null);
+          }
+        } }
+      ]
+    );
+  };
+
+  const setupVybeWallet = async () => {
+    try {
+      if (walletBusy) return; setWalletBusy(true);
+      let jwt = session?.access_token || null;
+      if (!jwt) { try { const { data } = await supabase.auth.getSession(); jwt = data?.session?.access_token || null; } catch {}
+      }
+      if (!jwt) { Alert.alert('Sign in required'); return; }
+      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` };
+      const res = await fetch(`${WAITLIST_API_BASE}/api/payments/moov/consumer/preset`, { method:'POST', headers, body: '{}' });
+      const txt = await res.text(); let j={}; try{ j=JSON.parse(txt);}catch{}
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+      fetchSummary();
+    } catch (e) {
+      Alert.alert('Wallet setup failed', e?.message || 'Try again later');
+    } finally { setWalletBusy(false); }
+  };
+
 
   // removed early return; host placeholder renders inline below
 
   return (
-    <LinearGradient colors={['rgba(203,180,227,0.2)', 'rgba(255,200,162,0.4)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <AppHeader />
+    <>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <LinearGradient colors={['rgba(203,180,227,0.2)', 'rgba(255,200,162,0.4)']} style={{ flex: 1 }} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
+          <AppHeader />
         <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <View style={{ padding: 16, paddingBottom: 8 }}>
             <Text style={styles.title}>Payment Methods</Text>
-            <Text style={styles.subtitle}>Add or manage payout banks and cards used for hosting.</Text>
+            <Text style={styles.subtitle}>Manage Vybe Payouts and your Vybe Wallet.</Text>
           </View>
+
+          
 
           <View style={styles.card}>
             <View style={styles.sectionHeader}>
               <View style={{ flexDirection:'row', alignItems:'center' }}>
                 <Ionicons name="cash-outline" size={18} color={MIDNIGHT} style={{ marginRight:8 }} />
-                <Text style={styles.sectionTitle}>Host payouts</Text>
+                <Text style={styles.sectionTitle}>Vybe Payouts</Text>
               </View>
             </View>
+
+            <Text style={{ color:'#6b7280', marginTop:6 }}>Get paid for hosting. Link a bank so your earnings flow straight to you.</Text>
 
             {loading ? (
               <View style={{ paddingVertical:12, alignItems:'center' }}>
@@ -332,11 +395,11 @@ export default function PaymentMethodsScreen({ route }) {
             ) : (!hasHostAccount || missingAccount) ? (
               <>
                 <View style={{ marginTop:8 }}>
-                  <Text style={{ color: MIDNIGHT, fontWeight:'800', marginBottom:6 }}>Want to get paid for RSVPs?</Text>
-                  <Text style={{ color:'#6b7280' }}>Create your host payouts account to start receiving earnings. You can link a bank or card during onboarding.</Text>
+                  <Text style={{ color: MIDNIGHT, fontWeight:'800', marginBottom:6 }}>Vybe Payouts</Text>
+                  <Text style={{ color:'#6b7280' }}>Get paid for hosting. Link a bank so your earnings flow straight to you.</Text>
                 </View>
                 <TouchableOpacity style={[styles.primaryBtn,{ marginTop:12, alignSelf:'flex-start' }]} onPress={()=> navigation.navigate('Home', { screen: 'KybIntro' })}>
-                  <Text style={styles.primaryBtnText}>Start host onboarding</Text>
+                  <Text style={styles.primaryBtnText}>Start Vybe Payouts</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -442,11 +505,60 @@ export default function PaymentMethodsScreen({ route }) {
           )}
           {/* Loading indicator moved into the Host payouts card */}
 
+          {/* Vybe Wallet */}
+          <View style={styles.card}>
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection:'row', alignItems:'center' }}>
+                <Ionicons name="wallet-outline" size={18} color={MIDNIGHT} style={{ marginRight:8 }} />
+                <Text style={styles.sectionTitle}>Vybe Wallet</Text>
+              </View>
+            </View>
+            <Text style={{ color:'#6b7280', marginTop:6 }}>Save a card to RSVP faster next time — no digging through your pockets.</Text>
+
+            {!cAccountId && cCards.length === 0 ? (
+              <>
+                <View style={{ marginTop:8 }}>
+                  <Text style={{ color: MIDNIGHT, fontWeight:'800', marginBottom:6 }}>Set up Vybe Wallet</Text>
+                  <Text style={{ color:'#6b7280' }}>Create your personal wallet and save a card for quicker RSVPs.</Text>
+                </View>
+                <TouchableOpacity disabled={walletBusy} style={[styles.primaryBtn,{ marginTop:12, alignSelf:'flex-start', opacity: walletBusy?0.7:1 }]} onPress={setupVybeWallet}>
+                  <Text style={styles.primaryBtnText}>{walletBusy ? 'Setting up…' : 'Set up Vybe Wallet'}</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.sectionSmallTitle,{ marginTop: 12 }]}>Cards</Text>
+                {cCards.length === 0 ? (
+                  <Text style={styles.muted}>No cards saved.</Text>
+                ) : cCards.map((c) => (
+                  <View key={c.cardID} style={[styles.listRow,{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }]}> 
+                    <View style={{ flex:1, paddingRight:12 }}>
+                      <Text style={styles.rowMain}>{(c.brand||'').toString().toUpperCase()} •••• {c.lastFourCardNumber || c.lastFour}</Text>
+                      <Text style={styles.rowSub}>Exp {c.expiration?.month}/{c.expiration?.year}</Text>
+                    </View>
+                    <TouchableOpacity disabled={deletingWalletCardId===c.cardID} onPress={() => handleDeleteWalletCard(c.cardID)} style={{ paddingVertical:6, paddingHorizontal:10, opacity: deletingWalletCardId===c.cardID ? 0.5 : 1 }}>
+                      {deletingWalletCardId===c.cardID ? (
+                        <View style={{ flexDirection:'row', alignItems:'center' }}>
+                          <ActivityIndicator size="small" color="#DC2626" style={{ marginRight:6 }} />
+                          <Text style={{ color:'#DC2626', fontWeight:'700' }}>Deleting…</Text>
+                        </View>
+                      ) : (
+                        <Text style={{ color:'#DC2626', fontWeight:'700' }}>Delete</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
+            )}
+          </View>
+
           <View style={{ height: 24 }} />
         </ScrollView>
+      </LinearGradient>
+    </SafeAreaView>
 
-        {/* Verification Modal (cloned from onboarding, simplified) */}
-        <Modal visible={verifyVisible} transparent={false} animationType="slide" onRequestClose={()=> setVerifyVisible(false)}>
+    {/* Verification Modal (cloned from onboarding, simplified) */}
+    <Modal visible={verifyVisible} transparent={false} animationType="slide" onRequestClose={()=> setVerifyVisible(false)}>
           <View style={{ flex:1, backgroundColor:'#FFFFFF', justifyContent:'center', alignItems:'center' }}>
             <View style={{ width:'92%', maxWidth:480, backgroundColor:'#FFFFFF', padding:16, borderRadius:16, shadowColor:'#000', shadowOpacity:0.08, shadowRadius:12, elevation:6 }}>
             {verifyStage === 'choose' && (
@@ -525,8 +637,7 @@ export default function PaymentMethodsScreen({ route }) {
             </View>
           </View>
         </Modal>
-      </SafeAreaView>
-    </LinearGradient>
+    </>
   );
 }
 
