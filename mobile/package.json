@@ -23,6 +23,7 @@
     "event-target-polyfill": "^0.0.4",
     "expo": "^54.0.13",
     "expo-blur": "~14.1.5",
+    "expo-build-properties": "^1.0.9",
     "expo-constants": "~17.1.7",
     "expo-dev-client": "~5.2.4",
     "expo-device": "^7.1.4",
@@ -48,7 +49,7 @@
     "react-native-svg": "^14.1.0",
     "react-native-url-polyfill": "^2.0.0",
     "react-native-web": "^0.20.0",
-    "react-native-webview": "13.13.5",
+    "react-native-webview": "^13.16.0",
     "uuid": "^11.1.0",
     "zod": "^4.0.10"
   },

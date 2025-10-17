@@ -1,10 +1,10 @@
 import 'react-native-get-random-values';
-import 'event-target-polyfill';
+// Removed event-target-polyfill to avoid focus/blur top-level event noise in Hermes
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { Text, View, TextInput, Button, ActivityIndicator, SafeAreaView } from 'react-native';
+import { Text, View, TextInput, Button, ActivityIndicator, SafeAreaView, ErrorUtils } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
@@ -39,6 +39,33 @@ import PaymentMethodsScreen from './screens/PaymentMethodsScreen';
 if (__DEV__) {
   global.PushNotificationService = PushNotificationService;
 }
+
+// Suppress specific WebView warnings for topFocus/topBlur events
+const originalError = console.error;
+console.error = (...args) => {
+  if (
+    typeof args[0] === 'string' &&
+    (args[0].includes('topFocus') || args[0].includes('topBlur'))
+  ) {
+    return;
+  }
+  originalError.apply(console, args);
+};
+
+// Also catch uncaught errors
+const defaultHandler = ErrorUtils.getGlobalHandler();
+ErrorUtils.setGlobalHandler((error, isFatal) => {
+  if (
+    error && 
+    error.message && 
+    (error.message.includes('topFocus') || error.message.includes('topBlur'))
+  ) {
+    // Silently ignore these specific errors
+    return;
+  }
+  // Pass other errors to the default handler
+  defaultHandler(error, isFatal);
+});
 
 
 
