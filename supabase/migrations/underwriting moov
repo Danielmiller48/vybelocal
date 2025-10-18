@@ -1,0 +1,99 @@
+{
+    "averageTransactionSize": 20,
+    "maxTransactionSize": 80,
+    "averageMonthlyTransactionVolume": 500,
+    "status": "approved",
+    "volumeByCustomerType": {
+      "businessToBusinessPercentage": 0,
+      "consumerToBusinessPercentage": 100
+    },
+    "cardVolumeDistribution": {
+      "ecommercePercentage": 100,
+      "cardPresentPercentage": 0,
+      "mailOrPhonePercentage": 0,
+      "debtRepaymentPercentage": 0
+    },
+    "fulfillment": {
+      "hasPhysicalGoods": false,
+      "isShippingProduct": false,
+      "shipmentDurationDays": 0,
+      "returnPolicy": "conditional-refund" //** changed from "other" to match your conditional refund policy
+    },
+    "geographicReach": "us-only",
+    "businessPresence": "home-based",
+    "pendingLitigation": "none",
+    "volumeShareByCustomerType": {
+      "business": 0,
+      "consumer": 100,
+      "p2p": 0
+    },
+  
+    "collectFunds": {
+      //** Removed "ach" block to reflect card-only checkout. If you ever enable bank pay-ins,
+      //** add it back with avg/max around 20/200 and under-10k volume.
+      "cardPayments": {
+        "cardAcceptanceMethods": {
+          "inPersonPercentage": 0,
+          "mailOrPhonePercentage": 0,
+          "onlinePercentage": 100
+        },
+        "currentlyAcceptsCards": false,
+        "estimatedActivity": {
+          "averageTransactionAmount": 20,      //** was 30 → set to ticket price
+          "maximumTransactionAmount": 200,     //** gives headroom for multi-ticket purchase/workshop
+          "monthlyVolumeRange": "under-10k"
+        },
+        "fulfillment": {
+          "method": "service",
+          "timeframe": "delayed"
+        },
+        "refundPolicy": "conditional-refund"
+      }
+    },
+  
+    "moneyTransfer": {
+      //** These features aren’t used in your flow (you’re not doing card-to-card pulls/pushes).
+      //** Keeping them at 0 to signal “not used” while satisfying schema.
+      "pullFromCard": {
+        "estimatedActivity": {
+          "averageTransactionAmount": 0,
+          "maximumTransactionAmount": 0,
+          "monthlyVolumeRange": "under-10k"
+        }
+      },
+      "pushToCard": {
+        "estimatedActivity": {
+          "averageTransactionAmount": 0,
+          "maximumTransactionAmount": 0,
+          "monthlyVolumeRange": "under-10k"
+        }
+      }
+    },
+  
+    "sendFunds": {
+      //** Host doesn’t initiate payouts; processor settles to their bank on schedule.
+      //** Leave these at 0 unless you actually plan to let hosts push funds out themselves.
+      "ach": {
+        "estimatedActivity": {
+          "averageTransactionAmount": 0,
+          "maximumTransactionAmount": 0,
+          "monthlyVolumeRange": "under-10k"
+        }
+      },
+      "pushToCard": {
+        "estimatedActivity": {
+          "averageTransactionAmount": 0,
+          "maximumTransactionAmount": 0,
+          "monthlyVolumeRange": "under-10k"
+        }
+      },
+      "rtp": {
+        "estimatedActivity": {
+          "averageTransactionAmount": 0,
+          "maximumTransactionAmount": 0,
+          "monthlyVolumeRange": "under-10k"
+        }
+      }
+    }
+  }
+  

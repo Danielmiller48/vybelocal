@@ -1,0 +1,222 @@
+VybeLocal — Mapbox Cost-Control Playbook (Hero-Map Mode)
+
+Owner: Platform / Frontend
+Scope: Web + React Native (Expo)
+Goal: Make the map the first screen (splash → live map) without ballooning cost.
+Target: Stay ≤ 50k web map loads/mo (free tier) or <$250/mo at ~10k MAU.
+
+0) Non-Negotiables (Read This First)
+
+One map instance per app session.
+Initialize once on first open; never unmount until the app is killed.
+
+List = overlay, not navigation.
+Bottom sheet over the same map; don’t route away to another map screen.
+
+Cold start is the only paid event.
+Background/foreground must not re-create the map.
+
+1) Cost Model (Real Numbers)
+
+Web free tier: 50,000 map loads / month.
+
+Overage: $5 per 1,000 loads (=$0.005 per load).
+
+Rule-of-thumb math
+
+MAU	Opens / user / mo	Total loads	Billable	Est. cost	Cost/user
+1,000	6	6,000	0	$0	$0.00
+1,000	10	10,000	0	$0	$0.00
+10,000	6	60,000	10,000	$50	$0.005
+10,000	10	100,000	50,000	$250	$0.025
+10,000	20	200,000	150,000	$750	$0.075
+
+Takeaway: Map as hero still costs pennies per user if you prevent re-inits.
+
+2) Tokens & Security
+
+Create env-scoped tokens: MAPBOX_TOKEN_DEV, …_STAGE, …_PROD.
+
+Restrict by domain / bundle ID in Mapbox dashboard.
+
+Never ship unrestricted tokens. Rotate quarterly.
+
+If scraping/abuse → revoke & rotate immediately.
+
+3) Persistent Map Shell (Do This)
+Web (React)
+
+Mount at app root, outside routing; keep singleton in memory.
+
+// MapProvider.tsx
+import mapboxgl from 'mapbox-gl';
+import { createContext, useEffect, useRef } from 'react';
+
+export const MapRefCtx = createContext<{map?: mapboxgl.Map}>({});
+
+export default function MapProvider({ children }) {
+  const ref = useRef<mapboxgl.Map>();
+
+  useEffect(() => {
+    if (!ref.current) {
+      // One-time init
+      mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
+      ref.current = new mapboxgl.Map({
+        container: 'vybe-map-root',
+        style: 'mapbox://styles/vybelocal/desert-day',
+        center: [-106.485, 31.761], // El Paso
+        zoom: 11,
+        minZoom: 9, maxZoom: 17,
+        pitchWithRotate: false, dragRotate: false,
+        maxBounds: [[-106.9,31.5],[-106.2,31.95]], // city bbox
+      });
+      // Count one load (our own metric)
+      fetch('/api/map/init', { method: 'POST' });
+    }
+  }, []);
+
+  return (
+    <MapRefCtx.Provider value={{ map: ref.current }}>
+      <div id="vybe-map-root" style={{position:'fixed', inset:0}} />
+      {children /* overlays (sheets, filters, etc.) */}
+    </MapRefCtx.Provider>
+  );
+}
+
+
+Never unmount #vybe-map-root. Overlays (list, filters) are just DOM on top.
+
+React Native (Expo)
+
+Mount <MapboxGL.MapView> in a top-level screen / provider outside your navigator.
+
+Use AppState to pause (not destroy) when backgrounded.
+
+import { AppState } from 'react-native';
+useEffect(() => {
+  const sub = AppState.addEventListener('change', s => {
+    if (s === 'active') { /* resume animations/layers */ }
+    // do not re-create map; keep instance alive
+  });
+  return () => sub.remove();
+}, []);
+
+4) UX Rules (Hero Map + Cheap)
+
+Splash → fade to live map in <400ms.
+
+Pins “popcorn”: add clustered source once; animate marker opacity/scale client-side (no re-init).
+
+Bottom list sheet shows events within current viewport (no route change).
+
+No tilt/rotate, minZoom: 9, maxZoom: 17, maxBounds: El Paso.
+
+Static map previews for cards/detail banners; open interactive map already initialized underneath.
+
+5) Data, Tiles & Caching
+
+Clustered GeoJSON (or vector tiles) for events; update the source, not the map instance.
+
+Prewarm El Paso tiles once per session.
+
+Web: Service Worker cache stale-while-revalidate for style + tiles.
+
+Mobile: enable on-device tile cache where available.
+
+Debounce geocoding 400–600 ms or require “Search” tap; cache last N queries.
+
+6) Monitoring & Alerts
+
+We track our own loads to catch regressions.
+
+/api/map/init increments map_loads(user_id, month) once per cold start.
+
+Nightly job compares internal counts vs Mapbox dashboard (±10% tolerance).
+
+Alert thresholds
+
+40k loads by mid-month → warn in Slack #ops.
+
+Projected > 100k → action (optimize or enable soft caps).
+
+7) Guardrails & Abuse Mitigation
+
+Single-init guard in code: if map exists, return (don’t create again).
+
+Soft cap per user: if map_loads > 50/month, degrade to static map for the session; show “Open Live Map” CTA.
+
+Token restrictions + short TTL for ephemeral mobile tokens (optional).
+
+Detect rapid map opens from same IP/device → require CAPTCHA.
+
+Kill-switch
+
+MAP_INTERACTIVE=false env → ship static maps on open; user taps “Open Live Map” to initialize once.
+
+8) Quality Targets
+
+P95 map visible (splash → first render): < 900 ms on mid-range Android.
+
+P95 FPS while panning: ≥ 55 fps (no shadows/3D).
+
+Crash-free sessions: ≥ 99.5%.
+
+Loads/user/mo (web): 3–10 (hero map, persisted).
+
+9) Do/Don’t Checklist
+
+DO
+
+Persist one map; overlay everything else.
+
+Lock city bounds; cap zoom; disable rotate.
+
+Cluster markers; animate client-side.
+
+Cache tiles; debounce geocoding.
+
+Log /api/map/init; watch Mapbox dashboard weekly.
+
+DON’T
+
+Create a new Map() on every route/tab.
+
+Navigate to a “List page” that unmounts the map.
+
+Geocode on every keystroke.
+
+Leave tokens unrestricted.
+
+Ignore spikes—flip the kill-switch.
+
+10) Rollback & Migration Plan
+
+If monthly cost > $400 or loads > 100k, schedule a one-week swap to:
+
+Renderer: MapLibre (drop-in)
+
+Basemap: PMTiles (El Paso region) on S3 + CloudFront
+
+Keep our data layers & overlays identical; only tile source URLs change.
+
+Appendix A — API Contract
+
+POST /api/map/init
+Body: { sessionId, userId? }
+Effect: increment counter; return { ok: true }
+Rate-limit: 5/min/IP, 50/mo/user soft cap.
+
+Appendix B — Cost Triage SOP
+
+Auto-alert fires.
+
+Check CI changes touching map shell; if regression → hotfix.
+
+Toggle MAP_INTERACTIVE=false for 24h if needed.
+
+Rotate token if scraping.
+
+Postmortem: add test to prevent re-init.
+
+TL;DR:
+Always load the hero map after the splash. Persist one instance. Overlay the world. Track your loads. Flip the switch if it spikes. You’ll look premium and stay in the pennies-per-user zone.

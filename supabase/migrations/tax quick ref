@@ -1,0 +1,90 @@
+Here’s the concise cheat sheet for pricing/tax/fees with exact variable names you can reuse in future chats and code.
+Pricing input (quote)
+ticketCents: integer cents (base ticket)
+platformRateBps: basis points for platform fee (default 1000)
+venueAddress:
+country: 'US'
+state: string
+city: string
+postalCode: string
+line1: string
+eventDateISO: ISO string
+cardMeta:
+brand: 'visa' | 'mc' | 'amex' | 'discover'
+debit: boolean
+regulatedDebit: boolean (optional)
+presentment: 'card_present' | 'card_not_present'
+includeProcessingSurcharge: boolean (default false)
+platformFeeTaxable: boolean (default true in TX)
+admissionsOverlayEnabled: boolean (default false)
+Pricing output (quote)
+ticketCents: integer
+platformFeeCents: integer
+tax:
+salesTaxCents: integer
+salesTaxRateBps: number
+admissionsTaxCents: integer
+admissionsTaxRateBps: number
+jurisdictions: { state?, county?, city?, special? }
+processing:
+processorPctBps: number
+processorFixedCents: integer
+estimatedProcessorFeeCents: integer
+scheduleKey: string
+buyerTotalCents: integer
+ledger:
+hostPayoutCents: integer
+taxBucketCents: integer
+platformNetCents: integer
+snapshot:
+venueAddress: see input
+rules:
+platformFeeTaxable: boolean
+admissionsOverlayEnabled: boolean
+includeProcessingSurcharge: boolean
+rates:
+salesTaxBps: number
+admissionsBps: number
+processorPctBps: number
+processorFixedCents: integer
+platformRateBps: number
+provider:
+tax: 'TexasSimple' | 'TaxCloud' | 'TaxJar' | 'Mock'
+payments: 'Moov'
+eventDateISO: string
+createdAtISO: string
+Config files
+config/platform.js
+PLATFORM_CONFIG:
+platformRateBps: number
+targetNetBps: number
+minNetBpsFloor: number
+enableMarginGuard: boolean
+config/tax.js
+TAX_CONFIG:
+enableTaxCalculation: boolean
+defaultProvider: 'TexasSimple'
+enableAdmissionsOverlay: boolean
+fallbackTaxRateBps: number
+stateSettings: { TX: { provider, platformFeeTaxable, admissionsOverlay } }
+config/moov.js
+MOOV_CONFIG:
+enabled: boolean
+enableProcessingSurcharge: boolean
+enableMarginGuard: boolean
+useConservativeEstimates: boolean
+enablePostAuthReconcile: boolean
+reconcileOnWebhook: boolean
+providers: { enabled: 'moov'|'stripe'|'tilled', fallback: string|null }
+Fee schedule (Moov)
+domain/fees/moov.pricing.js
+MOOV_SCHEDULES: Array<{ key, match(meta), pctBps, fixedCents }>
+Helper math
+domain/pricing/rounding.js
+toCents(n: number): integer
+bps(amountCents: number, rateBps: number): integer
+API endpoints
+POST /api/pricing/quote
+Body: PricingInput
+Returns: PricingOutput
+If you want, I’ll drop this into a markdown file /docs/pricing-cheatsheet.md for quick reference later.

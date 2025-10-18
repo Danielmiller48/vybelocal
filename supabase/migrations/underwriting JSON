@@ -1,0 +1,104 @@
+{
+    "ok":  true,
+    "preview":  true,
+    "accountId":  "\u003cacct-id\u003e",
+    "underwriting":  {
+                         "averageTransactionSize":  0,
+                         "averageMonthlyTransactionVolume":  0,
+                         "maxTransactionSize":  0,
+                         "status":  "pending",
+                         "volumeByCustomerType":  {
+                                                      "businessToBusinessPercentage":  0,
+                                                      "consumerToBusinessPercentage":  0
+                                                  },
+                         "cardVolumeDistribution":  {
+                                                        "ecommercePercentage":  0,
+                                                        "cardPresentPercentage":  0,
+                                                        "mailOrPhonePercentage":  0,
+                                                        "debtRepaymentPercentage":  0
+                                                    },
+                         "fulfillment":  {
+                                             "hasPhysicalGoods":  false,
+                                             "isShippingProduct":  false,
+                                             "shipmentDurationDays":  0,
+                                             "returnPolicy":  "none"
+                                         },
+                         "geographicReach":  "us-only",
+                         "businessPresence":  "home-based",
+                         "pendingLitigation":  "none",
+                         "volumeShareByCustomerType":  {
+                                                           "business":  0,
+                                                           "consumer":  0,
+                                                           "p2p":  0
+                                                       },
+                         "collectFunds":  {
+                                              "ach":  {
+                                                          "estimatedActivity":  {
+                                                                                    "averageTransactionAmount":  0,
+                                                                                    "maximumTransactionAmount":  0,
+                                                                                    "monthlyVolumeRange":  "under-10k"
+                                                                                }
+                                                      },
+                                              "cardPayments":  {
+                                                                   "cardAcceptanceMethods":  {
+                                                                                                 "inPersonPercentage":  0,
+                                                                                                 "mailOrPhonePercentage":  0,
+                                                                                                 "onlinePercentage":  100
+                                                                                             },
+                                                                   "currentlyAcceptsCards":  false,
+                                                                   "estimatedActivity":  {
+                                                                                             "averageTransactionAmount":  0,
+                                                                                             "maximumTransactionAmount":  0,
+                                                                                             "monthlyVolumeRange":  "under-10k"
+                                                                                         },
+                                                                   "fulfillment":  {
+                                                                                       "method":  "service",
+                                                                                       "timeframe":  "delayed"
+                                                                                   },
+                                                                   "refundPolicy":  "conditional-refund"
+                                                               }
+                                          },
+                         "moneyTransfer":  {
+                                               "pullFromCard":  {
+                                                                    "estimatedActivity":  {
+                                                                                              "averageTransactionAmount":  0,
+                                                                                              "maximumTransactionAmount":  0,
+                                                                                              "monthlyVolumeRange":  "under-10k"
+                                                                                          }
+                                                                },
+                                               "pushToCard":  {
+                                                                  "estimatedActivity":  {
+                                                                                            "averageTransactionAmount":  0,
+                                                                                            "maximumTransactionAmount":  0,
+                                                                                            "monthlyVolumeRange":  "under-10k"
+                                                                                        }
+                                                              }
+                                           },
+                         "sendFunds":  {
+                                           "ach":  {
+                                                       "estimatedActivity":  {
+                                                                                 "averageTransactionAmount":  0,
+                                                                                 "maximumTransactionAmount":  0,
+                                                                                 "monthlyVolumeRange":  "under-10k"
+                                                                             }
+                                                   },
+                                           "pushToCard":  {
+                                                              "estimatedActivity":  {
+                                                                                        "averageTransactionAmount":  0,
+                                                                                        "maximumTransactionAmount":  0,
+                                                                                        "monthlyVolumeRange":  "under-10k"
+                                                                                    }
+                                                          },
+                                           "rtp":  {
+                                                       "estimatedActivity":  {
+                                                                                 "averageTransactionAmount":  0,
+                                                                                 "maximumTransactionAmount":  0,
+                                                                                 "monthlyVolumeRange":  "under-10k"
+                                                                             }
+                                                   }
+                                       },
+                         "debug":  true,
+                         "preview":  true,
+                         "accountId":  "\u003cacct-id\u003e"
+                     }
+}

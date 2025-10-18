@@ -1,0 +1,1131 @@
+{
+  "schema": {
+    "type": "object",
+    "properties": {
+      "bank_verification": {
+        "type": "object",
+        "properties": {
+          "bank_account_id": {
+            "type": "string"
+          },
+          "verification_method": {
+            "enum": [
+              "plaid",
+              "paysafe",
+              "tilled_manual"
+            ],
+            "type": "string"
+          },
+          "verification_status": {
+            "enum": [
+              "new",
+              "validated",
+              "verified",
+              "verification_failed",
+              "errored"
+            ],
+            "type": "string"
+          }
+        },
+        "description": "The bank verification used during onboarding."
+      },
+      "canada_visa_mc_processing": {
+        "description": "Canadian merchants only.\nIf set to true, the merchant opts into processing visa and mastercard.",
+        "type": "boolean"
+      },
+      "legal_entity": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "description": "City, district, suburb, town, or village.",
+                "type": "string"
+              },
+              "country": {
+                "description": "2-digit Country code (e.g. 'US', 'CA') [See ISO 3166-1 alpha-2](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2)",
+                "type": "string"
+              },
+              "postal_code": {
+                "description": "Zip code or postal code of the address. No special characters.",
+                "maxLength": 10,
+                "type": "string"
+              },
+              "state": {
+                "description": "State/province/region of the address. For US and CA use 2-digit state/province codes (e.g. 'AL', 'AK', 'BC', 'ON', 'etc'.)",
+                "type": "string"
+              },
+              "street": {
+                "description": "Address line 1 (Street address, P.O. boxes are not accepted).",
+                "type": "string"
+              },
+              "street2": {
+                "description": "Address line 2 (e.g., apartment, suite, unit, or building).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "city",
+              "country",
+              "postal_code",
+              "state",
+              "street"
+            ],
+            "description": "Registered legal address of the business."
+          },
+          "average_refund_days": {
+            "description": "Required for Paysafe merchants. \tThe average refund days for which refund policy is applicable after the transaction. Supported values are 0-100 days.",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "bank_account": {
+            "type": "object",
+            "properties": {
+              "account_holder_name": {
+                "description": "The name of the person or business that owns the bank account.",
+                "pattern": "/^[^<>]*$/",
+                "type": "string"
+              },
+              "account_number": {
+                "description": "This is the bank account number",
+                "maxLength": 20,
+                "minLength": 1,
+                "pattern": "^d+$",
+                "type": "string"
+              },
+              "bank_name": {
+                "description": "Name of the financial institution.",
+                "pattern": "/^[^<>]*$/",
+                "type": "string"
+              },
+              "routing_number": {
+                "description": "The routing number, sort code, or other country-appropriate institution number for the bank account. For US bank accounts, this is required and should be the 9-digit ACH routing number, not the wire routing number. For CA bank accounts, combine the transit and institution numbers to create a full routing number (for example,  if `transit = 12345` and `institution = 678`, then `routing_number = 12345678`).",
+                "type": "string"
+              },
+              "type": {
+                "description": "The bank account type",
+                "enum": [
+                  "checking",
+                  "savings"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "account_number",
+              "routing_number"
+            ],
+            "description": "Banking details for the business's payouts."
+          },
+          "card_checkout_method_breakdown": {
+            "type": "object",
+            "properties": {
+              "percent_e_commerce": {
+                "description": "Percentage of payments accepted through online websites or hosted payment pages.",
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              "percent_manual_card_not_present": {
+                "description": "Percentage of payments accepted through MOTO (Mail Order / Telephone Order).",
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              "percent_swiped": {
+                "description": "Percentage of payments accepted through swipe. Swipe are POS transactions made through a card reader.",
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "percent_e_commerce",
+              "percent_manual_card_not_present",
+              "percent_swiped"
+            ],
+            "description": "The method by which the business accepts card payments. The total value of all the methods must equal 100."
+          },
+          "charity_document": {
+            "type": "object",
+            "properties": {
+              "document_id": {
+                "description": "The ID of the document requested for the 501c3 documentation.",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "submitted",
+                  "verified"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "document_id",
+              "status"
+            ],
+            "description": "The document data for the charity document. Required if the `mcc` is `8398`."
+          },
+          "date_of_incorporation": {
+            "description": "The date when the business was incorporated in YYY-MM-DD format.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "days_billed_prior_to_shipment": {
+            "description": "Required for TSYS merchants. The number of days billed prior to goods being shipped.",
+            "minimum": 0,
+            "type": "number"
+          },
+          "dba_name": {
+            "description": "The merchant's trade name or Doing Business As Name (e.g. \"ACME\"), if different from the `legal_name`.",
+            "pattern": "/^[^<>;]*$/",
+            "type": "string"
+          },
+          "existing_processor_name": {
+            "description": "Required if the merchant has processed credit cards before. If left blank,\nthat indicates that the merchant did not process cards before.",
+            "type": "string"
+          },
+          "is_501c3": {
+            "description": "Whether or not the business is a is a registered 501(c)(3) organization. If true, a copy of the 501(c)(3) letter must be uploaded. Only required if the `mcc` is `8398` or `8661`.",
+            "type": "boolean"
+          },
+          "legal_name": {
+            "description": "Registered legal business name (e.g. \"ACME Corporation\").",
+            "pattern": "/^[^<>;]*$/",
+            "type": "string"
+          },
+          "mcc": {
+            "description": "The 4-digit merchant category code for the business. MCCs are used to classify businesses based on the goods or services they provide. For more information see the description [here](https://docs.tilled.com/api-reference#tag/onboarding/GET/v1/onboarding/mcc)",
+            "enum": [
+              "0742",
+              "0780",
+              "1520",
+              "1711",
+              "1731",
+              "1740",
+              "1750",
+              "1761",
+              "1771",
+              "1799",
+              "4119",
+              "4121",
+              "4214",
+              "4816",
+              "4900",
+              "5044",
+              "5399",
+              "5411",
+              "5499",
+              "5811",
+              "5812",
+              "5814",
+              "5965",
+              "5970",
+              "6513",
+              "7230",
+              "7299",
+              "7349",
+              "7372",
+              "7379",
+              "7392",
+              "7523",
+              "7542",
+              "7699",
+              "7922",
+              "7999",
+              "8011",
+              "8021",
+              "8031",
+              "8041",
+              "8042",
+              "8043",
+              "8049",
+              "8050",
+              "8099",
+              "8111",
+              "8211",
+              "8220",
+              "8249",
+              "8299",
+              "8351",
+              "8398",
+              "8661",
+              "8699",
+              "8931",
+              "8999"
+            ],
+            "type": "string"
+          },
+          "number_of_terminals": {
+            "description": "Estimation of the number of terminal readers the business will need to order. Default is 1 for card-present merchants.",
+            "maximum": 10,
+            "minimum": 1,
+            "type": "number"
+          },
+          "patriot_act_details": {
+            "type": "object",
+            "properties": {
+              "articles_of_incorporation": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "description": "The Document ID of an uploaded [Document](#tag/Documents) of type `file` and subtype `articles_of_incorp`",
+                    "type": "string"
+                  },
+                  "issued_at": {
+                    "description": "The date on which the business Articles of Incorporation were issued.",
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "The state where the business Articles of Incorporation were issued.",
+                    "enum": [
+                      "AL",
+                      "AK",
+                      "AS",
+                      "AZ",
+                      "AR",
+                      "AA",
+                      "AE",
+                      "AP",
+                      "CA",
+                      "CO",
+                      "CT",
+                      "DE",
+                      "DC",
+                      "FL",
+                      "GA",
+                      "GU",
+                      "HI",
+                      "ID",
+                      "IL",
+                      "IN",
+                      "IT",
+                      "IA",
+                      "KS",
+                      "KY",
+                      "LA",
+                      "ME",
+                      "MD",
+                      "MA",
+                      "MI",
+                      "MN",
+                      "MS",
+                      "MO",
+                      "MT",
+                      "NE",
+                      "NV",
+                      "NH",
+                      "NJ",
+                      "NM",
+                      "NY",
+                      "NC",
+                      "ND",
+                      "MP",
+                      "OH",
+                      "OK",
+                      "OR",
+                      "PW",
+                      "PA",
+                      "PR",
+                      "RI",
+                      "SC",
+                      "SD",
+                      "TN",
+                      "TX",
+                      "VI",
+                      "US",
+                      "UT",
+                      "VT",
+                      "VA",
+                      "WA",
+                      "WV",
+                      "WI",
+                      "WY"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "issued_at",
+                  "state"
+                ],
+                "description": "The details of the business Articles of Incorporation document."
+              },
+              "business_license": {
+                "type": "object",
+                "properties": {
+                  "document_id": {
+                    "description": "The Document ID of an uploaded [Document](#tag/Documents) of type `file` and subtype `business_license`",
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "description": "The date when the business license will expire.",
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "issued_at": {
+                    "description": "The date when the business license was issued.",
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "The name of the business on the business license.",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "The US state (2-digit code) in which the business license was issued.",
+                    "enum": [
+                      "AL",
+                      "AK",
+                      "AS",
+                      "AZ",
+                      "AR",
+                      "AA",
+                      "AE",
+                      "AP",
+                      "CA",
+                      "CO",
+                      "CT",
+                      "DE",
+                      "DC",
+                      "FL",
+                      "GA",
+                      "GU",
+                      "HI",
+                      "ID",
+                      "IL",
+                      "IN",
+                      "IT",
+                      "IA",
+                      "KS",
+                      "KY",
+                      "LA",
+                      "ME",
+                      "MD",
+                      "MA",
+                      "MI",
+                      "MN",
+                      "MS",
+                      "MO",
+                      "MT",
+                      "NE",
+                      "NV",
+                      "NH",
+                      "NJ",
+                      "NM",
+                      "NY",
+                      "NC",
+                      "ND",
+                      "MP",
+                      "OH",
+                      "OK",
+                      "OR",
+                      "PW",
+                      "PA",
+                      "PR",
+                      "RI",
+                      "SC",
+                      "SD",
+                      "TN",
+                      "TX",
+                      "VI",
+                      "US",
+                      "UT",
+                      "VT",
+                      "VA",
+                      "WA",
+                      "WV",
+                      "WI",
+                      "WY"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expires_at",
+                  "issued_at",
+                  "name",
+                  "state"
+                ],
+                "description": "The details of the government issued business license document."
+              }
+            },
+            "description": "Information required by the Patriot Act. For TSYS applications, either the business license OR the articles of incorporation (AOI) details are required, not both."
+          },
+          "percent_business_to_business": {
+            "description": "Percentage of business-to-business (B2B) that the business conducts",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "principals": {
+            "description": "Array of Principals (ie Business Owners).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "object",
+                  "properties": {
+                    "city": {
+                      "description": "City, district, suburb, town, or village.",
+                      "type": "string"
+                    },
+                    "country": {
+                      "description": "2-digit Country code (e.g. 'US', 'CA') [See ISO 3166-1 alpha-2](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2)",
+                      "type": "string"
+                    },
+                    "postal_code": {
+                      "description": "Zip code or postal code of the address. No special characters.",
+                      "maxLength": 10,
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "State/province/region of the address. For US and CA use 2-digit state/province codes (e.g. 'AL', 'AK', 'BC', 'ON', 'etc'.)",
+                      "type": "string"
+                    },
+                    "street": {
+                      "description": "Address line 1 (Street address, P.O. boxes are not accepted).",
+                      "type": "string"
+                    },
+                    "street2": {
+                      "description": "Address line 2 (e.g., apartment, suite, unit, or building).",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city",
+                    "country",
+                    "postal_code",
+                    "state",
+                    "street"
+                  ],
+                  "description": "Registered *residential* address for this person"
+                },
+                "date_of_birth": {
+                  "description": "This person's date of birth. Format must be ISO8601 (e.g. '2000-01-25' or '2000-01-25T00:00:00Z'; format 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:mm:ssZ'). Currently the person must be older than 18 years of age.",
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "email": {
+                  "description": "This person's email address",
+                  "type": "string"
+                },
+                "first_name": {
+                  "description": "First name of the principal.",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "The unique identifier for this principal. It is not required upon initial submission. The `id_number` property is redacted in any responses, so if the principal needs to be updated then provide this identifier that was generated during the initial request.",
+                  "maxLength": 36,
+                  "type": "string"
+                },
+                "id_number": {
+                  "description": "Social Security Number (US) or Social Insurance Number (CA). Optional when business structure is `government`. Expected format: 9-digit string of numbers (e.g. \"111444777\"). Optional in CA.",
+                  "example": "111444777",
+                  "maxLength": 9,
+                  "minLength": 9,
+                  "type": "string"
+                },
+                "is_applicant": {
+                  "description": "Indicates whether this person is the applicant for the merchant account. For US merchant accounts (`region = US`) it is required that _exactly_ one of the principals is specified as the applicant.",
+                  "type": "boolean"
+                },
+                "is_control_prong": {
+                  "description": "This indicates whether the person is the Control Prong. Control Prong is an individual with significant responsibility for managing the legal entity customer (e.g., a CEO, CFO, COO, Managing Member, General Partner, President, Vice-President, or Treasurer). For US merchant accounts (`region = US`) it is required that _exactly_ one of the principals is specified as the Control Prong.",
+                  "type": "boolean"
+                },
+                "job_title": {
+                  "description": "Job title of the person",
+                  "enum": [
+                    "chief_executive_officer",
+                    "co_owner",
+                    "controller",
+                    "director",
+                    "financial_officer",
+                    "general_manager",
+                    "general_partner",
+                    "limited_partner",
+                    "manager",
+                    "member",
+                    "owner",
+                    "president",
+                    "secretary",
+                    "treasurer",
+                    "senior_vice_president",
+                    "vice_president"
+                  ],
+                  "type": "string"
+                },
+                "last_name": {
+                  "description": "This person's last name.",
+                  "type": "string"
+                },
+                "middle_name": {
+                  "description": "This person's middle name",
+                  "type": "string"
+                },
+                "percent_ownership": {
+                  "description": "Percentage of ownership of the company.",
+                  "maximum": 100,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "phone": {
+                  "description": "This person's phone number",
+                  "type": "string"
+                },
+                "previous_address": {
+                  "type": "object",
+                  "properties": {
+                    "city": {
+                      "description": "City, district, suburb, town, or village.",
+                      "type": "string"
+                    },
+                    "country": {
+                      "description": "2-digit Country code (e.g. 'US', 'CA') [See ISO 3166-1 alpha-2](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2)",
+                      "type": "string"
+                    },
+                    "postal_code": {
+                      "description": "Zip code or postal code of the address. No special characters.",
+                      "maxLength": 10,
+                      "type": "string"
+                    },
+                    "state": {
+                      "description": "State/province/region of the address. For US and CA use 2-digit state/province codes (e.g. 'AL', 'AK', 'BC', 'ON', 'etc'.)",
+                      "type": "string"
+                    },
+                    "street": {
+                      "description": "Address line 1 (Street address, P.O. boxes are not accepted).",
+                      "type": "string"
+                    },
+                    "street2": {
+                      "description": "Address line 2 (e.g., apartment, suite, unit, or building).",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "city",
+                    "country",
+                    "postal_code",
+                    "state",
+                    "street"
+                  ],
+                  "description": "Previous registered *residential* address for this principal. Require for Canadian principals and have lived at their current address for fewer than 3 years."
+                },
+                "years_at_address": {
+                  "description": "Years at given address. Required for CA merchant accounts (`region = CA`).",
+                  "example": 5,
+                  "maximum": 99,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "years_at_previous_address": {
+                  "description": "Years at given previous address. Required for CA merchant accounts (`region = CA`).",
+                  "example": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "address",
+                "date_of_birth",
+                "email",
+                "first_name",
+                "is_applicant",
+                "job_title",
+                "last_name",
+                "percent_ownership",
+                "phone"
+              ]
+            },
+            "type": "array"
+          },
+          "processing_volume": {
+            "type": "object",
+            "properties": {
+              "average_transaction_amount_card": {
+                "description": "Average transaction amount, in minor units for Card payments (e.g. $100.00 = 10000 minor units).\nThis field is required for merchants with a card or card-present pricing template assigned to them.",
+                "minimum": 1,
+                "type": "number"
+              },
+              "average_transaction_amount_debit": {
+                "description": "Average transaction amount, in minor units for Direct Debit payments (e.g. $100.00 = 10000 minor units).\nThis field is required for merchants with a debit pricing template assigned to them.",
+                "minimum": 1,
+                "type": "number"
+              },
+              "currency": {
+                "description": "Three-letter ISO currency code, in lowercase.",
+                "enum": [
+                  "aud",
+                  "cad",
+                  "dkk",
+                  "eur",
+                  "hkd",
+                  "jpy",
+                  "nzd",
+                  "nok",
+                  "gbp",
+                  "zar",
+                  "sek",
+                  "chf",
+                  "usd"
+                ],
+                "example": "usd",
+                "type": "string"
+              },
+              "high_ticket_amount": {
+                "description": "Estimated high ticket amount, in minor units (e.g. $100.00 = 10000 minor units).\nThis represents the highest amount the merchant expects to process in a single transaction.",
+                "minimum": 1,
+                "type": "number"
+              },
+              "monthly_processing_volume": {
+                "description": "Estimated monthly processing volume amount of the business, in minor units. (e.g. $1,000,000.00 = 100,000,000 minor units)",
+                "example": 100000000,
+                "minimum": 1,
+                "type": "number"
+              },
+              "monthly_transaction_count": {
+                "description": "Estimated monthly number of transactions of the business.",
+                "minimum": 1,
+                "type": "number"
+              }
+            },
+            "required": [
+              "currency",
+              "high_ticket_amount",
+              "monthly_processing_volume",
+              "monthly_transaction_count"
+            ],
+            "description": "An estimate of the processing volume of the business."
+          },
+          "product_description": {
+            "description": "Description of the product sold by, or service provided by, the business.",
+            "maxLength": 240,
+            "type": "string"
+          },
+          "region": {
+            "description": "Region for the merchant account",
+            "enum": [
+              "US",
+              "CA"
+            ],
+            "type": "string"
+          },
+          "statement_descriptor": {
+            "description": "Provides information about a payment that customers see on their statements. Concatenated with the prefix (shortened descriptor) or statement descriptor that’s set on the account to form the complete statement descriptor. Maximum 20 characters for the concatenated descriptor.",
+            "maxLength": 20,
+            "type": "string"
+          },
+          "structure": {
+            "description": "The category identifying the legal structure of the legal entity.",
+            "enum": [
+              "charity",
+              "community_interest_company",
+              "corporation",
+              "government",
+              "limited",
+              "limited_liability_company",
+              "limited_liability_partnership",
+              "non_profit",
+              "partnership",
+              "public_limited_company",
+              "sole_proprietorship",
+              "trust"
+            ],
+            "type": "string"
+          },
+          "support_email": {
+            "description": "Publicly available email address for sending support issues to.",
+            "type": "string"
+          },
+          "support_phone": {
+            "description": "Customer support phone number of the business. Cannot contain special characters.",
+            "type": "string"
+          },
+          "tax_id_number": {
+            "description": "The company's tax ID number (TIN)",
+            "example": "111444777",
+            "maxLength": 9,
+            "minLength": 9,
+            "type": "string"
+          },
+          "website": {
+            "description": "The business's publicly available website.",
+            "maxLength": 255,
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "bank_account",
+          "card_checkout_method_breakdown",
+          "charity_document",
+          "date_of_incorporation",
+          "is_501c3",
+          "legal_name",
+          "mcc",
+          "percent_business_to_business",
+          "principals",
+          "processing_volume",
+          "product_description",
+          "region",
+          "statement_descriptor",
+          "structure",
+          "support_phone",
+          "tax_id_number"
+        ],
+        "description": "Merchant account details"
+      },
+      "pricing_templates": {
+        "description": "The pricing templates applied to/associated with this merchant application.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "account_id": {
+              "description": "The ID of the Account associated with this pricing template.",
+              "type": "string"
+            },
+            "account_monthly_fee": {
+              "description": "The account monthly fee configured for this pricing template, in currency minor units.",
+              "type": "number"
+            },
+            "account_monthly_minimum_fee": {
+              "description": "The account monthly minimum fee configured for this pricing template, in currency minor units.",
+              "type": "number"
+            },
+            "ach_debit": {
+              "type": "object",
+              "properties": {
+                "return_fee": {
+                  "description": "The amount of the fee applied per return, in currency minor units.",
+                  "type": "number"
+                },
+                "transaction_fee": {
+                  "description": "The amount of the transaction fee applied to each transaction, in currency minor units or hundredths of a percent depending on the transaction_fee_type selected.",
+                  "type": "number"
+                },
+                "transaction_fee_type": {
+                  "description": "The type of transaction fee this pricing template applies.",
+                  "enum": [
+                    "flat_rate"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "return_fee",
+                "transaction_fee",
+                "transaction_fee_type"
+              ],
+              "description": "If this is an `ach_debit` pricing template, this hash contains the direct debit specific pricing details."
+            },
+            "card": {
+              "type": "object",
+              "properties": {
+                "bank_account_change_fee": {
+                  "description": "The amount of the fee applied when the merchant bank account information is updated, in currency minor units.",
+                  "type": "number"
+                },
+                "card_update_fee": {
+                  "description": "The amount of the fee applied per card updated, in currency minor units.",
+                  "type": "number"
+                },
+                "chargeback_fee": {
+                  "description": "The amount of the fee applied per chargeback, in currency minor units.",
+                  "type": "number"
+                },
+                "markups": {
+                  "description": "The list of additional markups applied to a given card type.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "card_type": {
+                        "description": "The card type this markup applies to.",
+                        "enum": [
+                          "amex",
+                          "diners",
+                          "discover",
+                          "jcb",
+                          "maestro",
+                          "mastercard",
+                          "solo",
+                          "visa",
+                          "visa_debit",
+                          "visa_electron",
+                          "interac",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "rate": {
+                        "description": "The amount of the markup applied to this card type.",
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "card_type",
+                      "rate"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "retrieval_fee": {
+                  "description": "The amount of the fee applied per retrieval, in currency minor units.",
+                  "type": "number"
+                },
+                "reversal_fee": {
+                  "description": "The amount of the fee applied per reversal, in currency minor units.",
+                  "type": "number"
+                },
+                "transaction_fee": {
+                  "description": "The amount of the transaction fee applied to each transaction, in currency minor units.",
+                  "type": "number"
+                },
+                "transaction_fee_type": {
+                  "description": "The type of transaction fee this pricing template applies.",
+                  "enum": [
+                    "flat_rate",
+                    "interchange"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "chargeback_fee",
+                "markups",
+                "retrieval_fee",
+                "reversal_fee",
+                "transaction_fee",
+                "transaction_fee_type"
+              ],
+              "description": "If this is a `card` pricing template, this hash contains the card specific pricing details."
+            },
+            "card_present": {
+              "type": "object",
+              "properties": {
+                "bank_account_change_fee": {
+                  "description": "The amount of the fee applied when the merchant bank account information is updated, in currency minor units.",
+                  "type": "number"
+                },
+                "chargeback_fee": {
+                  "description": "The amount of the fee applied per chargeback, in currency minor units.",
+                  "type": "number"
+                },
+                "markups": {
+                  "description": "The list of additional markups applied to a given card type.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "card_type": {
+                        "description": "The card type this markup applies to.",
+                        "enum": [
+                          "amex",
+                          "diners",
+                          "discover",
+                          "jcb",
+                          "maestro",
+                          "mastercard",
+                          "solo",
+                          "visa",
+                          "visa_debit",
+                          "visa_electron",
+                          "interac",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "rate": {
+                        "description": "The amount of the markup applied to this card type.",
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "card_type",
+                      "rate"
+                    ]
+                  },
+                  "type": "array"
+                },
+                "monthly_terminal_fee": {
+                  "description": "The amount of the monthly fee applied per terminal, in currency minor units.",
+                  "type": "number"
+                },
+                "retrieval_fee": {
+                  "description": "The amount of the fee applied per retrieval, in currency minor units.",
+                  "type": "number"
+                },
+                "reversal_fee": {
+                  "description": "The amount of the fee applied per reversal, in currency minor units.",
+                  "type": "number"
+                },
+                "transaction_fee": {
+                  "description": "The amount of the transaction fee applied to each transaction, in currency minor units.",
+                  "type": "number"
+                },
+                "transaction_fee_type": {
+                  "description": "The type of transaction fee this pricing template applies.",
+                  "enum": [
+                    "flat_rate",
+                    "interchange"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "chargeback_fee",
+                "markups",
+                "retrieval_fee",
+                "reversal_fee",
+                "transaction_fee",
+                "transaction_fee_type"
+              ],
+              "description": "If this is a `card_present` pricing template, this hash contains the card specific pricing details."
+            },
+            "created_at": {
+              "description": "Time at which the object was created.",
+              "format": "date-time",
+              "type": "string"
+            },
+            "currency": {
+              "description": "The currency this pricing template applies to.",
+              "enum": [
+                "aud",
+                "cad",
+                "dkk",
+                "eur",
+                "hkd",
+                "jpy",
+                "nzd",
+                "nok",
+                "gbp",
+                "zar",
+                "sek",
+                "chf",
+                "usd"
+              ],
+              "type": "string"
+            },
+            "eft_debit": {
+              "type": "object",
+              "properties": {
+                "return_fee": {
+                  "description": "The amount of the fee applied per return, in currency minor units.",
+                  "type": "number"
+                },
+                "transaction_fee": {
+                  "description": "The amount of the transaction fee applied to each transaction, in currency minor units or hundredths of a percent depending on the transaction_fee_type selected.",
+                  "type": "number"
+                },
+                "transaction_fee_type": {
+                  "description": "The type of transaction fee this pricing template applies.",
+                  "enum": [
+                    "flat_rate"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "return_fee",
+                "transaction_fee",
+                "transaction_fee_type"
+              ],
+              "description": "If this is an `eft_debit` pricing template, this hash contains the direct debit specific pricing details."
+            },
+            "id": {
+              "description": "Unique identifier for the object.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The name of this pricing template.",
+              "type": "string"
+            },
+            "payment_method_type": {
+              "description": "The payment method type this pricing template applies to.",
+              "enum": [
+                "card",
+                "ach_debit",
+                "card_present",
+                "eft_debit"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "description": "The status of this pricing template",
+              "enum": [
+                "active",
+                "archived",
+                "pending"
+              ],
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Time at which the object was last updated.",
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "account_id",
+            "account_monthly_fee",
+            "account_monthly_minimum_fee",
+            "created_at",
+            "currency",
+            "id",
+            "name",
+            "payment_method_type",
+            "status",
+            "updated_at"
+          ]
+        },
+        "type": "array"
+      },
+      "terms_and_conditions_links": {
+        "description": "Links to terms and conditions for a merchant application.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "link": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "description",
+            "link",
+            "name"
+          ]
+        },
+        "type": "array"
+      },
+      "tos_acceptance": {
+        "description": "Indicates whether or not the merchant has accepted the terms of service.",
+        "type": "boolean"
+      },
+      "updated_at": {
+        "description": "Time at which the object was last updated.",
+        "format": "date-time",
+        "type": "string"
+      },
+      "validation_errors": {
+        "description": "If an application contains any validation errors they will appear here. If they are not addressed before submission then the submission will fail.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "legal_entity",
+      "pricing_templates",
+      "tos_acceptance"
+    ]
+  }
+}

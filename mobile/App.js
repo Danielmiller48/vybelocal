@@ -4,7 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { Text, View, TextInput, Button, ActivityIndicator, SafeAreaView, ErrorUtils } from 'react-native';
+import { Text, View, TextInput, Button, ActivityIndicator, SafeAreaView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
@@ -52,20 +52,21 @@ console.error = (...args) => {
   originalError.apply(console, args);
 };
 
-// Also catch uncaught errors
-const defaultHandler = ErrorUtils.getGlobalHandler();
-ErrorUtils.setGlobalHandler((error, isFatal) => {
-  if (
-    error && 
-    error.message && 
-    (error.message.includes('topFocus') || error.message.includes('topBlur'))
-  ) {
-    // Silently ignore these specific errors
-    return;
+// Also catch uncaught errors in dev and suppress RN WebView focus/blur noise
+try {
+  const defaultHandler = global.ErrorUtils?.getGlobalHandler?.();
+  if (defaultHandler && typeof global.ErrorUtils?.setGlobalHandler === 'function') {
+    global.ErrorUtils.setGlobalHandler((error, isFatal) => {
+      try {
+        const msg = error && error.message ? String(error.message) : '';
+        if (msg.includes('topFocus') || msg.includes('topBlur')) {
+          return;
+        }
+      } catch {}
+      defaultHandler(error, isFatal);
+    });
   }
-  // Pass other errors to the default handler
-  defaultHandler(error, isFatal);
-});
+} catch {}
 
 
 

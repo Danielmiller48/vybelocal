@@ -1,0 +1,56 @@
+Objective
+Gate paid events on mobile so hosts cannot run paid events until profiles.tilled_status === 'active'.
+Reflect changes instantly via Supabase Realtime (no manual refresh).
+Keep server-side enforcement to prevent bypass.
+Data and Sources
+Source of truth: Supabase public.profiles fields:
+tilled_status (started, in_review, action_required, active, rejected)
+tilled_required (array|null)
+bank_verification_status (string|null)
+Optional, on-demand extra: onboarding URL from waitlist GET /api/payments/tilled/status (only when user taps “Continue onboarding”).
+Realtime Strategy
+Subscribe to row-level changes for the current user:
+Channel: postgres_changes on public.profiles
+Filter: id = auth.uid()
+Events: update only
+Subscribe only while relevant screens are in focus (HostCreateScreen and KYB onboarding screens). Unsubscribe on blur/unmount to limit cost.
+Initial fetch once on mount; subsequent updates come from Realtime.
+Example (reference only):
+Mobile Implementation Plan
+Create useKybStatus hook (mobile)
+Reads current profile row (one-time fetch)
+Subscribes to Realtime updates for the profile row
+Normalizes 'submitted' → 'in_review'
+Returns { status, required, bankStatus }
+Gate HostCreateScreen
+If status !== active:
+Disable “Paid event” toggle and price inputs
+Show inline explainer + CTA: “Finish setup” → navigates to mobile KYB screen
+When Realtime flips to active, notify (toast/banner) and enable controls inline
+KYB Onboarding Screens (mobile)
+Use the same useKybStatus hook for state
+On “Continue onboarding”, fetch waitlist status endpoint once to get onboarding_application_url and deep-link
+Server Enforcement (backend API)
+In the event creation POST (backend route), reject if price_in_cents != null and tilled_status !== 'active'
+Return { code: 'kyb_not_active', tilled_status, required } for UI
+Edge-state UX
+started/unknown: “Complete onboarding to enable paid events”
+in_review: “Under review (1–2 business days)”
+action_required: “More info needed. Continue onboarding” (list required if present)
+rejected: “Not approved—review details and resubmit”
+active: no gating; full controls
+Telemetry
+Log [kyb:mobile:view] with status when HostCreateScreen mounts
+Log [kyb:mobile:gate_block] when blocking paid attempt
+Log [kyb:mobile:status_update] when Realtime flips to a new state
+Resilience/Cost
+Subscribe only on relevant screens; remove channel on unmount
+Provide “Refresh status” button for manual retry if Realtime drops
+Backoff retry for initial fetch failures
+Acceptance Criteria
+Non-active users cannot enable paid toggle; see clear guidance and CTA.
+When status flips to active (via webhook), HostCreateScreen updates live (no reload).
+Server refuses paid event creation unless active.
+Action-required shows “Continue onboarding” and optional items.
+Tests: simulate status transitions and verify UI/state changes in real time.
+Want me to start by implementing the mobile useKybStatus hook and wiring it into HostCreateScreen (no server edits yet), or do you prefer I enforce the backend guard first?

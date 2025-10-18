@@ -1,0 +1,309 @@
+# VybeLocal Microcopy Playbook — Refresh (v2025-08)
+
+**Purpose:** give Cursor/AI an exact voice + ready-to-paste strings for VybeLocal across app, host tools, payments, and marketing. Use this as the *single source of truth*.
+
+---
+
+## 1) Brand essence (keep this in mind for every line)
+
+* **Mission:** Help people find each other in the real world. No feed. No clout. Just vibes that turn into plans.
+* **Tone:** **Grounded, concise, humane, quietly confident.**
+* **Never:** campy hype, influencer slang, or algorithm talk (e.g., “trending,” “fam,” “you’re on fire”).
+* **Taglines:**
+
+  * Primary: **Tap in to real.**
+  * Secondary (long-form/press): **Where Real Beats Reel.**
+* **Day/Night duality:**
+
+  * **Day:** energetic, welcoming, practical.
+  * **Night:** moody, focused, safety-forward.
+
+### Voice sliders (set before writing)
+
+* Formality: 3/10 (plain speech over corporate).
+* Energy: day 6/10 · night 4/10.
+* Warmth: 6/10 (friendly, not gushy).
+* Authority: 7/10 (clear directions, low jargon).
+
+---
+
+## 2) Lexicon (approved words)
+
+* **Vybe** (event), **Circle** (group), **Vybemap** (map), **RSVP**, **Host**, **Door tools**, **Settlement report**, **Patron** (support tier), **Comp list**, **Check-in** (QR).
+* **Categories:** Chill, Creative, Active, Hype.
+* **Payments:** platform fee, refund window, payout, KYB.
+
+**Avoid:** feed, trending, algorithm, viral, fam, squad, lit, fuego.
+
+---
+
+## 3) Style rules (Cursor-ready)
+
+1. **Short first.** Aim 2–8 words for UI; 8–16 words for helper text.
+2. **One thought per line.**
+3. **Lead with the action.** (“RSVP now”, “Create a Vybe”).
+4. **Blame the system, not the user.** (“We couldn’t save that. Try again.”)
+5. **No exclamation unless safety.**
+6. **Sentence case.** Title Case only for proper nouns.
+7. **Numbers:** use digits (2, 30). Time in **12‑hour** with am/pm.
+8. **Clarity over clever.** Save poetry for promos.
+
+---
+
+## 4) Button & CTA patterns
+
+* **Primary:** RSVP now · Host a Vybe · Create event · Save changes · Continue
+* **Secondary:** Preview · Edit details · Learn more · View map
+* **Micro‑CTAs:** Tap to view map · Share with friends · Copy link
+
+---
+
+## 5) Core flows — Attendee
+
+**Onboarding**
+
+* Welcome title: **Find your people.**
+* Subtitle: **Real plans. No feeds.**
+* Start button: **Let’s get you out there**
+
+**Discovery (empty state)**
+
+* **No Vybes yet.** Try another vibe or date.
+* **Tip:** Follow a Host to hear about new dates.
+
+**Event page**
+
+* RSVP button: **RSVP now**
+* Capacity note: **25 spots left**
+* Refund policy chip: **Refunds up to 24 hours before**
+* Host trust line: **0 cancellations in the last 6 months**
+
+**RSVP success toast**
+
+* **You’re in.** Check email for details.
+
+**Share sheet**
+
+* **Spread the word.** Copy or share.
+
+**Error (payment)**
+
+* **We couldn’t process that card.** Try another card or check your details.
+
+---
+
+## 6) Core flows — Host
+
+**Host dashboard header**
+
+* **Your Vybes**
+* **Next payout:** Tue, 3:00 pm
+
+**Create event (labels & help)**
+
+* **Event name** · *Make it clear and short.*
+* **Date & time** · *Starts on* · *Ends at*
+* **Location** · *Address or venue name.*
+* **Vibe** · Chill · Creative · Active · Hype
+* **Capacity** · *Max RSVPs you can handle.*
+* **Ticket tiers** · *GA, VIP, Early Bird.*
+* **Refund policy** · *Choose your window.*
+
+**Door tools**
+
+* **Live count:** 84 checked‑in · 120 total
+* **Scan tickets** · **Comp list** · **Boot attendee**
+
+**Settlement report (EoN)**
+
+* **Gross sales** · **Refunds** · **Platform fee** · **Net payout**
+* **Payout ETA:** ends\_at + 24h
+
+**Host warnings**
+
+* **Heads up:** long lead times may require extra review.
+
+**Form errors**
+
+* **We couldn’t save those changes.** Check the highlighted fields.
+
+---
+
+## 7) Payments & KYB microcopy
+
+**Onboarding intro**
+
+* **Get paid with VybeLocal**
+* *Takes about a minute.*
+
+**Bank connect**
+
+* **Connect your bank** (Plaid) · *Faster payouts and fewer errors.*
+* **Or upload a document** · *Voided check or bank letter.*
+
+**Identity**
+
+* **Control person** · *Legal name, DOB, SSN last‑4.*
+* **Owners ≥25%** · *Name and percent.*
+
+**Status chips**
+
+* **In review** · **Active** · **Needs a document**
+
+**Descriptor**
+
+* **Statement name** · *What buyers see on their bank line.*
+
+**Refund policy picker**
+
+* **No refunds** · **24h before** · **48h before** · **Custom**
+
+---
+
+## 8) Safety & trust
+
+**Community intro**
+
+* **Be good to each other.** Real people. Real plans.
+
+**Soft ban (24h)**
+
+* **Take a beat.** Your account is locked for 24 hours after a conduct warning. You can still view your past RSVPs. We’ll see you tomorrow.
+
+**Final ban (cheeky, firm)**
+
+* **We’re not a match.** After repeated issues, your account is permanently closed. Real‑world community needs real respect. Do not attempt to create a new account.
+
+**Incident tools (host)**
+
+* **Escalate to Safety** · *Send a note to our team.*
+* **Incident log** · *Private to you and staff.*
+
+---
+
+## 9) Marketing snippets (site, socials, emails)
+
+* **Hook lines**
+
+  * **Make the city your canvas.**
+  * **From idea to RSVPs—fast.**
+  * **Hosts keep 100%. Guests pay a small fee.**
+  * **No feed. Just plans.**
+* **Short CTAs**
+
+  * **Tap in to real.**
+  * **Find a Vybe.** · **Host a Vybe.**
+* **Adrian collab examples**
+
+  * **New gallery. Mural classes.** Beginners welcome. Comment **MURAL** for early access.
+  * **Support local. Paint local.** Pick our first wall in the comments.
+
+---
+
+## 10) Error/empty library (ready‑to‑paste)
+
+* **We couldn’t load that.** Try again.
+* **That’s on us.** Give it a sec and refresh.
+* **Nothing here yet.** Check back soon.
+* **This seat is taken.** Capacity reached.
+* **Refund window closed.**
+* **You’re already on the list.**
+
+---
+
+## 11) Tone transforms (before → after)
+
+* **Before:** “You’re on fire, fam! That Vybe is trending!”
+
+* **After:** **Nice pull.** Your Vybe is getting traction.
+
+* **Before:** “Let’s goooo!!!”
+
+* **After:** **You’re set.** See you there.
+
+* **Before:** “Oopsie! Something weird happened.”
+
+* **After:** **We couldn’t do that.** Try again.
+
+---
+
+## 12) Character & length guidance (mobile‑safe)
+
+* Buttons: ≤ 20 chars
+* Toasts: ≤ 60 chars
+* Captions/labels: ≤ 24 chars
+* Helper text: ≤ 90 chars
+* Push notifications: Title ≤ 30 · Body ≤ 90
+
+---
+
+## 13) i18n seed (JSON)
+
+```json
+{
+  "taglines": {
+    "primary": "Tap in to real.",
+    "secondary": "Where Real Beats Reel."
+  },
+  "cta": {
+    "rsvp": "RSVP now",
+    "host_vybe": "Host a Vybe",
+    "find_vybe": "Find a Vybe",
+    "view_map": "View map",
+    "share": "Share with friends"
+  },
+  "status": {
+    "in_review": "In review",
+    "active": "Active",
+    "needs_doc": "Needs a document"
+  },
+  "events": {
+    "capacity_left": "{count} spots left",
+    "refund_chip": "Refunds up to {hours} hours before",
+    "host_trust": "{count} cancellations in the last 6 months"
+  },
+  "errors": {
+    "generic": "We couldn’t do that. Try again.",
+    "payment": "We couldn’t process that card.",
+    "form": "Check the highlighted fields."
+  }
+}
+```
+
+---
+
+## 14) Prompt template for Cursor/LLMs
+
+> **You are VybeLocal’s microcopy writer.** Write in a grounded, concise, humane voice. Avoid hype and slang. Prefer 2–8 words for UI. Use the brand lexicon (Vybe, Circle, Vybemap, RSVP). Do not mention feeds or algorithms. Use the taglines “Tap in to real.” (primary) and “Where Real Beats Reel.” (secondary) only when appropriate. Provide 3 variants, each under the character limits below. If the ask is marketing, you may be a little more lyrical; in‑product strings must stay literal and actionable.
+
+**Return format:** plain text with bullet list of options. No explanations.
+
+**Character limits:** buttons ≤ 20, toasts ≤ 60, helper ≤ 90.
+
+---
+
+## 15) QA checklist (before shipping copy)
+
+* Is the first word an action?
+* Can this be 20% shorter?
+* Is there a clear next step?
+* Would this read cleanly on a 5” screen?
+* Does it align with **Tap in to real**?
+
+---
+
+### Appendix — Safety pipeline strings
+
+* **Warning:** **Keep it respectful.** One more issue may pause your account.
+* **24h lock:** **Take a beat.** Your account is locked for 24 hours.
+* **Final ban:** **We’re not a match.** Your account is permanently closed.
+
+### Appendix — Payments transparency
+
+* **Payouts:** **Payouts run 24h after your event ends.**
+* **Fees:** **Hosts keep 100%. Guests pay a small fee.**
+* **Receipts:** **We’ll email a receipt and your RSVP.**
+
+---
+
+**End of playbook.** This doc supersedes earlier microcopy notes and the “campy” set. Paste into Cursor and keep it pinned during UI work.

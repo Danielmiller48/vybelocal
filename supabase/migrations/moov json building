@@ -1,0 +1,28 @@
+{
+  "accountID": "53ca67ea-6fd3-423f-9544-ce2404159d33", 
+  "accountType": "business",
+  "createdOn": "2024-12-16T17:55:20.557151867Z",
+  "displayName": "Whole Body Fitness LLC", // use user's full name
+  "mode": "sandbox",
+  "profile": {
+    "business": {
+      "legalBusinessName": "Whole Body Fitness LLC", // use user's full name
+      "ownersProvided": false
+    }
+  },
+  "settings": {
+    "achPayment": {
+      "companyName": "Whole Body Fitne" // use user's Full Name
+    },
+    "cardPayment": {
+      "statementDescriptor": "Whole Body Fitness LLC" //use VybelocalEvents
+    }
+  },
+  "updatedOn": "2024-12-16T17:55:20.557151867Z",
+  "verification": {
+    "status": "unverified",
+    "verificationStatus": "unverified"
+  }
+}
+
+
